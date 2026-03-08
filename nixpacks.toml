@@ -1,8 +1,8 @@
-[phases.build]
+[phases.install]
 cmds = ["cd backend && npm install"]
 
-[phases.start]
-cmds = ["cd backend && node server.js"]
+[phases.build]
+cmds = []
 
-[variables]
-NODE_ENV = "production"
+[start]
+cmd = "cd backend && node server.js"
