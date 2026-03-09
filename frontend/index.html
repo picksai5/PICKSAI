@@ -199,6 +199,7 @@
   <button class="tab" onclick="showTab('track')">📋 TRACK RECORD</button>
   <button class="tab" onclick="showTab('stats')">📊 STATS</button>
   <button class="tab" onclick="showTab('matrix')">🧬 MATRICE</button>
+  <button class="tab" onclick="showTab('backtest')">🔬 BACKTEST</button>
 </div>
 
 <!-- CONTENT -->
@@ -290,6 +291,21 @@
       <p style="font-size:13px;color:#3a5a80;line-height:1.7">PicksAI applique <strong style="color:var(--text)">14 facteurs gagnants</strong> sur les vraies données API Football. Le <strong style="color:var(--gold)">Score Matriciel</strong> = somme des poids activés × 10. Seuls les picks ≥ 60 sont affichés.</p>
     </div>
     <div id="matrix-list"></div>
+  </div>
+
+  <!-- BACKTEST PAGE -->
+  <div class="page" id="page-backtest">
+    <div class="scan-center">
+      <button class="scan-btn" id="backtest-btn" onclick="doBacktest()" style="background:linear-gradient(135deg,#7c3aed,#4c1d95);border-color:#7c3aed">🔬 LANCER LE BACKTEST</button>
+      <div class="scan-sub">SAISON 2024 · MISE 100€ · PICKS ROUGE & ORANGE SÉPARÉS</div>
+    </div>
+    <div class="log-box" id="backtest-log" style="display:none"></div>
+    <div id="backtest-results"></div>
+    <div class="empty" id="backtest-empty">
+      <div class="empty-icon">🔬</div>
+      <div class="empty-title">BACKTEST PRÊT</div>
+      <div class="empty-text">Analyse la saison 2024 complète<br>et calcule le ROI réel de la matrice</div>
+    </div>
   </div>
 
 </div>
@@ -814,6 +830,163 @@ function updateUI() {
 
   renderBankroll();
   renderTrack();
+}
+
+// ── BACKTEST ──────────────────────────────────────────────
+async function doBacktest() {
+  const btn = document.getElementById('backtest-btn');
+  const log = document.getElementById('backtest-log');
+  const empty = document.getElementById('backtest-empty');
+  const results = document.getElementById('backtest-results');
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spin">⚙</span> ANALYSE EN COURS... (3-5 min)';
+  log.style.display = 'block';
+  log.innerHTML = '';
+  results.innerHTML = '';
+  empty.style.display = 'none';
+
+  const addLog = (msg, color) => {
+    const t = new Date().toLocaleTimeString('fr-FR');
+    log.innerHTML += `<div class="log-line"><span class="log-time">${t}</span><span style="color:${color||'#2a4a6a'}">${msg}</span></div>`;
+    log.scrollTop = log.scrollHeight;
+  };
+
+  addLog('🔬 Démarrage backtest saison 2024...', '#7c3aed');
+  addLog('📊 Récupération matchs terminés toutes ligues...');
+  addLog('🧬 Application matrice F1→F14 sur chaque match...');
+  addLog('⏳ Environ 3-5 minutes (respect rate limit API)...', '#f59e0b');
+
+  try {
+    const res = await fetch('/api/backtest');
+    if (!res.ok) throw new Error(`Erreur serveur: ${res.status}`);
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+
+    addLog(`✅ ${data.meta.totalAnalyses} matchs analysés — ${data.meta.reqCount} requêtes API utilisées`, '#10b981');
+    addLog(`🔴 ${data.rouge.stats.total} picks ROUGE — ${data.rouge.stats.winRate}% win rate`, '#ef4444');
+    addLog(`🟡 ${data.orange.stats.total} picks ORANGE — ${data.orange.stats.winRate}% win rate`, '#f59e0b');
+
+    renderBacktestResults(data);
+  } catch (e) {
+    addLog(`❌ ${e.message}`, '#ef4444');
+    empty.style.display = 'block';
+  }
+
+  btn.disabled = false;
+  btn.innerHTML = '🔬 RELANCER LE BACKTEST';
+}
+
+function renderBacktestResults(data) {
+  const { rouge, orange, global, meta } = data;
+  const sR = rouge.stats;
+  const sO = orange.stats;
+
+  const statColor = (val, threshold) => val >= threshold ? 'var(--green)' : val >= threshold * 0.8 ? 'var(--gold)' : 'var(--red)';
+
+  let html = `
+  <!-- RÉSUMÉ GLOBAL -->
+  <div class="top-pick" style="margin-bottom:12px;background:linear-gradient(135deg,#7c3aed11,var(--bg2));border-color:#7c3aed55">
+    <div class="top-pick-header">
+      <span style="font-size:20px">🔬</span>
+      <span class="top-pick-title" style="color:#a78bfa">RÉSUMÉ BACKTEST SAISON 2024</span>
+    </div>
+    <div class="stat-grid" style="margin-bottom:10px">
+      <div class="stat-box"><div class="stat-label">MATCHS ANALYSÉS</div><div class="stat-value" style="color:#a78bfa">${meta.totalAnalyses}</div></div>
+      <div class="stat-box"><div class="stat-label">WIN RATE GLOBAL</div><div class="stat-value" style="color:${statColor(global.globalWR, 60)}">${global.globalWR}%</div></div>
+      <div class="stat-box"><div class="stat-label">ROI GLOBAL</div><div class="stat-value" style="color:${statColor(global.globalROI, 0)}">${global.globalROI > 0 ? '+' : ''}${global.globalROI}%</div></div>
+    </div>
+    <div class="stat-grid-2">
+      <div class="stat-box"><div class="stat-label">TOTAL PICKS</div><div class="stat-value" style="color:var(--accent)">${global.totalPicks}</div></div>
+      <div class="stat-box"><div class="stat-label">PROFIT NET (100€/pick)</div><div class="stat-value" style="color:${global.totalProfit >= 0 ? 'var(--green)' : 'var(--red)'}">${global.totalProfit >= 0 ? '+' : ''}${global.totalProfit}€</div></div>
+    </div>
+  </div>
+
+  <!-- TABLEAU ROUGE -->
+  <div class="pick-card" style="border:1px solid #ef444455;margin-bottom:12px">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
+      <span style="font-size:24px">🔴</span>
+      <div>
+        <div style="font-family:'Bebas Neue';font-size:20px;letter-spacing:3px;color:#ef4444">PICKS ROUGE — Score ≥ 85</div>
+        <div style="font-size:11px;color:var(--muted)">Mise : 100€ · Cote moyenne : 1.75</div>
+      </div>
+      <div style="margin-left:auto;text-align:right">
+        <div style="font-family:'Bebas Neue';font-size:36px;color:${statColor(sR.winRate, 60)}">${sR.winRate}%</div>
+        <div style="font-size:10px;color:var(--muted)">WIN RATE</div>
+      </div>
+    </div>
+    <div class="stat-grid" style="margin-bottom:12px">
+      <div class="stat-box"><div class="stat-label">TOTAL PICKS</div><div class="stat-value" style="color:#ef4444">${sR.total}</div></div>
+      <div class="stat-box"><div class="stat-label">✅ GAGNÉS</div><div class="stat-value" style="color:var(--green)">${sR.wins}</div></div>
+      <div class="stat-box"><div class="stat-label">❌ PERDUS</div><div class="stat-value" style="color:var(--red)">${sR.losses}</div></div>
+    </div>
+    <div class="stat-grid-2" style="margin-bottom:12px">
+      <div class="stat-box"><div class="stat-label">PROFIT NET</div><div class="stat-value" style="color:${sR.profit >= 0 ? 'var(--green)' : 'var(--red)'}">${sR.profit >= 0 ? '+' : ''}${sR.profit}€</div></div>
+      <div class="stat-box"><div class="stat-label">ROI</div><div class="stat-value" style="color:${sR.roi >= 0 ? 'var(--green)' : 'var(--red)'}">${sR.roi >= 0 ? '+' : ''}${sR.roi}%</div></div>
+      <div class="stat-box"><div class="stat-label">🔥 MEILLEURE SÉRIE</div><div class="stat-value" style="color:var(--green)">${sR.bestStreak}</div></div>
+      <div class="stat-box"><div class="stat-label">❄️ PIRE SÉRIE</div><div class="stat-value" style="color:var(--red)">${sR.worstStreak}</div></div>
+    </div>
+    <div style="font-family:'Bebas Neue';font-size:12px;color:#ef4444;letter-spacing:2px;margin-bottom:8px">DÉTAIL DES PICKS</div>
+    <div style="max-height:300px;overflow-y:auto">
+      ${rouge.picks.map(p => `
+        <div style="display:flex;justify-content:space-between;padding:6px 10px;border-radius:6px;margin-bottom:4px;background:${p.validated ? '#10b9810a' : '#ef44440a'};border:1px solid ${p.validated ? '#10b98122' : '#ef444422'}">
+          <div>
+            <span style="font-size:13px">${p.validated ? '✅' : '❌'}</span>
+            <span style="font-size:12px;font-weight:700;margin-left:6px">${p.match}</span>
+            <span style="font-size:10px;color:var(--muted);margin-left:6px">${p.competition}</span>
+            <div style="font-size:10px;color:var(--muted);margin-top:2px">${p.date} · Score réel: ${p.score} · Matrice: ${p.sm}</div>
+          </div>
+          <div style="text-align:right;flex-shrink:0;margin-left:10px">
+            <div style="font-family:'Bebas Neue';font-size:18px;color:${p.gain >= 0 ? 'var(--green)' : 'var(--red)'}">${p.gain >= 0 ? '+' : ''}${p.gain}€</div>
+            <div style="font-size:10px;color:var(--muted)">×${p.cote}</div>
+          </div>
+        </div>`).join('')}
+    </div>
+  </div>
+
+  <!-- TABLEAU ORANGE -->
+  <div class="pick-card" style="border:1px solid #f59e0b55;margin-bottom:12px">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
+      <span style="font-size:24px">🟡</span>
+      <div>
+        <div style="font-family:'Bebas Neue';font-size:20px;letter-spacing:3px;color:#f59e0b">PICKS ORANGE — Score 70-84</div>
+        <div style="font-size:11px;color:var(--muted)">Mise : 100€ · Cote moyenne : 1.65</div>
+      </div>
+      <div style="margin-left:auto;text-align:right">
+        <div style="font-family:'Bebas Neue';font-size:36px;color:${statColor(sO.winRate, 60)}">${sO.winRate}%</div>
+        <div style="font-size:10px;color:var(--muted)">WIN RATE</div>
+      </div>
+    </div>
+    <div class="stat-grid" style="margin-bottom:12px">
+      <div class="stat-box"><div class="stat-label">TOTAL PICKS</div><div class="stat-value" style="color:#f59e0b">${sO.total}</div></div>
+      <div class="stat-box"><div class="stat-label">✅ GAGNÉS</div><div class="stat-value" style="color:var(--green)">${sO.wins}</div></div>
+      <div class="stat-box"><div class="stat-label">❌ PERDUS</div><div class="stat-value" style="color:var(--red)">${sO.losses}</div></div>
+    </div>
+    <div class="stat-grid-2" style="margin-bottom:12px">
+      <div class="stat-box"><div class="stat-label">PROFIT NET</div><div class="stat-value" style="color:${sO.profit >= 0 ? 'var(--green)' : 'var(--red)'}">${sO.profit >= 0 ? '+' : ''}${sO.profit}€</div></div>
+      <div class="stat-box"><div class="stat-label">ROI</div><div class="stat-value" style="color:${sO.roi >= 0 ? 'var(--green)' : 'var(--red)'}">${sO.roi >= 0 ? '+' : ''}${sO.roi}%</div></div>
+      <div class="stat-box"><div class="stat-label">🔥 MEILLEURE SÉRIE</div><div class="stat-value" style="color:var(--green)">${sO.bestStreak}</div></div>
+      <div class="stat-box"><div class="stat-label">❄️ PIRE SÉRIE</div><div class="stat-value" style="color:var(--red)">${sO.worstStreak}</div></div>
+    </div>
+    <div style="font-family:'Bebas Neue';font-size:12px;color:#f59e0b;letter-spacing:2px;margin-bottom:8px">DÉTAIL DES PICKS</div>
+    <div style="max-height:300px;overflow-y:auto">
+      ${orange.picks.map(p => `
+        <div style="display:flex;justify-content:space-between;padding:6px 10px;border-radius:6px;margin-bottom:4px;background:${p.validated ? '#10b9810a' : '#ef44440a'};border:1px solid ${p.validated ? '#10b98122' : '#ef444422'}">
+          <div>
+            <span style="font-size:13px">${p.validated ? '✅' : '❌'}</span>
+            <span style="font-size:12px;font-weight:700;margin-left:6px">${p.match}</span>
+            <span style="font-size:10px;color:var(--muted);margin-left:6px">${p.competition}</span>
+            <div style="font-size:10px;color:var(--muted);margin-top:2px">${p.date} · Score réel: ${p.score} · Matrice: ${p.sm}</div>
+          </div>
+          <div style="text-align:right;flex-shrink:0;margin-left:10px">
+            <div style="font-family:'Bebas Neue';font-size:18px;color:${p.gain >= 0 ? 'var(--green)' : 'var(--red)'}">${p.gain >= 0 ? '+' : ''}${p.gain}€</div>
+            <div style="font-size:10px;color:var(--muted)">×${p.cote}</div>
+          </div>
+        </div>`).join('')}
+    </div>
+  </div>`;
+
+  document.getElementById('backtest-results').innerHTML = html;
 }
 
 // ── INIT ──────────────────────────────────────────────────
