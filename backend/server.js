@@ -27,7 +27,10 @@ const LEAGUES = [
 async function footballAPI(endpoint, params = {}) {
   try {
     const res = await axios.get(`${FOOTBALL_API_BASE}${endpoint}`, {
-      headers: { 'x-apisports-key': FOOTBALL_API_KEY },
+      headers: { 
+  'x-apisports-key': FOOTBALL_API_KEY,
+  'x-rapidapi-host': 'v3.football.api-sports.io'
+},
       params,
     });
     return res.data.response || [];
