@@ -39,6 +39,24 @@ async function footballAPI(endpoint, params = {}) {
   }
 }
 
+// Compétitions européennes
+const EURO_LEAGUES = [2, 3, 848];
+
+function formatPlayers(players) {
+  return players.slice(0, 5).map(p => {
+    const s = p.statistics?.[0];
+    return `${p.player?.name}(${s?.goals?.total||0}buts,${s?.goals?.assists||0}passes,${s?.games?.appearences||0}matchs)`;
+  }).join(' | ') || '?';
+}
+
+async function getNationalLeague(teamId) {
+  const data = await footballAPI('/leagues', { team: teamId, season: 2025, type: 'League' });
+  const priority = [39, 140, 135, 78, 61, 88, 94];
+  const leagueIds = data.map(d => d.league?.id);
+  for (const p of priority) { if (leagueIds.includes(p)) return p; }
+  return data?.[0]?.league?.id || null;
+}
+
 async function collectMatchData(fixture, leagueId, leagueName, standings) {
   const hTeam = fixture.teams?.home;
   const aTeam = fixture.teams?.away;
@@ -46,7 +64,9 @@ async function collectMatchData(fixture, leagueId, leagueName, standings) {
   if (!hTeam || !aTeam) return null;
 
   const hTime = fixture.fixture?.date ? new Date(fixture.fixture.date).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : '?';
+  const isEuropean = EURO_LEAGUES.includes(leagueId);
 
+  // Données de base
   const [hStats, aStats, injuries, h2h, hPlayers, aPlayers] = await Promise.all([
     footballAPI('/teams/statistics', { team: hTeam.id, league: leagueId, season: 2025 }),
     footballAPI('/teams/statistics', { team: aTeam.id, league: leagueId, season: 2025 }),
@@ -59,15 +79,43 @@ async function collectMatchData(fixture, leagueId, leagueName, standings) {
   const hStand = standings.find(s => s.team?.id === hTeam.id);
   const aStand = standings.find(s => s.team?.id === aTeam.id);
 
-  const hTopPlayers = hPlayers.slice(0, 5).map(p => {
-    const s = p.statistics?.[0];
-    return `${p.player?.name}(${s?.goals?.total||0}buts,${s?.goals?.assists||0}passes,${s?.games?.appearences||0}matchs)`;
-  }).join(' | ') || '?';
+  // Pour matchs européens : récupérer aussi les stats en championnat national
+  let statsSection = '';
+  if (isEuropean) {
+    const [hNatId, aNatId] = await Promise.all([getNationalLeague(hTeam.id), getNationalLeague(aTeam.id)]);
+    const [hNatStats, aNatStats, hNatPlayers, aNatPlayers] = await Promise.all([
+      hNatId ? footballAPI('/teams/statistics', { team: hTeam.id, league: hNatId, season: 2025 }) : Promise.resolve(null),
+      aNatId ? footballAPI('/teams/statistics', { team: aTeam.id, league: aNatId, season: 2025 }) : Promise.resolve(null),
+      hNatId ? footballAPI('/players', { team: hTeam.id, league: hNatId, season: 2025 }) : Promise.resolve([]),
+      aNatId ? footballAPI('/players', { team: aTeam.id, league: aNatId, season: 2025 }) : Promise.resolve([]),
+    ]);
 
-  const aTopPlayers = aPlayers.slice(0, 5).map(p => {
-    const s = p.statistics?.[0];
-    return `${p.player?.name}(${s?.goals?.total||0}buts,${s?.goals?.assists||0}passes,${s?.games?.appearences||0}matchs)`;
-  }).join(' | ') || '?';
+    statsSection = `
+STATS EN ${leagueName.toUpperCase()} (forme européenne):
+${hTeam.name}: marque ${hStats?.goals?.for?.average?.home||'?'}/match, concède ${hStats?.goals?.against?.average?.home||'?'}/match
+${aTeam.name}: marque ${aStats?.goals?.for?.average?.away||'?'}/match, concède ${aStats?.goals?.against?.average?.away||'?'}/match
+
+STATS EN CHAMPIONNAT NATIONAL (forme générale):
+${hTeam.name}: marque ${hNatStats?.goals?.for?.average?.home||'?'}/match, concède ${hNatStats?.goals?.against?.average?.home||'?'}/match
+${aTeam.name}: marque ${aNatStats?.goals?.for?.average?.away||'?'}/match, concède ${aNatStats?.goals?.against?.average?.away||'?'}/match
+
+JOUEURS EN ${leagueName.toUpperCase()} (stats européennes):
+${hTeam.name}: ${formatPlayers(hPlayers)}
+${aTeam.name}: ${formatPlayers(aPlayers)}
+
+JOUEURS EN CHAMPIONNAT NATIONAL (forme individuelle):
+${hTeam.name}: ${hNatPlayers.length > 0 ? formatPlayers(hNatPlayers) : 'N/A'}
+${aTeam.name}: ${aNatPlayers.length > 0 ? formatPlayers(aNatPlayers) : 'N/A'}`;
+  } else {
+    statsSection = `
+STATS OFFENSIVES/DÉFENSIVES:
+${hTeam.name}: marque ${hStats?.goals?.for?.average?.home||'?'}/match, concède ${hStats?.goals?.against?.average?.home||'?'}/match
+${aTeam.name}: marque ${aStats?.goals?.for?.average?.away||'?'}/match, concède ${aStats?.goals?.against?.average?.away||'?'}/match
+
+JOUEURS CLÉS:
+${hTeam.name}: ${formatPlayers(hPlayers)}
+${aTeam.name}: ${formatPlayers(aPlayers)}`;
+  }
 
   return {
     match: `${hTeam.name} vs ${aTeam.name}`,
@@ -75,11 +123,10 @@ async function collectMatchData(fixture, leagueId, leagueName, standings) {
     heure: hTime,
     domicile: hTeam.name,
     exterieur: aTeam.name,
+    isEuropean,
     data: {
       classement: `${hTeam.name} ${hStand?.rank||'?'}e (${hStand?.points||'?'}pts, forme:${(hStand?.form||'').slice(-5)}) vs ${aTeam.name} ${aStand?.rank||'?'}e (${aStand?.points||'?'}pts, forme:${(aStand?.form||'').slice(-5)})`,
-      offenseDef: `${hTeam.name} marque ${hStats?.goals?.for?.average?.home||'?'}/match concède ${hStats?.goals?.against?.average?.home||'?'}/match | ${aTeam.name} marque ${aStats?.goals?.for?.average?.away||'?'}/match concède ${aStats?.goals?.against?.average?.away||'?'}/match`,
-      joueursDomicile: hTopPlayers,
-      joueursExterieur: aTopPlayers,
+      statsSection,
       blesses: injuries.slice(0,6).map(i=>`${i.player?.name}(${i.team?.name})`).join(', ')||'Aucune info',
       h2h: h2h.slice(0,5).map(m=>`${m.teams?.home?.name} ${m.goals?.home}-${m.goals?.away} ${m.teams?.away?.name}`).join(' | ')||'Pas de données',
       penaltys: `${hTeam.name} ${hStats?.penalty?.scored?.total||0} pen tirés | ${aTeam.name} ${aStats?.penalty?.scored?.total||0} pen concédés`,
@@ -92,11 +139,9 @@ async function analyzeWithClaude(matchData) {
 
 MATCH: ${matchData.match} | ${matchData.competition} | ${matchData.heure}
 CLASSEMENT: ${matchData.data.classement}
-STATS: ${matchData.data.offenseDef}
-JOUEURS DOMICILE: ${matchData.data.joueursDomicile}
-JOUEURS EXTÉRIEUR: ${matchData.data.joueursExterieur}
+${matchData.data.statsSection}
 BLESSÉS/SUSPENDUS: ${matchData.data.blesses}
-H2H: ${matchData.data.h2h}
+H2H (5 derniers): ${matchData.data.h2h}
 PENALTYS: ${matchData.data.penaltys}
 
 MATRICE F1→F14:
