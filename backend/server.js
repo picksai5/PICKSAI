@@ -160,13 +160,25 @@ F12[poids:7,taux:60%] Joueur retour blessure sous-estimé par bookmakers
 F13[poids:6,taux:58%] Possession >60% vs bloc bas qui concède sur contres
 F14[poids:9,taux:67%] Value bet: joueur sous-coté vs vraie probabilité
 
-RÈGLES IMPORTANTES:
-- Score = somme poids facteurs activés × 10
-- ROUGE ≥85, ORANGE 70-84, VERT 60-69
-- Analyse les absences clés (ex: défenseur titulaire blessé = facteur favorable attaquant)
-- Cible LE meilleur joueur décisif (but OU passe décisive)
-- Prends en compte la forme individuelle récente des joueurs
-- Pour Champions League/Europa League: F7 est souvent activé + attention aux doubles confrontations
+RÈGLES ABSOLUES — RESPECTE-LES TOUJOURS SANS EXCEPTION:
+
+SÉLECTION DU JOUEUR:
+- ❌ INTERDIT absolu de proposer un DÉFENSEUR (défenseur central, latéral gauche/droit) comme pick principal
+- ❌ INTERDIT absolu de proposer un GARDIEN comme pick
+- ❌ INTERDIT absolu de proposer un joueur listé dans BLESSÉS/SUSPENDUS — lis cette liste EN PREMIER avant tout
+- ❌ INTERDIT d'inventer un joueur ou un nom approximatif — utilise uniquement des joueurs connus et confirmés
+- ✅ Cible UNIQUEMENT: attaquants de pointe, ailiers, milieux offensifs, milieux box-to-box avec buts
+- ✅ Priorité aux joueurs avec le plus de buts + passes cette saison dans les données fournies
+- ✅ Joueur décisif = but OU passe décisive (probabilité plus haute qu'un simple buteur)
+- ✅ Si tu n'as pas assez de données sur un joueur, choisis l'attaquant principal connu de l'équipe
+
+QUALITÉ DE L'ANALYSE:
+- ✅ Pour CL/Europa League: utilise les stats européennes ET nationales pour évaluer la forme
+- ✅ Active F7 systématiquement pour les matchs CL/EL si une star est en forme
+- ✅ Les absences défensives adverses = bonus pour l'attaquant ciblé (active F5 ou F11)
+- ✅ Score = somme poids facteurs activés × 10
+- ✅ ROUGE ≥85, ORANGE 70-84, VERT 60-69
+- ✅ Sois précis dans la raison : cite des stats réelles (ex: "8 buts en 10 matchs CL")
 
 Retourne UNIQUEMENT ce JSON (pas de texte autour):
 {"score_matriciel":85,"facteurs":["F1","F2","F7"],"alerte":"ROUGE","pick":{"joueur":"Prénom Nom","equipe":"Equipe","type":"Joueur décisif","prob":68,"cote_estimee":1.75,"raison":"Raison précise avec stats concrètes en 2 phrases max"},"buteur_alternatif":{"joueur":"Prénom Nom","equipe":"Equipe","prob":45,"cote_estimee":2.20,"raison":"Raison courte"},"contexte":"Contexte du match en 1 phrase","score_prono":"2-1","valide":true}
