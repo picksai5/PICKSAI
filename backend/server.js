@@ -66,15 +66,39 @@ async function collectMatchData(fixture, leagueId, leagueName, standings) {
   const hTime = fixture.fixture?.date ? new Date(fixture.fixture.date).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : '?';
   const isEuropean = EURO_LEAGUES.includes(leagueId);
 
-  // Données de base
-  const [hStats, aStats, injuries, h2h, hPlayers, aPlayers] = await Promise.all([
+  // Données de base + compositions officielles
+  const [hStats, aStats, injuries, h2h, hPlayers, aPlayers, lineups] = await Promise.all([
     footballAPI('/teams/statistics', { team: hTeam.id, league: leagueId, season: 2025 }),
     footballAPI('/teams/statistics', { team: aTeam.id, league: leagueId, season: 2025 }),
     footballAPI('/injuries', { fixture: fixtureId }),
     footballAPI('/fixtures/headtohead', { h2h: `${hTeam.id}-${aTeam.id}`, last: 5 }),
     footballAPI('/players', { team: hTeam.id, league: leagueId, season: 2025 }),
     footballAPI('/players', { team: aTeam.id, league: leagueId, season: 2025 }),
+    footballAPI('/fixtures/lineups', { fixture: fixtureId }),
   ]);
+
+  // Extraire titulaires et remplaçants
+  const hLineup = lineups.find(l => l.team?.id === hTeam.id);
+  const aLineup = lineups.find(l => l.team?.id === aTeam.id);
+
+  const formatLineup = (lineup) => {
+    if (!lineup) return null;
+    const starters = (lineup.startXI || []).map(p => p.player?.name).filter(Boolean);
+    const subs = (lineup.substitutes || []).map(p => p.player?.name).filter(Boolean);
+    return { starters, subs, available: starters.length > 0 };
+  };
+
+  const hLineupData = formatLineup(hLineup);
+  const aLineupData = formatLineup(aLineup);
+
+  const lineupsSection = hLineupData?.available && aLineupData?.available
+    ? `COMPOSITIONS OFFICIELLES (utilise EN PRIORITÉ pour choisir le joueur):
+${hTeam.name} TITULAIRES: ${hLineupData.starters.join(', ')}
+${hTeam.name} REMPLAÇANTS: ${hLineupData.subs.join(', ')}
+${aTeam.name} TITULAIRES: ${aLineupData.starters.join(', ')}
+${aTeam.name} REMPLAÇANTS: ${aLineupData.subs.join(', ')}
+⚠️ Ne propose QUE des joueurs dans les TITULAIRES — jamais un remplaçant ni un absent`
+    : 'COMPOSITIONS: Non disponibles — utilise les joueurs des données stats';
 
   const hStand = standings.find(s => s.team?.id === hTeam.id);
   const aStand = standings.find(s => s.team?.id === aTeam.id);
@@ -127,6 +151,7 @@ ${aTeam.name}: ${formatPlayers(aPlayers)}`;
     data: {
       classement: `${hTeam.name} ${hStand?.rank||'?'}e (${hStand?.points||'?'}pts, forme:${(hStand?.form||'').slice(-5)}) vs ${aTeam.name} ${aStand?.rank||'?'}e (${aStand?.points||'?'}pts, forme:${(aStand?.form||'').slice(-5)})`,
       statsSection,
+      lineupsSection,
       blesses: injuries.slice(0,6).map(i=>`${i.player?.name}(${i.team?.name})`).join(', ')||'Aucune info',
       h2h: h2h.slice(0,5).map(m=>`${m.teams?.home?.name} ${m.goals?.home}-${m.goals?.away} ${m.teams?.away?.name}`).join(' | ')||'Pas de données',
       penaltys: `${hTeam.name} ${hStats?.penalty?.scored?.total||0} pen tirés | ${aTeam.name} ${aStats?.penalty?.scored?.total||0} pen concédés`,
@@ -139,6 +164,7 @@ async function analyzeWithClaude(matchData) {
 
 MATCH: ${matchData.match} | ${matchData.competition} | ${matchData.heure}
 CLASSEMENT: ${matchData.data.classement}
+${matchData.data.lineupsSection}
 ${matchData.data.statsSection}
 BLESSÉS/SUSPENDUS: ${matchData.data.blesses}
 H2H (5 derniers): ${matchData.data.h2h}
