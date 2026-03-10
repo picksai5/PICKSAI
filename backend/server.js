@@ -166,11 +166,13 @@ SÉLECTION DU JOUEUR:
 - ❌ INTERDIT absolu de proposer un DÉFENSEUR (défenseur central, latéral gauche/droit) comme pick principal
 - ❌ INTERDIT absolu de proposer un GARDIEN comme pick
 - ❌ INTERDIT absolu de proposer un joueur listé dans BLESSÉS/SUSPENDUS — lis cette liste EN PREMIER avant tout
-- ❌ INTERDIT d'inventer un joueur ou un nom approximatif — utilise uniquement des joueurs connus et confirmés
+- ❌ INTERDIT de proposer un joueur dont tu n'es pas certain qu'il joue ce soir — en cas de doute, choisis un autre
+- ❌ INTERDIT de proposer un joueur décédé, retraité ou transféré — utilise UNIQUEMENT les joueurs présents dans les données fournies avec stats réelles cette saison (buts > 0 ou matchs > 5)
+- ❌ INTERDIT d'inventer un nom — si un joueur n'apparaît pas dans les données fournies, ne le propose pas
 - ✅ Cible UNIQUEMENT: attaquants de pointe, ailiers, milieux offensifs, milieux box-to-box avec buts
 - ✅ Priorité aux joueurs avec le plus de buts + passes cette saison dans les données fournies
 - ✅ Joueur décisif = but OU passe décisive (probabilité plus haute qu'un simple buteur)
-- ✅ Si tu n'as pas assez de données sur un joueur, choisis l'attaquant principal connu de l'équipe
+- ✅ Si les données joueurs sont insuffisantes ou vides → retourne {"valide":false}
 
 QUALITÉ DE L'ANALYSE:
 - ✅ Pour CL/Europa League: utilise les stats européennes ET nationales pour évaluer la forme
