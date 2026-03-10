@@ -25,8 +25,32 @@ const LEAGUES = [
   { id: 3,   name: 'Europa League' },
 ];
 
+const EURO_LEAGUES = [2, 3, 848];
+
+// ── CACHE SYSTÈME ─────────────────────────────────────────
+// Stocke les données lourdes 1x par jour, scan rapide après
+const cache = {
+  standings: {},      // { leagueId: { data, timestamp } }
+  teamStats: {},      // { teamId_leagueId: { data, timestamp } }
+  players: {},        // { teamId_leagueId: { data, timestamp } }
+  natLeagues: {},     // { teamId: { leagueId, timestamp } }
+  lastDate: null,     // date du dernier cache
+};
+
+const CACHE_TTL = 6 * 60 * 60 * 1000; // 6 heures
+
+function isCacheValid(entry) {
+  if (!entry) return false;
+  return Date.now() - entry.timestamp < CACHE_TTL;
+}
+
+function getTodayStr() {
+  return new Date().toISOString().split('T')[0];
+}
+
+// ── API FOOTBALL ──────────────────────────────────────────
 async function footballAPI(endpoint, params = {}) {
-  await sleep(300);
+  await sleep(200);
   try {
     const res = await axios.get(`${FOOTBALL_API_BASE}${endpoint}`, {
       headers: { 'x-apisports-key': FOOTBALL_API_KEY, 'x-rapidapi-host': 'v3.football.api-sports.io' },
@@ -39,9 +63,111 @@ async function footballAPI(endpoint, params = {}) {
   }
 }
 
-// Compétitions européennes
-const EURO_LEAGUES = [2, 3, 848];
+// ── FONCTIONS AVEC CACHE ──────────────────────────────────
+async function getStandingsCached(leagueId) {
+  const key = `${leagueId}`;
+  if (isCacheValid(cache.standings[key])) return cache.standings[key].data;
+  const data = await footballAPI('/standings', { league: leagueId, season: 2025 });
+  const standings = data?.[0]?.league?.standings?.[0] || [];
+  cache.standings[key] = { data: standings, timestamp: Date.now() };
+  return standings;
+}
 
+async function getTeamStatsCached(teamId, leagueId) {
+  const key = `${teamId}_${leagueId}`;
+  if (isCacheValid(cache.teamStats[key])) return cache.teamStats[key].data;
+  const data = await footballAPI('/teams/statistics', { team: teamId, league: leagueId, season: 2025 });
+  cache.teamStats[key] = { data, timestamp: Date.now() };
+  return data;
+}
+
+async function getPlayersCached(teamId, leagueId) {
+  const key = `${teamId}_${leagueId}`;
+  if (isCacheValid(cache.players[key])) return cache.players[key].data;
+  const data = await footballAPI('/players', { team: teamId, league: leagueId, season: 2025 });
+  cache.players[key] = { data, timestamp: Date.now() };
+  return data;
+}
+
+async function getNationalLeagueCached(teamId) {
+  const key = `${teamId}`;
+  if (isCacheValid(cache.natLeagues[key])) return cache.natLeagues[key].leagueId;
+  const data = await footballAPI('/leagues', { team: teamId, season: 2025, type: 'League' });
+  const priority = [39, 140, 135, 78, 61, 88, 94];
+  const leagueIds = data.map(d => d.league?.id);
+  let leagueId = null;
+  for (const p of priority) { if (leagueIds.includes(p)) { leagueId = p; break; } }
+  if (!leagueId) leagueId = data?.[0]?.league?.id || null;
+  cache.natLeagues[key] = { leagueId, timestamp: Date.now() };
+  return leagueId;
+}
+
+// ── PRECHARGEMENT CACHE (appelé 1x par jour) ─────────────
+async function preloadCache() {
+  const today = getTodayStr();
+  if (cache.lastDate === today) {
+    console.log('Cache déjà chargé pour aujourd\'hui');
+    return;
+  }
+  console.log('Préchargement cache...');
+
+  // Récupérer classements toutes ligues en parallèle
+  await Promise.all(LEAGUES.map(l => getStandingsCached(l.id)));
+  console.log('Cache classements OK');
+
+  // Récupérer matchs du jour pour précharger stats équipes
+  const today_fixtures = [];
+  for (const league of LEAGUES) {
+    const fixtures = await footballAPI('/fixtures', { date: today, league: league.id, season: 2025 });
+    today_fixtures.push(...fixtures.map(f => ({ ...f, leagueId: league.id })));
+  }
+
+  // Précharger stats équipes en parallèle (max 5 à la fois)
+  const teamPairs = [];
+  for (const f of today_fixtures) {
+    if (f.teams?.home) teamPairs.push({ teamId: f.teams.home.id, leagueId: f.leagueId });
+    if (f.teams?.away) teamPairs.push({ teamId: f.teams.away.id, leagueId: f.leagueId });
+  }
+
+  // Dédupliquer
+  const seen = new Set();
+  const uniquePairs = teamPairs.filter(p => {
+    const k = `${p.teamId}_${p.leagueId}`;
+    if (seen.has(k)) return false;
+    seen.add(k); return true;
+  });
+
+  // Charger par batch de 5
+  for (let i = 0; i < uniquePairs.length; i += 5) {
+    const batch = uniquePairs.slice(i, i + 5);
+    await Promise.all(batch.map(p => Promise.all([
+      getTeamStatsCached(p.teamId, p.leagueId),
+      getPlayersCached(p.teamId, p.leagueId),
+    ])));
+  }
+
+  // Pour matchs européens : précharger aussi stats nationales
+  const euroFixtures = today_fixtures.filter(f => EURO_LEAGUES.includes(f.leagueId));
+  for (const f of euroFixtures) {
+    const [hNatId, aNatId] = await Promise.all([
+      getNationalLeagueCached(f.teams?.home?.id),
+      getNationalLeagueCached(f.teams?.away?.id),
+    ]);
+    if (hNatId) await Promise.all([
+      getTeamStatsCached(f.teams.home.id, hNatId),
+      getPlayersCached(f.teams.home.id, hNatId),
+    ]);
+    if (aNatId) await Promise.all([
+      getTeamStatsCached(f.teams.away.id, aNatId),
+      getPlayersCached(f.teams.away.id, aNatId),
+    ]);
+  }
+
+  cache.lastDate = today;
+  console.log(`Cache chargé ! ${uniquePairs.length} équipes, ${euroFixtures.length} matchs européens`);
+}
+
+// ── FORMAT JOUEURS ────────────────────────────────────────
 function formatPlayers(players) {
   return players.slice(0, 5).map(p => {
     const s = p.statistics?.[0];
@@ -49,97 +175,78 @@ function formatPlayers(players) {
   }).join(' | ') || '?';
 }
 
-async function getNationalLeague(teamId) {
-  const data = await footballAPI('/leagues', { team: teamId, season: 2025, type: 'League' });
-  const priority = [39, 140, 135, 78, 61, 88, 94];
-  const leagueIds = data.map(d => d.league?.id);
-  for (const p of priority) { if (leagueIds.includes(p)) return p; }
-  return data?.[0]?.league?.id || null;
-}
-
+// ── COLLECTE DONNÉES MATCH (ultra rapide grâce au cache) ─
 async function collectMatchData(fixture, leagueId, leagueName, standings) {
   const hTeam = fixture.teams?.home;
   const aTeam = fixture.teams?.away;
   const fixtureId = fixture.fixture?.id;
   if (!hTeam || !aTeam) return null;
 
-  const hTime = fixture.fixture?.date ? new Date(fixture.fixture.date).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : '?';
+  const hTime = fixture.fixture?.date
+    ? new Date(fixture.fixture.date).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
+    : '?';
   const isEuropean = EURO_LEAGUES.includes(leagueId);
 
-  // Données de base + compositions officielles
-  const [hStats, aStats, injuries, h2h, hPlayers, aPlayers, lineups] = await Promise.all([
-    footballAPI('/teams/statistics', { team: hTeam.id, league: leagueId, season: 2025 }),
-    footballAPI('/teams/statistics', { team: aTeam.id, league: leagueId, season: 2025 }),
-    footballAPI('/injuries', { fixture: fixtureId }),
+  // Tout depuis le cache (instantané) + lineups/injuries en temps réel
+  const [hStats, aStats, hPlayers, aPlayers, injuries, h2h, lineups] = await Promise.all([
+    getTeamStatsCached(hTeam.id, leagueId),
+    getTeamStatsCached(aTeam.id, leagueId),
+    getPlayersCached(hTeam.id, leagueId),
+    getPlayersCached(aTeam.id, leagueId),
+    footballAPI('/injuries', { fixture: fixtureId }),           // temps réel
     footballAPI('/fixtures/headtohead', { h2h: `${hTeam.id}-${aTeam.id}`, last: 5 }),
-    footballAPI('/players', { team: hTeam.id, league: leagueId, season: 2025 }),
-    footballAPI('/players', { team: aTeam.id, league: leagueId, season: 2025 }),
-    footballAPI('/fixtures/lineups', { fixture: fixtureId }),
+    footballAPI('/fixtures/lineups', { fixture: fixtureId }),   // temps réel
   ]);
 
-  // Extraire titulaires et remplaçants
+  // Stats nationales depuis cache (pour matchs européens)
+  let hNatSection = '', aNatSection = '';
+  if (isEuropean) {
+    const [hNatId, aNatId] = await Promise.all([
+      getNationalLeagueCached(hTeam.id),
+      getNationalLeagueCached(aTeam.id),
+    ]);
+    if (hNatId) {
+      const [hNatStats, hNatPlayers] = await Promise.all([
+        getTeamStatsCached(hTeam.id, hNatId),
+        getPlayersCached(hTeam.id, hNatId),
+      ]);
+      hNatSection = `${hTeam.name} en championnat: ${hNatStats?.goals?.for?.average?.home||'?'}buts/match, joueurs: ${formatPlayers(hNatPlayers)}`;
+    }
+    if (aNatId) {
+      const [aNatStats, aNatPlayers] = await Promise.all([
+        getTeamStatsCached(aTeam.id, aNatId),
+        getPlayersCached(aTeam.id, aNatId),
+      ]);
+      aNatSection = `${aTeam.name} en championnat: ${aNatStats?.goals?.for?.average?.away||'?'}buts/match, joueurs: ${formatPlayers(aNatPlayers)}`;
+    }
+  }
+
+  // Compositions officielles
   const hLineup = lineups.find(l => l.team?.id === hTeam.id);
   const aLineup = lineups.find(l => l.team?.id === aTeam.id);
+  const hStarters = (hLineup?.startXI || []).map(p => p.player?.name).filter(Boolean);
+  const aStarters = (aLineup?.startXI || []).map(p => p.player?.name).filter(Boolean);
+  const hSubs = (hLineup?.substitutes || []).map(p => p.player?.name).filter(Boolean);
+  const aSubs = (aLineup?.substitutes || []).map(p => p.player?.name).filter(Boolean);
 
-  const formatLineup = (lineup) => {
-    if (!lineup) return null;
-    const starters = (lineup.startXI || []).map(p => p.player?.name).filter(Boolean);
-    const subs = (lineup.substitutes || []).map(p => p.player?.name).filter(Boolean);
-    return { starters, subs, available: starters.length > 0 };
-  };
-
-  const hLineupData = formatLineup(hLineup);
-  const aLineupData = formatLineup(aLineup);
-
-  const lineupsSection = hLineupData?.available && aLineupData?.available
-    ? `COMPOSITIONS OFFICIELLES (utilise EN PRIORITÉ pour choisir le joueur):
-${hTeam.name} TITULAIRES: ${hLineupData.starters.join(', ')}
-${hTeam.name} REMPLAÇANTS: ${hLineupData.subs.join(', ')}
-${aTeam.name} TITULAIRES: ${aLineupData.starters.join(', ')}
-${aTeam.name} REMPLAÇANTS: ${aLineupData.subs.join(', ')}
-⚠️ Ne propose QUE des joueurs dans les TITULAIRES — jamais un remplaçant ni un absent`
-    : 'COMPOSITIONS: Non disponibles — utilise les joueurs des données stats';
+  const lineupsSection = hStarters.length > 0 && aStarters.length > 0
+    ? `COMPOSITIONS OFFICIELLES (priorité absolue):
+${hTeam.name} TITULAIRES: ${hStarters.join(', ')}
+${hTeam.name} REMPLAÇANTS: ${hSubs.join(', ')}
+${aTeam.name} TITULAIRES: ${aStarters.join(', ')}
+${aTeam.name} REMPLAÇANTS: ${aSubs.join(', ')}
+⚠️ Propose UNIQUEMENT des joueurs dans les TITULAIRES`
+    : 'COMPOSITIONS: Pas encore disponibles';
 
   const hStand = standings.find(s => s.team?.id === hTeam.id);
   const aStand = standings.find(s => s.team?.id === aTeam.id);
 
-  // Pour matchs européens : récupérer aussi les stats en championnat national
-  let statsSection = '';
-  if (isEuropean) {
-    const [hNatId, aNatId] = await Promise.all([getNationalLeague(hTeam.id), getNationalLeague(aTeam.id)]);
-    const [hNatStats, aNatStats, hNatPlayers, aNatPlayers] = await Promise.all([
-      hNatId ? footballAPI('/teams/statistics', { team: hTeam.id, league: hNatId, season: 2025 }) : Promise.resolve(null),
-      aNatId ? footballAPI('/teams/statistics', { team: aTeam.id, league: aNatId, season: 2025 }) : Promise.resolve(null),
-      hNatId ? footballAPI('/players', { team: hTeam.id, league: hNatId, season: 2025 }) : Promise.resolve([]),
-      aNatId ? footballAPI('/players', { team: aTeam.id, league: aNatId, season: 2025 }) : Promise.resolve([]),
-    ]);
-
-    statsSection = `
-STATS EN ${leagueName.toUpperCase()} (forme européenne):
-${hTeam.name}: marque ${hStats?.goals?.for?.average?.home||'?'}/match, concède ${hStats?.goals?.against?.average?.home||'?'}/match
-${aTeam.name}: marque ${aStats?.goals?.for?.average?.away||'?'}/match, concède ${aStats?.goals?.against?.average?.away||'?'}/match
-
-STATS EN CHAMPIONNAT NATIONAL (forme générale):
-${hTeam.name}: marque ${hNatStats?.goals?.for?.average?.home||'?'}/match, concède ${hNatStats?.goals?.against?.average?.home||'?'}/match
-${aTeam.name}: marque ${aNatStats?.goals?.for?.average?.away||'?'}/match, concède ${aNatStats?.goals?.against?.average?.away||'?'}/match
-
-JOUEURS EN ${leagueName.toUpperCase()} (stats européennes):
-${hTeam.name}: ${formatPlayers(hPlayers)}
-${aTeam.name}: ${formatPlayers(aPlayers)}
-
-JOUEURS EN CHAMPIONNAT NATIONAL (forme individuelle):
-${hTeam.name}: ${hNatPlayers.length > 0 ? formatPlayers(hNatPlayers) : 'N/A'}
-${aTeam.name}: ${aNatPlayers.length > 0 ? formatPlayers(aNatPlayers) : 'N/A'}`;
-  } else {
-    statsSection = `
-STATS OFFENSIVES/DÉFENSIVES:
-${hTeam.name}: marque ${hStats?.goals?.for?.average?.home||'?'}/match, concède ${hStats?.goals?.against?.average?.home||'?'}/match
-${aTeam.name}: marque ${aStats?.goals?.for?.average?.away||'?'}/match, concède ${aStats?.goals?.against?.average?.away||'?'}/match
-
-JOUEURS CLÉS:
-${hTeam.name}: ${formatPlayers(hPlayers)}
-${aTeam.name}: ${formatPlayers(aPlayers)}`;
-  }
+  const statsSection = `STATS:
+${hTeam.name}: ${hStats?.goals?.for?.average?.home||'?'}buts/match, concède ${hStats?.goals?.against?.average?.home||'?'}/match
+${aTeam.name}: ${aStats?.goals?.for?.average?.away||'?'}buts/match, concède ${aStats?.goals?.against?.average?.away||'?'}/match
+${isEuropean && hNatSection ? `\nSTATS NATIONALES:\n${hNatSection}\n${aNatSection}` : ''}
+JOUEURS ${hTeam.name}: ${formatPlayers(hPlayers)}
+JOUEURS ${aTeam.name}: ${formatPlayers(aPlayers)}`;
 
   return {
     match: `${hTeam.name} vs ${aTeam.name}`,
@@ -154,64 +261,54 @@ ${aTeam.name}: ${formatPlayers(aPlayers)}`;
       lineupsSection,
       blesses: injuries.slice(0,6).map(i=>`${i.player?.name}(${i.team?.name})`).join(', ')||'Aucune info',
       h2h: h2h.slice(0,5).map(m=>`${m.teams?.home?.name} ${m.goals?.home}-${m.goals?.away} ${m.teams?.away?.name}`).join(' | ')||'Pas de données',
-      penaltys: `${hTeam.name} ${hStats?.penalty?.scored?.total||0} pen tirés | ${aTeam.name} ${aStats?.penalty?.scored?.total||0} pen concédés`,
+      penaltys: `${hTeam.name} ${hStats?.penalty?.scored?.total||0}pen | ${aTeam.name} ${aStats?.penalty?.scored?.total||0}pen concédés`,
     }
   };
 }
 
+// ── CLAUDE ANALYSE ────────────────────────────────────────
 async function analyzeWithClaude(matchData) {
-  const prompt = `Tu es PicksAI, expert pronostics football. Analyse ce match et applique la Matrice F1→F14 en détail.
+  const prompt = `Tu es PicksAI, expert pronostics football. Analyse ce match et applique la Matrice F1→F14.
 
 MATCH: ${matchData.match} | ${matchData.competition} | ${matchData.heure}
 CLASSEMENT: ${matchData.data.classement}
 ${matchData.data.lineupsSection}
 ${matchData.data.statsSection}
 BLESSÉS/SUSPENDUS: ${matchData.data.blesses}
-H2H (5 derniers): ${matchData.data.h2h}
+H2H: ${matchData.data.h2h}
 PENALTYS: ${matchData.data.penaltys}
 
 MATRICE F1→F14:
-F1[poids:10,taux:71%] Attaquant 3+buts/5derniers matchs ET défense concède 1.8+/match
-F2[poids:9,taux:68%] Top6 domicile vs 4 pires défenses, écart points >8
-F3[poids:9,taux:65%] Tireur penaltys vs équipe qui concède 0.6+ pen/match
-F4[poids:8,taux:62%] Joueur à 1-2 buts d'un milestone (10,15,20 buts)
-F5[poids:8,taux:61%] Attaquant rapide vs défenseur lent/âgé
-F6[poids:7,taux:59%] xG >2.2 sur 5 derniers matchs vs bloc bas fragile
-F7[poids:7,taux:58%] Match fort enjeu (CL,derby,relégation) + joueur en confiance
-F8[poids:6,taux:74%] F1+F2 activés ensemble (combo bonus)
-F9[poids:8,taux:64%] H2H très favorable pour le joueur ciblé
-F10[poids:6,taux:61%] Adversaire fatigué 3+matchs/10jours ou long déplacement
-F11[poids:7,taux:63%] Adversaire en zone relégation ou très bas classé
-F12[poids:7,taux:60%] Joueur retour blessure sous-estimé par bookmakers
-F13[poids:6,taux:58%] Possession >60% vs bloc bas qui concède sur contres
-F14[poids:9,taux:67%] Value bet: joueur sous-coté vs vraie probabilité
+F1[10pts,71%] Attaquant 3+buts/5matchs ET défense concède 1.8+/match
+F2[9pts,68%] Top6 domicile vs 4 pires défenses, écart >8pts
+F3[9pts,65%] Tireur penaltys vs équipe concédant 0.6+pen/match
+F4[8pts,62%] Joueur à 1-2 buts d'un milestone (10,15,20 buts)
+F5[8pts,61%] Attaquant rapide vs défenseur lent/âgé
+F6[7pts,59%] xG >2.2 sur 5 matchs vs bloc bas fragile
+F7[7pts,58%] Match fort enjeu (CL,EL,derby,relégation) + joueur en confiance
+F8[6pts,74%] F1+F2 activés ensemble
+F9[8pts,64%] H2H très favorable pour le joueur ciblé
+F10[6pts,61%] Adversaire fatigué 3+matchs/10jours
+F11[7pts,63%] Adversaire en zone relégation ou très bas classé
+F12[7pts,60%] Joueur retour blessure sous-estimé
+F13[6pts,58%] Possession >60% vs bloc bas
+F14[9pts,67%] Value bet: joueur sous-coté vs vraie probabilité
 
-RÈGLES ABSOLUES — RESPECTE-LES TOUJOURS SANS EXCEPTION:
+RÈGLES ABSOLUES:
+❌ JAMAIS un défenseur ou gardien comme pick principal
+❌ JAMAIS un joueur dans BLESSÉS/SUSPENDUS — vérifie EN PREMIER
+❌ JAMAIS un joueur remplaçant ou absent des titulaires
+❌ JAMAIS un joueur décédé, retraité ou transféré
+❌ JAMAIS inventer un joueur — utilise uniquement les joueurs dans les données
+✅ Uniquement attaquants, ailiers, milieux offensifs
+✅ Priorité aux joueurs avec le plus de buts cette saison
+✅ Si compositions dispo → utilise UNIQUEMENT les titulaires
+✅ Joueur décisif = but OU passe décisive
+✅ Score = somme poids × 10 | ROUGE ≥85 | ORANGE 70-84 | VERT 60-69
 
-SÉLECTION DU JOUEUR:
-- ❌ INTERDIT absolu de proposer un DÉFENSEUR (défenseur central, latéral gauche/droit) comme pick principal
-- ❌ INTERDIT absolu de proposer un GARDIEN comme pick
-- ❌ INTERDIT absolu de proposer un joueur listé dans BLESSÉS/SUSPENDUS — lis cette liste EN PREMIER avant tout
-- ❌ INTERDIT de proposer un joueur dont tu n'es pas certain qu'il joue ce soir — en cas de doute, choisis un autre
-- ❌ INTERDIT de proposer un joueur décédé, retraité ou transféré — utilise UNIQUEMENT les joueurs présents dans les données fournies avec stats réelles cette saison (buts > 0 ou matchs > 5)
-- ❌ INTERDIT d'inventer un nom — si un joueur n'apparaît pas dans les données fournies, ne le propose pas
-- ✅ Cible UNIQUEMENT: attaquants de pointe, ailiers, milieux offensifs, milieux box-to-box avec buts
-- ✅ Priorité aux joueurs avec le plus de buts + passes cette saison dans les données fournies
-- ✅ Joueur décisif = but OU passe décisive (probabilité plus haute qu'un simple buteur)
-- ✅ Si les données joueurs sont insuffisantes ou vides → retourne {"valide":false}
-
-QUALITÉ DE L'ANALYSE:
-- ✅ Pour CL/Europa League: utilise les stats européennes ET nationales pour évaluer la forme
-- ✅ Active F7 systématiquement pour les matchs CL/EL si une star est en forme
-- ✅ Les absences défensives adverses = bonus pour l'attaquant ciblé (active F5 ou F11)
-- ✅ Score = somme poids facteurs activés × 10
-- ✅ ROUGE ≥85, ORANGE 70-84, VERT 60-69
-- ✅ Sois précis dans la raison : cite des stats réelles (ex: "8 buts en 10 matchs CL")
-
-Retourne UNIQUEMENT ce JSON (pas de texte autour):
-{"score_matriciel":85,"facteurs":["F1","F2","F7"],"alerte":"ROUGE","pick":{"joueur":"Prénom Nom","equipe":"Equipe","type":"Joueur décisif","prob":68,"cote_estimee":1.75,"raison":"Raison précise avec stats concrètes en 2 phrases max"},"buteur_alternatif":{"joueur":"Prénom Nom","equipe":"Equipe","prob":45,"cote_estimee":2.20,"raison":"Raison courte"},"contexte":"Contexte du match en 1 phrase","score_prono":"2-1","valide":true}
-
-Si score < 60: {"valide":false,"score_matriciel":X,"raison_rejet":"explication courte"}`;
+JSON UNIQUEMENT (pas de texte):
+{"score_matriciel":85,"facteurs":["F1","F2","F7"],"alerte":"ROUGE","pick":{"joueur":"Prénom Nom","equipe":"Equipe","type":"Joueur décisif","prob":68,"cote_estimee":1.75,"raison":"Raison précise 2 phrases max avec stats"},"buteur_alternatif":{"joueur":"Prénom Nom","equipe":"Equipe","prob":45,"cote_estimee":2.20,"raison":"Raison courte"},"contexte":"1 phrase","score_prono":"2-1","valide":true}
+Si score<60: {"valide":false,"score_matriciel":X,"raison_rejet":"explication"}`;
 
   try {
     const response = await anthropic.messages.create({
@@ -232,9 +329,13 @@ Si score < 60: {"valide":false,"score_matriciel":X,"raison_rejet":"explication c
 // ── SCAN DU JOUR ──────────────────────────────────────────
 app.get('/api/scan', async (req, res) => {
   try {
-    const today = new Date().toISOString().split('T')[0];
-    const allFixtures = [];
+    const today = getTodayStr();
 
+    // Précharger le cache si pas fait aujourd'hui
+    await preloadCache();
+
+    // Récupérer tous les matchs du jour (depuis cache fixtures)
+    const allFixtures = [];
     for (const league of LEAGUES) {
       const data = await footballAPI('/fixtures', { date: today, league: league.id, season: 2025 });
       if (data.length > 0) allFixtures.push(...data.map(f => ({ ...f, leagueName: league.name, leagueId: league.id })));
@@ -246,13 +347,12 @@ app.get('/api/scan', async (req, res) => {
 
     const picks = [];
     const rejected = [];
-    const toAnalyze = allFixtures.slice(0, 12);
 
-    for (const fixture of toAnalyze) {
+    // Analyser TOUS les matchs grâce au cache
+    for (const fixture of allFixtures) {
       try {
         const leagueId = fixture.leagueId || fixture.league?.id;
-        const standData = await footballAPI('/standings', { league: leagueId, season: 2025 });
-        const standings = standData?.[0]?.league?.standings?.[0] || [];
+        const standings = await getStandingsCached(leagueId);
         const matchData = await collectMatchData(fixture, leagueId, fixture.leagueName, standings);
         if (!matchData) continue;
 
@@ -286,7 +386,7 @@ app.get('/api/scan', async (req, res) => {
 
     res.json({
       date: new Date().toLocaleDateString('fr-FR'),
-      total_analyses: toAnalyze.length,
+      total_analyses: allFixtures.length,
       picks,
       rejected,
       top_pick: picks[0] || null,
@@ -294,6 +394,16 @@ app.get('/api/scan', async (req, res) => {
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
+});
+
+// ── RESET CACHE (forcer rechargement) ────────────────────
+app.get('/api/reset-cache', (req, res) => {
+  cache.lastDate = null;
+  Object.keys(cache.standings).forEach(k => delete cache.standings[k]);
+  Object.keys(cache.teamStats).forEach(k => delete cache.teamStats[k]);
+  Object.keys(cache.players).forEach(k => delete cache.players[k]);
+  Object.keys(cache.natLeagues).forEach(k => delete cache.natLeagues[k]);
+  res.json({ status: 'Cache réinitialisé' });
 });
 
 // ── BACKTEST ──────────────────────────────────────────────
@@ -364,7 +474,7 @@ app.get('/api/backtest', async (req, res) => {
   } catch(e) { res.status(500).json({error:e.message}); }
 });
 
-app.get('/api/health', (req, res) => res.json({ status: 'ok', name: 'PicksAI' }));
+app.get('/api/health', (req, res) => res.json({ status: 'ok', name: 'PicksAI', cacheDate: cache.lastDate }));
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, '../frontend/index.html')));
 
 const PORT = process.env.PORT || 3000;
