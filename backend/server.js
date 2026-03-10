@@ -248,6 +248,16 @@ ${isEuropean && hNatSection ? `\nSTATS NATIONALES:\n${hNatSection}\n${aNatSectio
 JOUEURS ${hTeam.name}: ${formatPlayers(hPlayers)}
 JOUEURS ${aTeam.name}: ${formatPlayers(aPlayers)}`;
 
+  // Données brutes pour calcul confiance côté serveur
+  const hGoalsFor = parseFloat(hStats?.goals?.for?.average?.home) || 0;
+  const aGoalsAgainst = parseFloat(aStats?.goals?.against?.average?.away) || 0;
+  const hWins = (hStand?.form||'').slice(-5).match(/W/g)?.length || 0;
+  const h2hWins = h2h.filter(m => {
+    const isHome = m.teams?.home?.id === hTeam.id;
+    const hg = m.goals?.home || 0; const ag = m.goals?.away || 0;
+    return isHome ? hg > ag : ag > hg;
+  }).length;
+
   return {
     match: `${hTeam.name} vs ${aTeam.name}`,
     competition: leagueName,
@@ -255,6 +265,15 @@ JOUEURS ${aTeam.name}: ${formatPlayers(aPlayers)}`;
     domicile: hTeam.name,
     exterieur: aTeam.name,
     isEuropean,
+    // Données brutes pour confiance_score serveur
+    raw: {
+      hGoalsFor,
+      aGoalsAgainst,
+      hWins,
+      h2hWins,
+      hRank: hStand?.rank || 99,
+      aRank: aStand?.rank || 99,
+    },
     data: {
       classement: `${hTeam.name} ${hStand?.rank||'?'}e (${hStand?.points||'?'}pts, forme:${(hStand?.form||'').slice(-5)}) vs ${aTeam.name} ${aStand?.rank||'?'}e (${aStand?.points||'?'}pts, forme:${(aStand?.form||'').slice(-5)})`,
       statsSection,
@@ -320,7 +339,7 @@ Calcule confiance_score en additionnant:
 Ce score permet de classer les picks à score_matriciel égal — plus confiance_score est élevé, plus le pick est prioritaire.
 
 JSON UNIQUEMENT (pas de texte):
-{"score_matriciel":85,"confiance_score":75,"facteurs":["F1","F2","F7"],"alerte":"ROUGE","pick":{"joueur":"Prénom Nom","equipe":"Equipe","type":"Joueur décisif","prob":68,"cote_estimee":1.75,"raison":"Raison précise 2 phrases max avec stats"},"buteur_alternatif":{"joueur":"Prénom Nom","equipe":"Equipe","prob":45,"cote_estimee":2.20,"raison":"Raison courte"},"contexte":"1 phrase","score_prono":"2-1","valide":true}
+{"score_matriciel":85,"facteurs":["F1","F2","F7"],"alerte":"ROUGE","pick":{"joueur":"Prénom Nom","equipe":"Equipe","type":"Joueur décisif","prob":68,"cote_estimee":1.75,"raison":"Raison précise 2 phrases max avec stats"},"buteur_alternatif":{"joueur":"Prénom Nom","equipe":"Equipe","prob":45,"cote_estimee":2.20,"raison":"Raison courte"},"contexte":"1 phrase","score_prono":"2-1","valide":true}
 Si score<60: {"valide":false,"score_matriciel":X,"raison_rejet":"explication"}`;
 
   try {
@@ -379,6 +398,11 @@ app.get('/api/scan', async (req, res) => {
             heure: matchData.heure,
             domicile: matchData.domicile,
             exterieur: matchData.exterieur,
+            // Données brutes pour confiance_score (supprimées après calcul)
+            _raw: matchData.raw,
+            _domicile: matchData.domicile,
+            _exterieur: matchData.exterieur,
+            _isEuropean: matchData.isEuropean,
           });
         } else {
           rejected.push({
@@ -394,7 +418,46 @@ app.get('/api/scan', async (req, res) => {
       }
     }
 
-    // Tri par score matriciel, puis confiance_score en départage
+    // Calcul confiance_score côté serveur (règles fixes, stable à chaque scan)
+    picks.forEach(pick => {
+      const raw = pick._raw || {};
+      let confiance = 0;
+
+      // +15 si joueur pick est côté domicile
+      if (pick.pick?.equipe === pick._domicile) confiance += 15;
+
+      // +15 si défense adverse concède 2+ buts/match
+      if (raw.aGoalsAgainst >= 2.0) confiance += 15;
+      else if (raw.aGoalsAgainst >= 1.5) confiance += 8;
+
+      // +10 si H2H favorable (3+ victoires sur 5)
+      if (raw.h2hWins >= 3) confiance += 10;
+      else if (raw.h2hWins >= 2) confiance += 5;
+
+      // +10 si match CL/EL (enjeu élevé + stars en forme)
+      if (pick._isEuropean) confiance += 10;
+
+      // +10 si équipe en grande forme (4-5 victoires sur 5)
+      if (raw.hWins >= 4) confiance += 10;
+      else if (raw.hWins >= 3) confiance += 5;
+
+      // +8 si adversaire faible (rang 15+)
+      if (raw.aRank >= 15) confiance += 8;
+
+      // +5 si équipe domicile dans top 4
+      if (raw.hRank <= 4) confiance += 5;
+
+      // -10 si joueur joue en déplacement loin (extérieur en CL/EL = hostile)
+      if (pick._isEuropean && pick.pick?.equipe === pick._exterieur) confiance -= 10;
+
+      pick.confiance_score = Math.min(100, Math.max(0, confiance));
+      delete pick._raw;
+      delete pick._domicile;
+      delete pick._exterieur;
+      delete pick._isEuropean;
+    });
+
+    // Tri : score matriciel d'abord, confiance_score en départage
     picks.sort((a, b) => {
       if (b.score_matriciel !== a.score_matriciel) return b.score_matriciel - a.score_matriciel;
       return (b.confiance_score || 0) - (a.confiance_score || 0);
