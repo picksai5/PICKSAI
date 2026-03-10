@@ -306,8 +306,21 @@ RÈGLES ABSOLUES:
 ✅ Joueur décisif = but OU passe décisive
 ✅ Score = somme poids × 10 | ROUGE ≥85 | ORANGE 70-84 | VERT 60-69
 
+SCORE DE CONFIANCE (confiance_score de 0 à 100, pour départager les picks à score égal):
+Calcule confiance_score en additionnant:
++20 si le joueur a 3+ buts sur ses 5 derniers matchs
++15 si le joueur joue à domicile
++15 si la défense adverse concède 2+ buts/match
++10 si H2H favorable (2+ victoires sur 5)
++10 si le joueur a 5+ passes décisives cette saison
++10 si adversaire fatigué ou déplacement long
++10 si match fort enjeu (CL/EL/derby) et joueur en forme
++5 si joueur est tireur de penaltys
++5 si joueur proche d'un milestone
+Ce score permet de classer les picks à score_matriciel égal — plus confiance_score est élevé, plus le pick est prioritaire.
+
 JSON UNIQUEMENT (pas de texte):
-{"score_matriciel":85,"facteurs":["F1","F2","F7"],"alerte":"ROUGE","pick":{"joueur":"Prénom Nom","equipe":"Equipe","type":"Joueur décisif","prob":68,"cote_estimee":1.75,"raison":"Raison précise 2 phrases max avec stats"},"buteur_alternatif":{"joueur":"Prénom Nom","equipe":"Equipe","prob":45,"cote_estimee":2.20,"raison":"Raison courte"},"contexte":"1 phrase","score_prono":"2-1","valide":true}
+{"score_matriciel":85,"confiance_score":75,"facteurs":["F1","F2","F7"],"alerte":"ROUGE","pick":{"joueur":"Prénom Nom","equipe":"Equipe","type":"Joueur décisif","prob":68,"cote_estimee":1.75,"raison":"Raison précise 2 phrases max avec stats"},"buteur_alternatif":{"joueur":"Prénom Nom","equipe":"Equipe","prob":45,"cote_estimee":2.20,"raison":"Raison courte"},"contexte":"1 phrase","score_prono":"2-1","valide":true}
 Si score<60: {"valide":false,"score_matriciel":X,"raison_rejet":"explication"}`;
 
   try {
@@ -381,7 +394,11 @@ app.get('/api/scan', async (req, res) => {
       }
     }
 
-    picks.sort((a, b) => b.score_matriciel - a.score_matriciel);
+    // Tri par score matriciel, puis confiance_score en départage
+    picks.sort((a, b) => {
+      if (b.score_matriciel !== a.score_matriciel) return b.score_matriciel - a.score_matriciel;
+      return (b.confiance_score || 0) - (a.confiance_score || 0);
+    });
     rejected.sort((a, b) => b.score_matriciel - a.score_matriciel);
 
     res.json({
