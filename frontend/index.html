@@ -711,16 +711,67 @@ function saveParams() {
 }
 
 // ── TRACK RECORD ─────────────────────────────────────────
-function renderTrack() {
-  const picks = state.picks;
+function trackStats(picks) {
   const won = picks.filter(p => p.won).length;
   const wr = picks.length > 0 ? Math.round((won / picks.length) * 100) : 0;
+  const profit = picks.reduce((a, p) => a + p.gain, 0);
+  return { won, total: picks.length, wr, profit };
+}
+
+function trackSection(title, color, emoji, picks) {
+  if (picks.length === 0) return '';
+  const { won, total, wr, profit } = trackStats(picks);
+  const wrColor = wr >= 60 ? 'var(--green)' : wr >= 50 ? 'var(--gold)' : 'var(--red)';
+  return `
+    <div style="margin-bottom:20px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;padding:8px 12px;background:var(--bg2);border-radius:8px;border-left:3px solid ${color}">
+        <div style="font-family:'Bebas Neue';font-size:16px;color:${color}">${emoji} ${title}</div>
+        <div style="display:flex;gap:16px;font-size:12px">
+          <span style="color:var(--muted)">${total} picks</span>
+          <span style="color:${wrColor};font-weight:bold">${wr}% WR</span>
+          <span style="color:${profit>=0?'var(--green)':'var(--red)'};font-weight:bold">${profit>=0?'+':''}${profit}€</span>
+        </div>
+      </div>
+      ${picks.map(p => `
+        <div class="track-item" style="border-color:${p.won ? '#10b98133' : '#ef444422'}">
+          <div class="track-header">
+            <div>
+              <div class="track-player">
+                <span>${p.won ? '✅' : '❌'}</span>
+                <span class="track-name">${p.joueur}</span>
+                <span class="track-type">${p.type}</span>
+                <span style="font-size:10px;padding:2px 6px;border-radius:3px;background:${color}22;color:${color};border:1px solid ${color}44">${p.alerte||'?'}</span>
+              </div>
+              <div class="track-match">${p.match} · ${p.competition}</div>
+              <div class="factors">${(p.facteurs||[]).map(f => factorBadge(f)).join('')}</div>
+            </div>
+            <div style="text-align:right;flex-shrink:0;margin-left:14px">
+              <div class="track-gain" style="color:${p.gain>=0?'var(--green)':'var(--red)'}">${p.gain>=0?'+':''}${p.gain}€</div>
+              <div class="track-mise">Mise: ${p.mise}€ · ×${p.cote}</div>
+              <div class="track-date">${new Date(p.date).toLocaleDateString('fr-FR')}</div>
+            </div>
+          </div>
+        </div>`).join('')}
+    </div>`;
+}
+
+function renderTrack() {
+  const picks = state.picks;
+
+  // Séparer par fiabilité
+  const rouge  = picks.filter(p => p.alerte === 'ROUGE');
+  const orange = picks.filter(p => p.alerte === 'ORANGE');
+  const vert   = picks.filter(p => p.alerte === 'VERT' || !p.alerte);
+
+  // Stats globales
+  const { won, total, wr, profit } = trackStats(picks);
   const wrColor = wr >= 60 ? 'var(--green)' : wr >= 50 ? 'var(--gold)' : 'var(--red)';
 
-  document.getElementById('total-picks').textContent = picks.length;
+  document.getElementById('total-picks').textContent = total;
   document.getElementById('track-winrate').textContent = wr + '%';
   document.getElementById('track-winrate').style.color = wrColor;
 
+  // Streak
   let streak = 0;
   for (const p of picks) {
     if (p.won) { if (streak >= 0) streak++; else break; }
@@ -735,25 +786,10 @@ function renderTrack() {
     return;
   }
 
-  document.getElementById('track-list').innerHTML = picks.map(p => `
-    <div class="track-item" style="border-color:${p.won ? '#10b98133' : '#ef444422'}">
-      <div class="track-header">
-        <div>
-          <div class="track-player">
-            <span>${p.won ? '✅' : '❌'}</span>
-            <span class="track-name">${p.joueur}</span>
-            <span class="track-type">${p.type}</span>
-          </div>
-          <div class="track-match">${p.match} · ${p.competition}</div>
-          <div class="factors">${(p.facteurs||[]).map(f => factorBadge(f)).join('')}</div>
-        </div>
-        <div style="text-align:right;flex-shrink:0;margin-left:14px">
-          <div class="track-gain" style="color:${p.gain>=0?'var(--green)':'var(--red)'}">${p.gain>=0?'+':''}${p.gain}€</div>
-          <div class="track-mise">Mise: ${p.mise}€ · ×${p.cote}</div>
-          <div class="track-date">${new Date(p.date).toLocaleDateString('fr-FR')}</div>
-        </div>
-      </div>
-    </div>`).join('');
+  document.getElementById('track-list').innerHTML =
+    trackSection('FIABILITÉ ROUGE', '#ef4444', '🔴', rouge) +
+    trackSection('FIABILITÉ ORANGE', '#f59e0b', '🟡', orange) +
+    trackSection('FIABILITÉ VERT', '#10b981', '🟢', vert);
 }
 
 // ── STATS ─────────────────────────────────────────────────
