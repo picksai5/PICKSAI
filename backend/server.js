@@ -218,11 +218,11 @@ function calcMatrixScore(hStats, aStats, hStand, aStand, h2h, injuries, isEurope
   if (gap >= 15 && hWins >= 3) { factors.push('F14'); score += 9; }
   else if (gap >= 10 && hWins >= 2) { factors.push('F14'); score += 5; }
 
-  const scoreMatriciel = score * 10;
+  const scoreMatriciel = score; // poids déjà en points directs
   let alerte = null;
-  if (scoreMatriciel >= 85) alerte = 'ROUGE';
-  else if (scoreMatriciel >= 70) alerte = 'ORANGE';
-  else if (scoreMatriciel >= 60) alerte = 'VERT';
+  if (scoreMatriciel >= 28) alerte = 'ROUGE';
+  else if (scoreMatriciel >= 21) alerte = 'ORANGE';
+  else if (scoreMatriciel >= 17) alerte = 'VERT';
 
   return { scoreMatriciel, factors, alerte };
 }
