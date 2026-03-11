@@ -594,6 +594,1010 @@ function confirmPick() {
     match: currentPick.match || `${currentPick.domicile} vs ${currentPick.exterieur}`,
     competition: currentPick.competition || '',
     joueur, type,
+    alerte: currentPick.alerte || null,
+    score_matriciel: currentPick.score_matriciel || 0,
+    facteurs: currentPick.facteurs || [],
+    cote, mise, gain, won: wonState,
+  };
+
+  state.picks.unshift(newPick);
+  state.bankroll += gain;
+
+  // Drawdown management
+  if (!wonState) {
+    state.consecutive_losses++;
+    if (state.consecutive_losses >= 4) {
+      state.drawdown_level++;
+      state.mise_actuelle = Math.max(state.mise_base / Math.pow(2, state.drawdown_level), 1);
+      state.consecutive_losses = 0;
+    }
+  } else {
+    state.consecutive_losses = 0;
+    if (state.drawdown_level > 0) {
+      state.drawdown_level = 0;
+      state.mise_actuelle = state.mise_base;
+    }
+    // Nouveau capital base après 6 gains
+    const recentGains = state.picks.slice(0, 6).filter(p => p.won).length;
+    if (recentGains >= 6) {
+      state.capital_base = state.bankroll;
+    }
+  }
+
+  saveState();
+  updateUI();
+  closeModal();
+}
+
+// ── BANKROLL ──────────────────────────────────────────────
+function renderBankroll() {
+  const picks = state.picks;
+  const totalGain = picks.reduce((a, p) => a + p.gain, 0);
+
+  document.getElementById('bankroll-amount').textContent = state.bankroll.toLocaleString('fr-FR') + '€';
+  document.getElementById('bankroll-amount').style.color = state.bankroll >= state.capital_base ? 'var(--green)' : 'var(--red)';
+  document.getElementById('bankroll-sub').textContent = `${totalGain >= 0 ? '+' : ''}${totalGain}€ profit · ${picks.length} picks joués`;
+  document.getElementById('bankroll-sub').style.color = totalGain >= 0 ? 'var(--green)' : 'var(--red)';
+  document.getElementById('mise-actuelle').textContent = state.mise_actuelle + '€';
+  document.getElementById('input-bankroll').placeholder = state.bankroll;
+  document.getElementById('input-mise').placeholder = state.mise_base;
+
+  // ROI
+  const totalMise = picks.reduce((a, p) => a + p.mise, 0);
+  const roi = totalMise > 0 ? Math.round((totalGain / totalMise) * 100) : 0;
+  document.getElementById('roi-total').textContent = (roi >= 0 ? '+' : '') + roi + '%';
+  document.getElementById('roi-total').style.color = roi >= 0 ? 'var(--green)' : 'var(--red)';
+
+  // Best/worst
+  if (picks.length > 0) {
+    document.getElementById('best-gain').textContent = '+' + Math.max(...picks.map(p => p.gain)) + '€';
+    document.getElementById('worst-loss').textContent = Math.min(...picks.map(p => p.gain)) + '€';
+  }
+
+  // Drawdown status
+  const ddEl = document.getElementById('drawdown-status');
+  if (state.drawdown_level > 0) {
+    ddEl.innerHTML = `<div class="drawdown-alert">⚠️ DRAWDOWN ACTIF — Niveau ${state.drawdown_level} — Mise réduite à ${state.mise_actuelle}€ (${state.consecutive_losses}/4 pertes consécutives)</div>`;
+  } else if (state.consecutive_losses >= 2) {
+    ddEl.innerHTML = `<div class="drawdown-alert" style="border-color:#f59e0b44">⚠️ ${state.consecutive_losses} pertes consécutives — Attention au seuil de 4</div>`;
+  } else {
+    ddEl.innerHTML = '';
+  }
+
+  // Sparkline
+  drawSparkline();
+}
+
+function drawSparkline() {
+  const canvas = document.getElementById('sparkline');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  canvas.width = canvas.offsetWidth || 300;
+  canvas.height = 60;
+
+  const picks = [...state.picks].reverse();
+  if (picks.length < 2) return;
+
+  let b = state.bankroll - state.picks.reduce((a, p) => a + p.gain, 0);
+  const values = [b];
+  picks.forEach(p => { b += p.gain; values.push(b); });
+
+  const W = canvas.width, H = canvas.height;
+  const min = Math.min(...values) - 10;
+  const max = Math.max(...values) + 10;
+  const range = max - min || 1;
+
+  ctx.clearRect(0, 0, W, H);
+  ctx.strokeStyle = '#3b82f6';
+  ctx.lineWidth = 2;
+  ctx.lineJoin = 'round';
+  ctx.beginPath();
+  values.forEach((v, i) => {
+    const x = (i / (values.length - 1)) * W;
+    const y = H - ((v - min) / range) * (H - 8) - 4;
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+}
+
+function saveParams() {
+  const b = parseInt(document.getElementById('input-bankroll').value);
+  const m = parseInt(document.getElementById('input-mise').value);
+  if (b) { state.bankroll = b; state.capital_base = b; }
+  if (m) { state.mise_base = m; state.mise_actuelle = m; }
+  saveState();
+  updateUI();
+  document.getElementById('input-bankroll').value = '';
+  document.getElementById('input-mise').value = '';
+}
+
+// ── TRACK RECORD ─────────────────────────────────────────
+function deletePick(index) {
+  state.picks.splice(index, 1);
+  localStorage.setItem('picksai_picks', JSON.stringify(state.picks));
+  renderTrack();
+}
+
+function trackStats(picks) {
+  const won = picks.filter(p => p.won).length;
+  const wr = picks.length > 0 ? Math.round((won / picks.length) * 100) : 0;
+  const profit = picks.reduce((a, p) => a + p.gain, 0);
+  return { won, total: picks.length, wr, profit };
+}
+
+function trackSection(title, color, emoji, picks) {
+  if (picks.length === 0) return '';
+  const { won, total, wr, profit } = trackStats(picks);
+  const wrColor = wr >= 60 ? 'var(--green)' : wr >= 50 ? 'var(--gold)' : 'var(--red)';
+  return `
+    <div style="margin-bottom:20px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;padding:8px 12px;background:var(--bg2);border-radius:8px;border-left:3px solid ${color}">
+        <div style="font-family:'Bebas Neue';font-size:16px;color:${color}">${emoji} ${title}</div>
+        <div style="display:flex;gap:16px;font-size:12px">
+          <span style="color:var(--muted)">${total} picks</span>
+          <span style="color:${wrColor};font-weight:bold">${wr}% WR</span>
+          <span style="color:${profit>=0?'var(--green)':'var(--red)'};font-weight:bold">${profit>=0?'+':''}${profit}€</span>
+        </div>
+      </div>
+      ${picks.map(p => `
+        <div class="track-item" style="border-color:${p.won ? '#10b98133' : '#ef444422'}">
+          <div class="track-header">
+            <div>
+              <div class="track-player">
+                <span>${p.won ? '✅' : '❌'}</span>
+                <span class="track-name">${p.joueur}</span>
+                <span class="track-type">${p.type}</span>
+                <span style="font-size:10px;padding:2px 6px;border-radius:3px;background:${color}22;color:${color};border:1px solid ${color}44">${p.alerte||'?'}</span>
+              </div>
+              <div class="track-match">${p.match} · ${p.competition}</div>
+              <div class="factors">${(p.facteurs||[]).map(f => factorBadge(f)).join('')}</div>
+            </div>
+            <div style="text-align:right;flex-shrink:0;margin-left:14px">
+              <div class="track-gain" style="color:${p.gain>=0?'var(--green)':'var(--red)'}">${p.gain>=0?'+':''}${p.gain}€</div>
+              <div class="track-mise">Mise: ${p.mise}€ · ×${p.cote}</div>
+              <div class="track-date">${new Date(p.date).toLocaleDateString('fr-FR')}</div>
+              <button onclick="deletePick(${picks.indexOf(p)})" style="margin-top:6px;padding:3px 8px;background:transparent;border:1px solid #ef444444;color:#ef4444;border-radius:4px;cursor:pointer;font-size:10px" onmouseover="this.style.background='#ef444422'" onmouseout="this.style.background='transparent'">🗑</button>
+            </div>
+          </div>
+        </div>`).join('')}
+    </div>`;
+}
+
+function renderTrack() {
+  const picks = state.picks;
+
+  // Séparer par fiabilité
+  const rouge  = picks.filter(p => p.alerte === 'ROUGE');
+  const orange = picks.filter(p => p.alerte === 'ORANGE');
+  const vert   = picks.filter(p => p.alerte === 'VERT' || !p.alerte);
+
+  // Stats globales
+  const { won, total, wr, profit } = trackStats(picks);
+  const wrColor = wr >= 60 ? 'var(--green)' : wr >= 50 ? 'var(--gold)' : 'var(--red)';
+
+  document.getElementById('total-picks').textContent = total;
+  document.getElementById('track-winrate').textContent = wr + '%';
+  document.getElementById('track-winrate').style.color = wrColor;
+
+  // Streak
+  let streak = 0;
+  for (const p of picks) {
+    if (p.won) { if (streak >= 0) streak++; else break; }
+    else { if (streak <= 0) streak--; else break; }
+  }
+  const streakEl = document.getElementById('track-streak');
+  streakEl.textContent = streak > 0 ? `+${streak}🔥` : streak < 0 ? `${streak}❄️` : '—';
+  streakEl.style.color = streak > 0 ? 'var(--green)' : 'var(--red)';
+
+  if (picks.length === 0) {
+    document.getElementById('track-list').innerHTML = `<div class="empty"><div class="empty-icon">📋</div><div class="empty-title">AUCUN PICK</div><div class="empty-text">Lance un scan et ajoute des picks.</div></div>`;
+    return;
+  }
+
+  document.getElementById('track-list').innerHTML =
+    trackSection('FIABILITÉ ROUGE', '#ef4444', '🔴', rouge) +
+    trackSection('FIABILITÉ ORANGE', '#f59e0b', '🟡', orange) +
+    trackSection('FIABILITÉ VERT', '#10b981', '🟢', vert);
+}
+
+// ── STATS ─────────────────────────────────────────────────
+function renderStats() {
+  const picks = state.picks;
+  const won = picks.filter(p => p.won).length;
+  const wr = picks.length > 0 ? Math.round((won / picks.length) * 100) : 0;
+  const totalGain = picks.reduce((a, p) => a + p.gain, 0);
+  const totalMise = picks.reduce((a, p) => a + p.mise, 0);
+  const roi = totalMise > 0 ? Math.round((totalGain / totalMise) * 100) : 0;
+  const avgCote = picks.length > 0 ? (picks.reduce((a, p) => a + p.cote, 0) / picks.length).toFixed(2) : '—';
+  const wrColor = wr >= 60 ? 'var(--green)' : wr >= 50 ? 'var(--gold)' : 'var(--red)';
+
+  document.getElementById('stats-winrate').textContent = wr + '%';
+  document.getElementById('stats-winrate').style.color = wrColor;
+  document.getElementById('stats-wl').textContent = `${won}W / ${picks.length - won}L`;
+  document.getElementById('stats-roi').textContent = (roi >= 0 ? '+' : '') + roi + '%';
+  document.getElementById('stats-roi').style.color = roi >= 0 ? 'var(--green)' : 'var(--red)';
+  document.getElementById('stats-profit').textContent = (totalGain >= 0 ? '+' : '') + totalGain + '€';
+  document.getElementById('stats-profit').style.color = totalGain >= 0 ? 'var(--green)' : 'var(--red)';
+  document.getElementById('stats-cote').textContent = avgCote;
+
+  // Factor stats
+  const factorHtml = FACTORS_DATA.map(f => {
+    const fp = picks.filter(p => p.facteurs?.includes(f.id));
+    const fw = fp.filter(p => p.won).length;
+    const rate = fp.length > 0 ? Math.round((fw / fp.length) * 100) : null;
+    const displayRate = rate !== null ? rate : f.rate;
+    const rateColor = rate !== null ? (rate >= 60 ? 'var(--green)' : rate >= 50 ? 'var(--gold)' : 'var(--red)') : '#1e3a5f';
+    return `<div class="factor-row">
+      <div class="factor-header">
+        <span class="factor-name" style="color:${f.color}">${f.icon} ${f.id} — ${f.name}</span>
+        <span class="factor-rate" style="color:${rateColor}">${rate !== null ? rate + '% (réel)' : f.rate + '% (théo.)'}</span>
+      </div>
+      <div class="bar-bg"><div class="bar-fill" style="width:${displayRate}%;background:${rateColor}"></div></div>
+    </div>`;
+  }).join('');
+  document.getElementById('factor-stats').innerHTML = factorHtml;
+}
+
+// ── MATRICE ───────────────────────────────────────────────
+function renderMatrix() {
+  document.getElementById('matrix-list').innerHTML = FACTORS_DATA.map(f => `
+    <div class="matrix-card" style="border:1px solid ${f.color}33">
+      <div class="matrix-header">
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="font-size:20px">${f.icon}</span>
+          <div>
+            <div class="matrix-id" style="color:${f.color}">${f.id} · ${f.name}</div>
+            <div style="font-size:10px;color:var(--muted)">Poids : ${f.weight}/10</div>
+          </div>
+        </div>
+        <div style="text-align:right">
+          <div class="matrix-rate" style="color:${f.color}">${f.rate}%</div>
+          <div class="matrix-rate-label">TAUX HISTORIQUE</div>
+        </div>
+      </div>
+      <div class="bar-bg"><div class="bar-fill" style="width:${f.rate}%;background:${f.color};box-shadow:0 0 6px ${f.color}88"></div></div>
+      <div class="matrix-subs">${f.subs.map(s => `<span class="matrix-sub" style="background:${f.color}12;border:1px solid ${f.color}33;color:${f.color}">✓ ${s}</span>`).join('')}</div>
+    </div>`).join('');
+}
+
+// ── UPDATE UI ─────────────────────────────────────────────
+function updateUI() {
+  const picks = state.picks;
+  const won = picks.filter(p => p.won).length;
+  const wr = picks.length > 0 ? Math.round((won / picks.length) * 100) : 0;
+  const wrColor = wr >= 60 ? 'var(--green)' : wr >= 50 ? 'var(--gold)' : 'var(--red)';
+
+  document.getElementById('header-bankroll').textContent = state.bankroll.toLocaleString('fr-FR') + '€';
+  document.getElementById('header-bankroll').style.color = state.bankroll >= state.capital_base ? 'var(--green)' : 'var(--red)';
+  document.getElementById('header-winrate').textContent = wr + '%';
+  document.getElementById('header-winrate').style.color = wrColor;
+
+  renderBankroll();
+  renderTrack();
+}
+
+// ── BACKTEST ──────────────────────────────────────────────
+async function doBacktest() {
+  const btn = document.getElementById('backtest-btn');
+  const log = document.getElementById('backtest-log');
+  const empty = document.getElementById('backtest-empty');
+  const results = document.getElementById('backtest-results');
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spin">⚙</span> ANALYSE EN COURS... (3-5 min)';
+  log.style.display = 'block';
+  log.innerHTML = '';
+  results.innerHTML = '';
+  empty.style.display = 'none';
+
+  const addLog = (msg, color) => {
+    const t = new Date().toLocaleTimeString('fr-FR');
+    log.innerHTML += `<div class="log-line"><span class="log-time">${t}</span><span style="color:${color||'#2a4a6a'}">${msg}</span></div>`;
+    log.scrollTop = log.scrollHeight;
+  };
+
+  addLog('🔬 Démarrage backtest saison 2024...', '#7c3aed');
+  addLog('📊 Récupération matchs terminés toutes ligues...');
+  addLog('🧬 Application matrice F1→F14 sur chaque match...');
+  addLog('⏳ Environ 3-5 minutes (respect rate limit API)...', '#f59e0b');
+
+  try {
+    const res = await fetch('/api/backtest');
+    if (!res.ok) throw new Error(`Erreur serveur: ${res.status}`);
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+
+    addLog(`✅ ${data.meta.totalAnalyses} matchs analysés — ${data.meta.reqCount} requêtes API utilisées`, '#10b981');
+    addLog(`🔴 ${data.rouge.stats.total} picks ROUGE — ${data.rouge.stats.winRate}% win rate`, '#ef4444');
+    addLog(`🟡 ${data.orange.stats.total} picks ORANGE — ${data.orange.stats.winRate}% win rate`, '#f59e0b');
+
+    renderBacktestResults(data);
+  } catch (e) {
+    addLog(`❌ ${e.message}`, '#ef4444');
+    empty.style.display = 'block';
+  }
+
+  btn.disabled = false;
+  btn.innerHTML = '🔬 RELANCER LE BACKTEST';
+}
+
+function renderBacktestResults(data) {
+  const { rouge, orange, global, meta } = data;
+  const sR = rouge.stats;
+  const sO = orange.stats;
+
+  const statColor = (val, threshold) => val >= threshold ? 'var(--green)' : val >= threshold * 0.8 ? 'var(--gold)' : 'var(--red)';
+
+  let html = `
+  <!-- RÉSUMÉ GLOBAL -->
+  <div class="top-pick" style="margin-bottom:12px;background:linear-gradient(135deg,#7c3aed11,var(--bg2));border-color:#7c3aed55">
+    <div class="top-pick-header">
+      <span style="font-size:20px">🔬</span>
+      <span class="top-pick-title" style="color:#a78bfa">RÉSUMÉ BACKTEST SAISON 2024</span>
+    </div>
+    <div class="stat-grid" style="margin-bottom:10px">
+      <div class="stat-box"><div class="stat-label">MATCHS ANALYSÉS</div><div class="stat-value" style="color:#a78bfa">${meta.totalAnalyses}</div></div>
+      <div class="stat-box"><div class="stat-label">WIN RATE GLOBAL</div><div class="stat-value" style="color:${statColor(global.globalWR, 60)}">${global.globalWR}%</div></div>
+      <div class="stat-box"><div class="stat-label">ROI GLOBAL</div><div class="stat-value" style="color:${statColor(global.globalROI, 0)}">${global.globalROI > 0 ? '+' : ''}${global.globalROI}%</div></div>
+    </div>
+    <div class="stat-grid-2">
+      <div class="stat-box"><div class="stat-label">TOTAL PICKS</div><div class="stat-value" style="color:var(--accent)">${global.totalPicks}</div></div>
+      <div class="stat-box"><div class="stat-label">PROFIT NET (100€/pick)</div><div class="stat-value" style="color:${global.totalProfit >= 0 ? 'var(--green)' : 'var(--red)'}">${global.totalProfit >= 0 ? '+' : ''}${global.totalProfit}€</div></div>
+    </div>
+  </div>
+
+  <!-- TABLEAU ROUGE -->
+  <div class="pick-card" style="border:1px solid #ef444455;margin-bottom:12px">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
+      <span style="font-size:24px">🔴</span>
+      <div>
+        <div style="font-family:'Bebas Neue';font-size:20px;letter-spacing:3px;color:#ef4444">PICKS ROUGE — Score ≥ 85</div>
+        <div style="font-size:11px;color:var(--muted)">Mise : 100€ · Cote moyenne : 1.75</div>
+      </div>
+      <div style="margin-left:auto;text-align:right">
+        <div style="font-family:'Bebas Neue';font-size:36px;color:${statColor(sR.winRate, 60)}">${sR.winRate}%</div>
+        <div style="font-size:10px;color:var(--muted)">WIN RATE</div>
+      </div>
+    </div>
+    <div class="stat-grid" style="margin-bottom:12px">
+      <div class="stat-box"><div class="stat-label">TOTAL PICKS</div><div class="stat-value" style="color:#ef4444">${sR.total}</div></div>
+      <div class="stat-box"><div class="stat-label">✅ GAGNÉS</div><div class="stat-value" style="color:var(--green)">${sR.wins}</div></div>
+      <div class="stat-box"><div class="stat-label">❌ PERDUS</div><div class="stat-value" style="color:var(--red)">${sR.losses}</div></div>
+    </div>
+    <div class="stat-grid-2" style="margin-bottom:12px">
+      <div class="stat-box"><div class="stat-label">PROFIT NET</div><div class="stat-value" style="color:${sR.profit >= 0 ? 'var(--green)' : 'var(--red)'}">${sR.profit >= 0 ? '+' : ''}${sR.profit}€</div></div>
+      <div class="stat-box"><div class="stat-label">ROI</div><div class="stat-value" style="color:${sR.roi >= 0 ? 'var(--green)' : 'var(--red)'}">${sR.roi >= 0 ? '+' : ''}${sR.roi}%</div></div>
+      <div class="stat-box"><div class="stat-label">🔥 MEILLEURE SÉRIE</div><div class="stat-value" style="color:var(--green)">${sR.bestStreak}</div></div>
+      <div class="stat-box"><div class="stat-label">❄️ PIRE SÉRIE</div><div class="stat-value" style="color:var(--red)">${sR.worstStreak}</div></div>
+    </div>
+    <div style="font-family:'Bebas Neue';font-size:12px;color:#ef4444;letter-spacing:2px;margin-bottom:8px">DÉTAIL DES PICKS</div>
+    <div style="max-height:300px;overflow-y:auto">
+      ${rouge.picks.map(p => `
+        <div style="display:flex;justify-content:space-between;padding:6px 10px;border-radius:6px;margin-bottom:4px;background:${p.validated ? '#10b9810a' : '#ef44440a'};border:1px solid ${p.validated ? '#10b98122' : '#ef444422'}">
+          <div>
+            <span style="font-size:13px">${p.validated ? '✅' : '❌'}</span>
+            <span style="font-size:12px;font-weight:700;margin-left:6px">${p.match}</span>
+            <span style="font-size:10px;color:var(--muted);margin-left:6px">${p.competition}</span>
+            <div style="font-size:10px;color:var(--muted);margin-top:2px">${p.date} · Score réel: ${p.score} · Matrice: ${p.sm}</div>
+          </div>
+          <div style="text-align:right;flex-shrink:0;margin-left:10px">
+            <div style="font-family:'Bebas Neue';font-size:18px;color:${p.gain >= 0 ? 'var(--green)' : 'var(--red)'}">${p.gain >= 0 ? '+' : ''}${p.gain}€</div>
+            <div style="font-size:10px;color:var(--muted)">×${p.cote}</div>
+          </div>
+        </div>`).join('')}
+    </div>
+  </div>
+
+  <!-- TABLEAU ORANGE -->
+  <div class="pick-card" style="border:1px solid #f59e0b55;margin-bottom:12px">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
+      <span style="font-size:24px">🟡</span>
+      <div>
+        <div style="font-family:'Bebas Neue';font-size:20px;letter-spacing:3px;color:#f59e0b">PICKS ORANGE — Score 70-84</div>
+        <div style="font-size:11px;color:var(--muted)">Mise : 100€ · Cote moyenne : 1.65</div>
+      </div>
+      <div style="margin-left:auto;text-align:right">
+        <div style="font-family:'Bebas Neue';font-size:36px;color:${statColor(sO.winRate, 60)}">${sO.winRate}%</div>
+        <div style="font-size:10px;color:var(--muted)">WIN RATE</div>
+      </div>
+    </div>
+    <div class="stat-grid" style="margin-bottom:12px">
+      <div class="stat-box"><div class="stat-label">TOTAL PICKS</div><div class="stat-value" style="color:#f59e0b">${sO.total}</div></div>
+      <div class="stat-box"><div class="stat-label">✅ GAGNÉS</div><div class="stat-value" style="color:var(--green)">${sO.wins}</div></div>
+      <div class="stat-box"><div class="stat-label">❌ PERDUS</div><div class="stat-value" style="color:var(--red)">${sO.losses}</div></div>
+    </div>
+    <div class="stat-grid-2" style="margin-bottom:12px">
+      <div class="stat-box"><div class="stat-label">PROFIT NET</div><div class="stat-value" style="color:${sO.profit >= 0 ? 'var(--green)' : 'var(--red)'}">${sO.profit >= 0 ? '+' : ''}${sO.profit}€</div></div>
+      <div class="stat-box"><div class="stat-label">ROI</div><div class="stat-value" style="color:${sO.roi >= 0 ? 'var(--green)' : 'var(--red)'}">${sO.roi >= 0 ? '+' : ''}${sO.roi}%</div></div>
+      <div class="stat-box"><div class="stat-label">🔥 MEILLEURE SÉRIE</div><div class="stat-value" style="color:var(--green)">${sO.bestStreak}</div></div>
+      <div class="stat-box"><div class="stat-label">❄️ PIRE SÉRIE</div><div class="stat-value" style="color:var(--red)">${sO.worstStreak}</div></div>
+    </div>
+    <div style="font-family:'Bebas Neue';font-size:12px;color:#f59e0b;letter-spacing:2px;margin-bottom:8px">DÉTAIL DES PICKS</div>
+    <div style="max-height:300px;overflow-y:auto">
+      ${orange.picks.map(p => `
+        <div style="display:flex;justify-content:space-between;padding:6px 10px;border-radius:6px;margin-bottom:4px;background:${p.validated ? '#10b9810a' : '#ef44440a'};border:1px solid ${p.validated ? '#10b98122' : '#ef444422'}">
+          <div>
+            <span style="font-size:13px">${p.validated ? '✅' : '❌'}</span>
+            <span style="font-size:12px;font-weight:700;margin-left:6px">${p.match}</span>
+            <span style="font-size:10px;color:var(--muted);margin-left:6px">${p.competition}</span>
+            <div style="font-size:10px;color:var(--muted);margin-top:2px">${p.date} · Score réel: ${p.score} · Matrice: ${p.sm}</div>
+          </div>
+          <div style="text-align:right;flex-shrink:0;margin-left:10px">
+            <div style="font-family:'Bebas Neue';font-size:18px;color:${p.gain >= 0 ? 'var(--green)' : 'var(--red)'}">${p.gain >= 0 ? '+' : ''}${p.gain}€</div>
+            <div style="font-size:10px;color:var(--muted)">×${p.cote}</div>
+          </div>
+        </div>`).join('')}
+    </div>
+  </div>`;
+
+  document.getElementById('backtest-results').innerHTML = html;
+}
+
+// ── INIT ──────────────────────────────────────────────────
+loadState();
+renderMatrix();
+</script>
+</body>
+</html>  .page { display: none; animation: fadeIn 0.3s ease; }
+  .page.active { display: block; }
+
+  /* SCAN BTN */
+  .scan-center { text-align: center; padding: 16px 0 20px; }
+  .scan-btn { background: linear-gradient(135deg, var(--accent), #1d4ed8); border: 1px solid var(--accent); border-radius: 12px; padding: 16px 48px; font-family: 'Bebas Neue'; font-size: 22px; letter-spacing: 6px; color: #fff; cursor: pointer; box-shadow: 0 4px 24px #3b82f644; transition: all 0.15s; }
+  .scan-btn:hover { transform: translateY(-2px); box-shadow: 0 8px 32px #3b82f666; }
+  .scan-btn:disabled { background: var(--bg3); border-color: var(--border); color: var(--muted); cursor: not-allowed; transform: none; box-shadow: none; }
+  .scan-sub { font-size: 10px; color: var(--muted); margin-top: 8px; letter-spacing: 2px; }
+
+  /* LOG */
+  .log-box { background: var(--bg2); border: 1px solid var(--border); border-radius: 10px; padding: 12px 16px; margin-bottom: 14px; }
+  .log-line { font-size: 12px; padding: 3px 0; display: flex; gap: 8px; }
+  .log-time { color: #1a2a40; font-size: 10px; flex-shrink: 0; }
+
+  /* CARDS */
+  .cards { display: flex; flex-direction: column; gap: 12px; }
+  .stat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 12px; }
+  .stat-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .stat-box { background: var(--bg3); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
+  .stat-label { font-size: 9px; color: #3a5a80; letter-spacing: 2px; margin-bottom: 4px; }
+  .stat-value { font-family: 'Bebas Neue'; font-size: 26px; line-height: 1; }
+  .stat-sub { font-size: 10px; color: #3a5a80; margin-top: 2px; }
+
+  /* TOP PICK */
+  .top-pick { background: linear-gradient(135deg, #3b82f60d, var(--bg2)); border: 1px solid #3b82f655; border-radius: 14px; padding: 18px 20px; }
+  .top-pick-header { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+  .top-pick-title { font-family: 'Bebas Neue'; font-size: 16px; color: var(--accent); letter-spacing: 4px; }
+  .top-pick-score { margin-left: auto; font-family: 'Bebas Neue'; font-size: 32px; color: var(--gold); }
+  .top-pick-player { font-family: 'Bebas Neue'; font-size: 26px; color: #fff; margin-bottom: 2px; }
+  .top-pick-match { font-size: 12px; color: var(--muted); margin-bottom: 10px; }
+  .top-pick-reason { background: #3b82f60a; border: 1px solid #3b82f622; border-radius: 8px; padding: 10px 14px; font-size: 13px; color: #4a6a90; line-height: 1.6; margin-bottom: 14px; }
+
+  /* PICK CARD */
+  .pick-card { background: var(--bg2); border-radius: 12px; padding: 14px 16px; }
+  .pick-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; }
+  .pick-comp { font-size: 10px; color: var(--muted); letter-spacing: 2px; font-weight: 700; }
+  .pick-teams { font-family: 'Bebas Neue'; font-size: 18px; color: var(--text); margin-top: 2px; }
+  .pick-teams span { color: #1e3a5f; }
+  .pick-context { font-size: 11px; color: var(--muted); margin-top: 3px; }
+  .pick-score { text-align: right; flex-shrink: 0; margin-left: 12px; }
+  .pick-alerte { font-size: 10px; font-weight: 700; }
+  .pick-score-val { font-family: 'Bebas Neue'; font-size: 28px; line-height: 1; }
+  .factors { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 10px; }
+  .factor-badge { display: inline-flex; align-items: center; gap: 3px; border-radius: 4px; padding: 2px 7px; font-size: 10px; font-weight: 700; letter-spacing: 1px; }
+  .player-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px; }
+  .player-box { background: var(--bg); border-radius: 8px; padding: 10px 12px; border: 1px solid var(--border); }
+  .player-box-label { font-size: 9px; letter-spacing: 2px; font-weight: 700; margin-bottom: 4px; }
+  .player-name { font-family: 'Bebas Neue'; font-size: 15px; color: var(--text); }
+  .player-team { font-size: 10px; color: var(--muted); margin-bottom: 6px; }
+  .player-prob { display: flex; justify-content: space-between; margin-top: 4px; }
+  .player-prob-val { font-family: 'Bebas Neue'; font-size: 14px; }
+  .player-cote { font-size: 10px; color: var(--muted); }
+  .player-raison { font-size: 10px; color: #1e3a5f; margin-top: 4px; }
+
+  /* BAR */
+  .bar-bg { height: 5px; background: #1e3a5f44; border-radius: 3px; overflow: hidden; margin: 4px 0; }
+  .bar-fill { height: 100%; border-radius: 3px; transition: width 0.8s ease; }
+
+  /* BUTTONS */
+  .btn { border-radius: 8px; padding: 10px 20px; font-family: 'Bebas Neue'; font-size: 13px; letter-spacing: 3px; cursor: pointer; transition: all 0.15s; border: 1px solid; }
+  .btn:hover { opacity: 0.85; transform: translateY(-1px); }
+  .btn-primary { background: var(--bg3); border-color: var(--accent); color: var(--accent); }
+  .btn-small { padding: 6px 14px; font-size: 11px; letter-spacing: 2px; background: none; border-color: #3b82f644; color: var(--muted); }
+
+  /* BANKROLL */
+  .bankroll-hero { background: linear-gradient(135deg, #3b82f60d, var(--bg2)); border: 1px solid #3b82f644; border-radius: 14px; padding: 20px; margin-bottom: 12px; }
+  .bankroll-label { font-size: 10px; color: var(--muted); letter-spacing: 3px; margin-bottom: 4px; }
+  .bankroll-amount { font-family: 'Bebas Neue'; font-size: 52px; line-height: 1; margin-bottom: 4px; }
+  .bankroll-sub { font-size: 14px; font-weight: 700; }
+
+  /* SPARKLINE */
+  .sparkline { margin-top: 14px; }
+
+  /* TRACK RECORD */
+  .track-item { background: var(--bg2); border-radius: 10px; padding: 12px 14px; margin-bottom: 8px; border: 1px solid; transition: background 0.15s; }
+  .track-item:hover { background: var(--bg3); }
+  .track-header { display: flex; justify-content: space-between; align-items: flex-start; }
+  .track-player { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+  .track-name { font-family: 'Bebas Neue'; font-size: 16px; }
+  .track-type { font-size: 10px; color: var(--muted); background: var(--bg3); border: 1px solid var(--border); border-radius: 3px; padding: 2px 6px; }
+  .track-match { font-size: 11px; color: var(--muted); margin-bottom: 6px; }
+  .track-gain { font-family: 'Bebas Neue'; font-size: 24px; }
+  .track-mise { font-size: 11px; color: var(--muted); }
+  .track-date { font-size: 10px; color: #1a2a40; margin-top: 2px; }
+
+  /* MODAL */
+  .modal-overlay { display: none; position: fixed; inset: 0; background: #000000cc; z-index: 100; align-items: center; justify-content: center; padding: 16px; }
+  .modal-overlay.open { display: flex; }
+  .modal { background: var(--bg2); border: 1px solid #3b82f655; border-radius: 16px; padding: 24px; max-width: 420px; width: 100%; animation: fadeIn 0.3s ease; }
+  .modal-title { font-family: 'Bebas Neue'; font-size: 20px; color: var(--accent); letter-spacing: 4px; margin-bottom: 14px; }
+  .modal-player { font-size: 15px; color: var(--accent2); font-weight: 700; margin-bottom: 4px; }
+  .modal-match { font-size: 12px; color: var(--muted); margin-bottom: 16px; }
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
+  .form-label { font-size: 10px; color: var(--muted); letter-spacing: 1px; margin-bottom: 6px; }
+  .form-input { width: 100%; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; color: var(--text); font-family: 'Rajdhani'; font-size: 18px; font-weight: 700; outline: none; }
+  .result-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 14px; }
+  .result-btn { border-radius: 8px; padding: 12px; cursor: pointer; font-family: 'Bebas Neue'; font-size: 15px; letter-spacing: 2px; transition: all 0.15s; }
+  .impact-box { border-radius: 8px; padding: 10px 14px; margin-bottom: 16px; text-align: center; }
+  .impact-label { font-size: 10px; color: var(--muted); letter-spacing: 1px; }
+  .impact-amount { font-family: 'Bebas Neue'; font-size: 30px; }
+  .impact-new { font-size: 12px; color: var(--muted); }
+  .modal-actions { display: flex; gap: 10px; }
+  .drawdown-alert { background: #f59e0b0d; border: 1px solid #f59e0b44; border-radius: 8px; padding: 10px 14px; margin-bottom: 14px; font-size: 12px; color: var(--gold); }
+
+  /* STATS PAGE */
+  .factor-row { margin-bottom: 10px; }
+  .factor-header { display: flex; justify-content: space-between; margin-bottom: 4px; }
+  .factor-name { font-size: 11px; font-weight: 700; }
+  .factor-rate { font-family: 'Bebas Neue'; font-size: 14px; }
+
+  /* MATRICE */
+  .matrix-card { background: var(--bg2); border-radius: 12px; padding: 14px 16px; margin-bottom: 10px; }
+  .matrix-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+  .matrix-id { font-family: 'Bebas Neue'; font-size: 14px; letter-spacing: 2px; }
+  .matrix-rate { font-family: 'Bebas Neue'; font-size: 24px; }
+  .matrix-rate-label { font-size: 9px; color: var(--muted); }
+  .matrix-subs { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
+  .matrix-sub { border-radius: 3px; padding: 2px 8px; font-size: 10px; }
+
+  /* EMPTY STATE */
+  .empty { text-align: center; padding: 40px 20px; }
+  .empty-icon { font-size: 48px; margin-bottom: 12px; }
+  .empty-title { font-family: 'Bebas Neue'; font-size: 20px; color: var(--muted); letter-spacing: 4px; margin-bottom: 8px; }
+  .empty-text { font-size: 13px; color: var(--muted); line-height: 2; }
+
+  /* PARAMS */
+  .params-box { background: var(--bg2); border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin-top: 12px; }
+  .params-title { font-family: 'Bebas Neue'; font-size: 14px; color: var(--accent2); letter-spacing: 3px; margin-bottom: 12px; }
+
+  /* ANIMATIONS */
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+  @keyframes glow { 0%,100% { box-shadow: 0 0 10px #3b82f644; } 50% { box-shadow: 0 0 24px #3b82f699; } }
+  .spin { animation: spin 1s linear infinite; display: inline-block; }
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<div class="header">
+  <div class="logo-icon">🎯</div>
+  <div>
+    <div class="logo-text">PICKS<span>AI</span></div>
+    <div class="logo-sub">FOOTBALL INTELLIGENCE · MATRICE GAGNANTE</div>
+  </div>
+  <div class="header-stats">
+    <div class="header-stat">
+      <div class="header-stat-label">BANKROLL</div>
+      <div class="header-stat-value" id="header-bankroll" style="color: var(--green)">—€</div>
+    </div>
+    <div class="header-stat">
+      <div class="header-stat-label">WIN RATE</div>
+      <div class="header-stat-value" id="header-winrate" style="color: var(--red)">0%</div>
+    </div>
+  </div>
+</div>
+
+<!-- TABS -->
+<div class="tabs">
+  <button class="tab active" onclick="showTab('scan')">⚡ SCAN</button>
+  <button class="tab" onclick="showTab('bankroll')">💰 BANKROLL</button>
+  <button class="tab" onclick="showTab('track')">📋 TRACK RECORD</button>
+  <button class="tab" onclick="showTab('stats')">📊 STATS</button>
+  <button class="tab" onclick="showTab('matrix')">🧬 MATRICE</button>
+  <button class="tab" onclick="showTab('backtest')">🔬 BACKTEST</button>
+</div>
+
+<!-- CONTENT -->
+<div class="content">
+
+  <!-- SCAN PAGE -->
+  <div class="page active" id="page-scan">
+    <div class="scan-center">
+      <button class="scan-btn" id="scan-btn" onclick="doScan()">⚡ LANCER LE SCAN</button>
+      <div class="scan-sub">MATRICE F1→F14 · API FOOTBALL LIVE · TOP PICK AUTOMATIQUE</div>
+    </div>
+    <div class="log-box" id="log-box" style="display:none"></div>
+    <div id="scan-results"></div>
+    <div class="empty" id="scan-empty">
+      <div class="empty-icon">🎯</div>
+      <div class="empty-title">PICKSAI PRÊT</div>
+      <div class="empty-text">Lance un scan pour analyser les matchs du jour<br>via la <span style="color:var(--accent)">Matrice Gagnante F1→F14</span></div>
+    </div>
+  </div>
+
+  <!-- BANKROLL PAGE -->
+  <div class="page" id="page-bankroll">
+    <div class="bankroll-hero">
+      <div class="bankroll-label">BANKROLL ACTUELLE</div>
+      <div class="bankroll-amount" id="bankroll-amount">—€</div>
+      <div class="bankroll-sub" id="bankroll-sub">0€ profit · 0 picks joués</div>
+      <div class="sparkline"><canvas id="sparkline" height="60"></canvas></div>
+    </div>
+    <div class="stat-grid-2" style="margin-bottom:12px">
+      <div class="stat-box"><div class="stat-label">MISE ACTUELLE</div><div class="stat-value" id="mise-actuelle" style="color:var(--accent)">—€</div></div>
+      <div class="stat-box"><div class="stat-label">ROI TOTAL</div><div class="stat-value" id="roi-total">0%</div></div>
+      <div class="stat-box"><div class="stat-label">MEILLEUR GAIN</div><div class="stat-value" id="best-gain" style="color:var(--green)">—</div></div>
+      <div class="stat-box"><div class="stat-label">PIRE PERTE</div><div class="stat-value" id="worst-loss" style="color:var(--red)">—</div></div>
+    </div>
+
+    <!-- DRAWDOWN STATUS -->
+    <div id="drawdown-status" style="margin-bottom:12px"></div>
+
+    <div class="params-box">
+      <div class="params-title">⚙️ PARAMÈTRES</div>
+      <div class="form-grid">
+        <div>
+          <div class="form-label">BANKROLL (€)</div>
+          <input class="form-input" type="number" id="input-bankroll" placeholder="500">
+        </div>
+        <div>
+          <div class="form-label">MISE BASE (€)</div>
+          <input class="form-input" type="number" id="input-mise" placeholder="25">
+        </div>
+      </div>
+      <button class="btn btn-primary" onclick="saveParams()">SAUVEGARDER</button>
+    </div>
+  </div>
+
+  <!-- TRACK RECORD PAGE -->
+  <div class="page" id="page-track">
+    <div class="stat-grid" style="margin-bottom:14px">
+      <div class="stat-box"><div class="stat-label">TOTAL PICKS</div><div class="stat-value" id="total-picks" style="color:var(--accent)">0</div></div>
+      <div class="stat-box"><div class="stat-label">WIN RATE</div><div class="stat-value" id="track-winrate">0%</div></div>
+      <div class="stat-box"><div class="stat-label">STREAK</div><div class="stat-value" id="track-streak">—</div></div>
+    </div>
+    <div id="track-list">
+      <div class="empty">
+        <div class="empty-icon">📋</div>
+        <div class="empty-title">AUCUN PICK</div>
+        <div class="empty-text">Lance un scan et ajoute des picks au track record.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- STATS PAGE -->
+  <div class="page" id="page-stats">
+    <div class="stat-grid-2" style="margin-bottom:12px">
+      <div class="stat-box"><div class="stat-label">WIN RATE</div><div class="stat-value" id="stats-winrate">0%</div><div class="stat-sub" id="stats-wl">0W / 0L</div></div>
+      <div class="stat-box"><div class="stat-label">ROI TOTAL</div><div class="stat-value" id="stats-roi">0%</div></div>
+      <div class="stat-box"><div class="stat-label">PROFIT NET</div><div class="stat-value" id="stats-profit">0€</div></div>
+      <div class="stat-box"><div class="stat-label">COTE MOYENNE</div><div class="stat-value" id="stats-cote" style="color:var(--accent)">—</div></div>
+    </div>
+    <div class="params-box">
+      <div class="params-title">WIN RATE PAR FACTEUR</div>
+      <div id="factor-stats"></div>
+    </div>
+  </div>
+
+  <!-- MATRICE PAGE -->
+  <div class="page" id="page-matrix">
+    <div class="params-box" style="margin-bottom:10px">
+      <div class="params-title">COMMENT ÇA FONCTIONNE</div>
+      <p style="font-size:13px;color:#3a5a80;line-height:1.7">PicksAI applique <strong style="color:var(--text)">14 facteurs gagnants</strong> sur les vraies données API Football. Le <strong style="color:var(--gold)">Score Matriciel</strong> = somme des poids activés × 10. Seuls les picks ≥ 60 sont affichés.</p>
+    </div>
+    <div id="matrix-list"></div>
+  </div>
+
+  <!-- BACKTEST PAGE -->
+  <div class="page" id="page-backtest">
+    <div class="scan-center">
+      <button class="scan-btn" id="backtest-btn" onclick="doBacktest()" style="background:linear-gradient(135deg,#7c3aed,#4c1d95);border-color:#7c3aed">🔬 LANCER LE BACKTEST</button>
+      <div class="scan-sub">SAISON 2024 · MISE 100€ · PICKS ROUGE & ORANGE SÉPARÉS</div>
+    </div>
+    <div class="log-box" id="backtest-log" style="display:none"></div>
+    <div id="backtest-results"></div>
+    <div class="empty" id="backtest-empty">
+      <div class="empty-icon">🔬</div>
+      <div class="empty-title">BACKTEST PRÊT</div>
+      <div class="empty-text">Analyse la saison 2024 complète<br>et calcule le ROI réel de la matrice</div>
+    </div>
+  </div>
+
+</div>
+
+<!-- MODAL PICK -->
+<div class="modal-overlay" id="modal">
+  <div class="modal">
+    <div class="modal-title">ENREGISTRER LE PICK</div>
+    <div class="modal-player" id="modal-player">—</div>
+    <div class="modal-match" id="modal-match">—</div>
+    <div class="form-grid">
+      <div><div class="form-label">MISE (€)</div><input class="form-input" type="number" id="modal-mise" oninput="updateImpact()"></div>
+      <div><div class="form-label">COTE RÉELLE</div><input class="form-input" type="number" step="0.01" id="modal-cote" oninput="updateImpact()"></div>
+    </div>
+    <div class="result-grid">
+      <button class="result-btn" id="btn-won" onclick="setWon(true)" style="background:#10b98122;border:2px solid var(--green);color:var(--green)">✅ GAGNÉ</button>
+      <button class="result-btn" id="btn-lost" onclick="setWon(false)" style="background:var(--bg);border:2px solid var(--border);color:var(--muted)">❌ PERDU</button>
+    </div>
+    <div class="impact-box" id="impact-box">
+      <div class="impact-label">IMPACT BANKROLL</div>
+      <div class="impact-amount" id="impact-amount">+0€</div>
+      <div class="impact-new" id="impact-new">Nouvelle bankroll : —</div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" style="flex:1;background:var(--bg);border-color:var(--border);color:var(--muted)" onclick="closeModal()">ANNULER</button>
+      <button class="btn btn-primary" style="flex:2;font-size:15px" onclick="confirmPick()">CONFIRMER</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── STATE ─────────────────────────────────────────────────
+const STATE_KEY = 'picksai_state_v1';
+let state = {
+  bankroll: 500,
+  mise_base: 25,
+  mise_actuelle: 25,
+  picks: [],
+  consecutive_losses: 0,
+  drawdown_level: 0,
+  capital_base: 500,
+};
+
+let currentPick = null;
+let wonState = true;
+
+const FACTORS_DATA = [
+  { id:'F1', name:'Attaquant en série + Défense poreuse', weight:10, rate:71, color:'#3b82f6', icon:'🔥', subs:['3+ buts/5 matchs','Concède 1.8+/match','Titulaire confirmé'] },
+  { id:'F2', name:'Favori domicile vs pire défense', weight:9, rate:68, color:'#60a5fa', icon:'🏠', subs:['Top 6 à domicile','Top 4 pires défenses','Écart >8pts'] },
+  { id:'F3', name:'Tireur de penaltys vs équipe fautive', weight:9, rate:65, color:'#f59e0b', icon:'⚽', subs:['Titulaire penalty','0.6+ pen/match','>75% conversion'] },
+  { id:'F4', name:'Milestone personnel attaquant', weight:8, rate:62, color:'#a78bfa', icon:'🎯', subs:['1-2 buts d\'un palier','Forme ≥3/5','Enjeu élevé'] },
+  { id:'F5', name:'Attaquant rapide vs défenseur lent', weight:8, rate:61, color:'#38bdf8', icon:'💨', subs:['xA élevé','Défenseur faible 1v1','Pressing haut'] },
+  { id:'F6', name:'xG équipe >2.2 vs bloc bas fragile', weight:7, rate:59, color:'#fb923c', icon:'📊', subs:['xG >2.2/match','Bloc bas fragile','>3 tirs cadrés'] },
+  { id:'F7', name:'Match fort enjeu + joueur en confiance', weight:7, rate:58, color:'#f472b6', icon:'🏆', subs:['Derby/Top6/Coupe','5+ buts en couperets','Forme positive'] },
+  { id:'F8', name:'Double combo F1+F2 réunis', weight:6, rate:74, color:'#10b981', icon:'⚡', subs:['F1+F2 actifs','Cote ≥1.65','Équipe dominante'] },
+  { id:'F9', name:'H2H favorable au joueur ciblé', weight:8, rate:64, color:'#34d399', icon:'🔄', subs:['Scoré 3/3 derniers H2H','Pattern favorable','Défense vulnérable'] },
+  { id:'F10', name:'Adversaire fatigué', weight:6, rate:61, color:'#94a3b8', icon:'😴', subs:['3+ matchs/10 jours','Déplacement long','Prolongations récentes'] },
+  { id:'F11', name:'Adversaire sous pression classement', weight:7, rate:63, color:'#f87171', icon:'📉', subs:['Zone relégation','Défense désorganisée','Résultats urgents'] },
+  { id:'F12', name:'Retour de blessure sous-coté', weight:7, rate:60, color:'#fbbf24', icon:'🏥', subs:['3+ sem absence','Match favorable retour','Cote pas ajustée'] },
+  { id:'F13', name:'Domination possession >60%', weight:6, rate:58, color:'#818cf8', icon:'⚽', subs:['>60% possession','Bloc bas adverse','Jeu de transition'] },
+  { id:'F14', name:'Value bet détectée', weight:9, rate:67, color:'#22d3ee', icon:'💎', subs:['Cote en baisse','Sharp money détecté','Valeur sous-évaluée'] },
+];
+
+// ── STORAGE ───────────────────────────────────────────────
+async function loadState() {
+  try {
+    const r = await window.storage.get(STATE_KEY);
+    if (r?.value) state = { ...state, ...JSON.parse(r.value) };
+  } catch { try { const r = localStorage.getItem(STATE_KEY); if (r) state = { ...state, ...JSON.parse(r) }; } catch {} }
+  updateUI();
+}
+
+async function saveState() {
+  const s = JSON.stringify(state);
+  try { await window.storage.set(STATE_KEY, s); } catch {}
+  try { localStorage.setItem(STATE_KEY, s); } catch {}
+}
+
+// ── TABS ─────────────────────────────────────────────────
+function showTab(tab) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  event.target.classList.add('active');
+  document.getElementById('page-' + tab).classList.add('active');
+  if (tab === 'matrix') renderMatrix();
+  if (tab === 'stats') renderStats();
+  if (tab === 'track') renderTrack();
+  if (tab === 'bankroll') renderBankroll();
+}
+
+// ── SCAN ─────────────────────────────────────────────────
+async function doScan() {
+  const btn = document.getElementById('scan-btn');
+  const logBox = document.getElementById('log-box');
+  const empty = document.getElementById('scan-empty');
+  const results = document.getElementById('scan-results');
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spin">⚙</span> ANALYSE EN COURS...';
+  logBox.style.display = 'block';
+  logBox.innerHTML = '';
+  results.innerHTML = '';
+  empty.style.display = 'none';
+
+  const addLog = (msg, color) => {
+    const t = new Date().toLocaleTimeString('fr-FR');
+    logBox.innerHTML += `<div class="log-line"><span class="log-time">${t}</span><span style="color:${color||'#2a4a6a'}">${msg}</span></div>`;
+    logBox.scrollTop = logBox.scrollHeight;
+  };
+
+  addLog('🌐 Connexion à l\'API Football...', '#60a5fa');
+  addLog('🔍 Scan de toutes les ligues du jour...');
+  addLog('🧬 Application de la Matrice F1→F14...');
+
+  try {
+    const res = await fetch('/api/scan');
+    if (!res.ok) throw new Error(`Erreur serveur: ${res.status}`);
+    const data = await res.json();
+
+    if (data.error) throw new Error(data.error);
+
+    addLog(`✅ ${data.picks?.length || 0} picks retenus sur ${data.total_analyses} matchs analysés`, '#10b981');
+    if (data.top_pick?.pick) addLog(`⭐ Top Pick: ${data.top_pick.pick.joueur} — Score ${data.top_pick.score_matriciel}`, '#f59e0b');
+
+    renderScanResults(data);
+  } catch (e) {
+    addLog(`❌ ${e.message}`, '#ef4444');
+    empty.style.display = 'block';
+  }
+
+  btn.disabled = false;
+  btn.innerHTML = '⚡ LANCER LE SCAN';
+}
+
+function renderScanResults(data) {
+  const results = document.getElementById('scan-results');
+  if (!data.picks || data.picks.length === 0) {
+    results.innerHTML = '<div class="empty"><div class="empty-icon">😴</div><div class="empty-title">AUCUN PICK AUJOURD\'HUI</div><div class="empty-text">Aucun match ne valide les critères de la matrice.</div></div>';
+    return;
+  }
+
+  let html = `<div class="stat-grid" style="margin-bottom:12px">
+    <div class="stat-box"><div class="stat-label">MATCHS ANALYSÉS</div><div class="stat-value" style="color:#60a5fa">${data.total_analyses}</div></div>
+    <div class="stat-box"><div class="stat-label">PICKS RETENUS</div><div class="stat-value" style="color:var(--accent)">${data.picks.length}</div></div>
+    <div class="stat-box"><div class="stat-label">TOP SCORE</div><div class="stat-value" style="color:var(--gold)">${data.top_pick?.score_matriciel || '—'}</div></div>
+  </div>`;
+
+  // Top Pick
+  if (data.top_pick && data.top_pick.pick) {
+    const tp = data.top_pick;
+    html += `<div class="top-pick" style="margin-bottom:12px">
+      <div class="top-pick-header">
+        <span style="font-size:20px">⭐</span>
+        <span class="top-pick-title">TOP PICK DU JOUR</span>
+        <span class="top-pick-score">${tp.score_matriciel}</span>
+      </div>
+      <div class="top-pick-player">${tp.pick.joueur}</div>
+      <div class="top-pick-match">${tp.match} · ${tp.pick.type}</div>
+      <div class="factors">${(tp.facteurs||[]).map(f => factorBadge(f)).join('')}</div>
+      <div class="bar-bg" style="margin-bottom:6px"><div class="bar-fill" style="width:${tp.pick.prob}%;background:var(--accent);box-shadow:0 0 6px #3b82f688"></div></div>
+      <div style="display:flex;justify-content:space-between;margin-bottom:10px">
+        <span style="font-family:'Bebas Neue';font-size:22px;color:var(--accent)">${tp.pick.prob}%</span>
+        <span style="font-size:13px;color:var(--muted)">Cote estimée : <strong style="color:var(--text)">${tp.pick.cote_estimee}</strong></span>
+      </div>
+      <div class="top-pick-reason">${tp.pick.raison}</div>
+      <button class="btn btn-primary" onclick="openModal(${JSON.stringify(tp).replace(/"/g,'&quot;')})">+ AJOUTER AU TRACK RECORD</button>
+    </div>`;
+  }
+
+  // Autres picks
+  data.picks.forEach((pick, i) => {
+    const ac = alertColor(pick.alerte);
+    html += `<div class="pick-card" style="border:1px solid ${ac}33;margin-bottom:10px">
+      <div class="pick-header">
+        <div>
+          <div class="pick-comp">${pick.competition} · ${pick.heure}</div>
+          <div class="pick-teams">${pick.domicile} <span>vs</span> ${pick.exterieur}</div>
+          <div class="pick-context">${pick.contexte||''}</div>
+        </div>
+        <div class="pick-score">
+          <div class="pick-alerte" style="color:${ac}">${pick.alerte}</div>
+          <div class="pick-score-val" style="color:${ac}">${pick.score_matriciel}</div>
+        </div>
+      </div>
+      <div class="factors">${(pick.facteurs||[]).map(f => factorBadge(f)).join('')}</div>
+      <div class="player-grid">
+        ${pick.pick ? playerBox('🎯 JOUEUR DÉCISIF', pick.pick, '#3b82f6') : ''}
+        ${pick.buteur_alternatif ? playerBox('⚽ BUTEUR', pick.buteur_alternatif, '#ef4444') : ''}
+      </div>
+      <button class="btn btn-small" onclick="openModal(${JSON.stringify(pick).replace(/"/g,'&quot;')})">+ TRACK RECORD</button>
+    </div>`;
+  });
+
+  document.getElementById('scan-results').innerHTML = html;
+}
+
+function playerBox(label, player, color) {
+  return `<div class="player-box">
+    <div class="player-box-label" style="color:${color}">${label}</div>
+    <div class="player-name">${player.joueur||player.nom||'?'}</div>
+    <div class="player-team">${player.equipe||''}</div>
+    <div class="bar-bg"><div class="bar-fill" style="width:${player.prob||0}%;background:${color};box-shadow:0 0 6px ${color}88"></div></div>
+    <div class="player-prob">
+      <span class="player-prob-val" style="color:${color}">${player.prob||0}%</span>
+      <span class="player-cote">×${player.cote_estimee||'?'}</span>
+    </div>
+    <div class="player-raison">${player.raison||''}</div>
+  </div>`;
+}
+
+function factorBadge(fid) {
+  const f = FACTORS_DATA.find(x => x.id === fid);
+  if (!f) return '';
+  return `<span class="factor-badge" style="background:${f.color}18;border:1px solid ${f.color}44;color:${f.color}">${f.icon} ${f.id}</span>`;
+}
+
+function alertColor(a) {
+  return a === 'ROUGE' ? '#ef4444' : a === 'ORANGE' ? '#f59e0b' : '#10b981';
+}
+
+// ── MODAL ─────────────────────────────────────────────────
+function openModal(pick) {
+  currentPick = typeof pick === 'string' ? JSON.parse(pick) : pick;
+  const joueur = currentPick.pick?.joueur || currentPick.joueur || '?';
+  const match = currentPick.match || `${currentPick.domicile} vs ${currentPick.exterieur}`;
+  const cote = currentPick.pick?.cote_estimee || currentPick.cote_estimee || 1.65;
+
+  document.getElementById('modal-player').textContent = joueur;
+  document.getElementById('modal-match').textContent = match;
+  document.getElementById('modal-mise').value = state.mise_actuelle;
+  document.getElementById('modal-cote').value = cote;
+  wonState = true;
+  setWon(true);
+  updateImpact();
+
+  // Alerte drawdown
+  if (state.consecutive_losses >= 3) {
+    document.getElementById('impact-box').insertAdjacentHTML('beforebegin',
+      `<div class="drawdown-alert">⚠️ ${state.consecutive_losses} pertes consécutives — Mise réduite à ${state.mise_actuelle}€ (Drawdown actif)</div>`);
+  }
+
+  document.getElementById('modal').classList.add('open');
+}
+
+function closeModal() {
+  document.getElementById('modal').classList.remove('open');
+  document.querySelectorAll('.drawdown-alert').forEach(e => e.remove());
+}
+
+function setWon(won) {
+  wonState = won;
+  document.getElementById('btn-won').style.cssText = won
+    ? 'background:#10b98122;border:2px solid var(--green);color:var(--green)'
+    : 'background:var(--bg);border:2px solid var(--border);color:var(--muted)';
+  document.getElementById('btn-lost').style.cssText = !won
+    ? 'background:#ef444422;border:2px solid var(--red);color:var(--red)'
+    : 'background:var(--bg);border:2px solid var(--border);color:var(--muted)';
+  updateImpact();
+}
+
+function updateImpact() {
+  const mise = parseFloat(document.getElementById('modal-mise').value) || 0;
+  const cote = parseFloat(document.getElementById('modal-cote').value) || 1;
+  const gain = wonState ? Math.round(mise * (cote - 1)) : -Math.round(mise);
+  const newBankroll = state.bankroll + gain;
+  const color = gain >= 0 ? 'var(--green)' : 'var(--red)';
+
+  document.getElementById('impact-box').style.cssText = `border-radius:8px;padding:10px 14px;margin-bottom:16px;text-align:center;background:${gain>=0?'#10b9810d':'#ef44440d'};border:1px solid ${gain>=0?'#10b98133':'#ef444433'}`;
+  document.getElementById('impact-amount').style.color = color;
+  document.getElementById('impact-amount').textContent = (gain >= 0 ? '+' : '') + gain + '€';
+  document.getElementById('impact-new').innerHTML = `Nouvelle bankroll : <strong style="color:var(--text)">${newBankroll.toLocaleString('fr-FR')}€</strong>`;
+}
+
+function confirmPick() {
+  if (!currentPick) return;
+  const mise = parseFloat(document.getElementById('modal-mise').value) || state.mise_actuelle;
+  const cote = parseFloat(document.getElementById('modal-cote').value) || 1.65;
+  const gain = wonState ? Math.round(mise * (cote - 1)) : -Math.round(mise);
+
+  const joueur = currentPick.pick?.joueur || currentPick.joueur || '?';
+  const type = currentPick.pick?.type || currentPick.type || 'Joueur décisif';
+
+  const newPick = {
+    id: Date.now(),
+    date: new Date().toISOString(),
+    match: currentPick.match || `${currentPick.domicile} vs ${currentPick.exterieur}`,
+    competition: currentPick.competition || '',
+    joueur, type,
     score_matriciel: currentPick.score_matriciel || 0,
     facteurs: currentPick.facteurs || [],
     cote, mise, gain, won: wonState,
