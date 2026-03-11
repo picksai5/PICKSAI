@@ -256,6 +256,14 @@
 
   <!-- TRACK RECORD PAGE -->
   <div class="page" id="page-track">
+    <!-- Onglets filtre -->
+    <div style="display:flex;gap:6px;margin-bottom:14px">
+      <button id="tf-all" onclick="setTrackFilter('all')" style="flex:1;padding:8px;border-radius:6px;border:1px solid var(--accent);background:var(--accent);color:#fff;font-family:'Bebas Neue';font-size:13px;cursor:pointer">TOUS</button>
+      <button id="tf-rouge" onclick="setTrackFilter('ROUGE')" style="flex:1;padding:8px;border-radius:6px;border:1px solid #ef444455;background:transparent;color:#ef4444;font-family:'Bebas Neue';font-size:13px;cursor:pointer">🔴 ROUGE</button>
+      <button id="tf-orange" onclick="setTrackFilter('ORANGE')" style="flex:1;padding:8px;border-radius:6px;border:1px solid #f59e0b55;background:transparent;color:#f59e0b;font-family:'Bebas Neue';font-size:13px;cursor:pointer">🟡 ORANGE</button>
+      <button id="tf-vert" onclick="setTrackFilter('VERT')" style="flex:1;padding:8px;border-radius:6px;border:1px solid #10b98155;background:transparent;color:#10b981;font-family:'Bebas Neue';font-size:13px;cursor:pointer">🟢 VERT</button>
+    </div>
+    <!-- Stats dynamiques selon filtre -->
     <div class="stat-grid" style="margin-bottom:14px">
       <div class="stat-box"><div class="stat-label">TOTAL PICKS</div><div class="stat-value" id="total-picks" style="color:var(--accent)">0</div></div>
       <div class="stat-box"><div class="stat-label">WIN RATE</div><div class="stat-value" id="track-winrate">0%</div></div>
@@ -712,8 +720,42 @@ function saveParams() {
 }
 
 // ── TRACK RECORD ─────────────────────────────────────────
+let trackFilter = 'all';
+
+function setTrackFilter(filter) {
+  trackFilter = filter;
+  // Mettre à jour les boutons
+  const configs = {
+    'all':    { id: 'tf-all',    bg: 'var(--accent)', color: '#fff',     border: 'var(--accent)' },
+    'ROUGE':  { id: 'tf-rouge',  bg: '#ef444422',     color: '#ef4444',  border: '#ef4444' },
+    'ORANGE': { id: 'tf-orange', bg: '#f59e0b22',     color: '#f59e0b',  border: '#f59e0b' },
+    'VERT':   { id: 'tf-vert',   bg: '#10b98122',     color: '#10b981',  border: '#10b981' },
+  };
+  ['all','ROUGE','ORANGE','VERT'].forEach(f => {
+    const btn = document.getElementById(f === 'all' ? 'tf-all' : `tf-${f.toLowerCase()}`);
+    if (!btn) return;
+    if (f === filter) {
+      btn.style.background = configs[f].bg;
+      btn.style.borderColor = configs[f].border;
+      btn.style.color = configs[f].color;
+    } else {
+      btn.style.background = 'transparent';
+      btn.style.borderColor = configs[f].border + '55';
+      btn.style.color = configs[f].color;
+      btn.style.opacity = '0.6';
+    }
+  });
+  renderTrack();
+}
+
 function deletePick(index) {
-  state.picks.splice(index, 1);
+  // index est relatif à la liste filtrée — on retrouve l'id
+  const filtered = trackFilter === 'all' ? state.picks : state.picks.filter(p => p.alerte === trackFilter);
+  const pickToDelete = filtered[index];
+  if (!pickToDelete) return;
+  const globalIndex = state.picks.findIndex(p => p.id === pickToDelete.id);
+  if (globalIndex === -1) return;
+  state.picks.splice(globalIndex, 1);
   localStorage.setItem('picksai_picks', JSON.stringify(state.picks));
   renderTrack();
 }
@@ -725,63 +767,55 @@ function trackStats(picks) {
   return { won, total: picks.length, wr, profit };
 }
 
-function trackSection(title, color, emoji, picks) {
-  if (picks.length === 0) return '';
-  const { won, total, wr, profit } = trackStats(picks);
-  const wrColor = wr >= 60 ? 'var(--green)' : wr >= 50 ? 'var(--gold)' : 'var(--red)';
-  return `
-    <div style="margin-bottom:20px">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;padding:8px 12px;background:var(--bg2);border-radius:8px;border-left:3px solid ${color}">
-        <div style="font-family:'Bebas Neue';font-size:16px;color:${color}">${emoji} ${title}</div>
-        <div style="display:flex;gap:16px;font-size:12px">
-          <span style="color:var(--muted)">${total} picks</span>
-          <span style="color:${wrColor};font-weight:bold">${wr}% WR</span>
-          <span style="color:${profit>=0?'var(--green)':'var(--red)'};font-weight:bold">${profit>=0?'+':''}${profit}€</span>
-        </div>
-      </div>
-      ${picks.map(p => `
-        <div class="track-item" style="border-color:${p.won ? '#10b98133' : '#ef444422'}">
-          <div class="track-header">
-            <div>
-              <div class="track-player">
-                <span>${p.won ? '✅' : '❌'}</span>
-                <span class="track-name">${p.joueur}</span>
-                <span class="track-type">${p.type}</span>
-                <span style="font-size:10px;padding:2px 6px;border-radius:3px;background:${color}22;color:${color};border:1px solid ${color}44">${p.alerte||'?'}</span>
-              </div>
-              <div class="track-match">${p.match} · ${p.competition}</div>
-              <div class="factors">${(p.facteurs||[]).map(f => factorBadge(f)).join('')}</div>
+function alerteColor(alerte) {
+  if (alerte === 'ROUGE') return '#ef4444';
+  if (alerte === 'ORANGE') return '#f59e0b';
+  if (alerte === 'VERT') return '#10b981';
+  return 'var(--muted)';
+}
+
+function renderPicksList(picks) {
+  return picks.map((p, i) => {
+    const ac = alerteColor(p.alerte);
+    return `
+      <div class="track-item" style="border-color:${p.won ? '#10b98133' : '#ef444422'}">
+        <div class="track-header">
+          <div>
+            <div class="track-player">
+              <span>${p.won ? '✅' : '❌'}</span>
+              <span class="track-name">${p.joueur}</span>
+              <span class="track-type">${p.type}</span>
+              ${p.alerte ? `<span style="font-size:10px;padding:2px 6px;border-radius:3px;background:${ac}22;color:${ac};border:1px solid ${ac}44">${p.alerte}</span>` : ''}
             </div>
-            <div style="text-align:right;flex-shrink:0;margin-left:14px">
-              <div class="track-gain" style="color:${p.gain>=0?'var(--green)':'var(--red)'}">${p.gain>=0?'+':''}${p.gain}€</div>
-              <div class="track-mise">Mise: ${p.mise}€ · ×${p.cote}</div>
-              <div class="track-date">${new Date(p.date).toLocaleDateString('fr-FR')}</div>
-              <button onclick="deletePick(${picks.indexOf(p)})" style="margin-top:6px;padding:3px 8px;background:transparent;border:1px solid #ef444444;color:#ef4444;border-radius:4px;cursor:pointer;font-size:10px" onmouseover="this.style.background='#ef444422'" onmouseout="this.style.background='transparent'">🗑</button>
-            </div>
+            <div class="track-match">${p.match} · ${p.competition}</div>
+            <div class="factors">${(p.facteurs||[]).map(f => factorBadge(f)).join('')}</div>
           </div>
-        </div>`).join('')}
-    </div>`;
+          <div style="text-align:right;flex-shrink:0;margin-left:14px">
+            <div class="track-gain" style="color:${p.gain>=0?'var(--green)':'var(--red)'}">${p.gain>=0?'+':''}${p.gain}€</div>
+            <div class="track-mise">Mise: ${p.mise}€ · ×${p.cote}</div>
+            <div class="track-date">${new Date(p.date).toLocaleDateString('fr-FR')}</div>
+            <button onclick="deletePick(${i})" style="margin-top:6px;padding:3px 8px;background:transparent;border:1px solid #ef444444;color:#ef4444;border-radius:4px;cursor:pointer;font-size:10px" onmouseover="this.style.background='#ef444422'" onmouseout="this.style.background='transparent'">🗑</button>
+          </div>
+        </div>
+      </div>`;
+  }).join('');
 }
 
 function renderTrack() {
-  const picks = state.picks;
+  const allPicks = state.picks;
+  const filtered = trackFilter === 'all' ? allPicks : allPicks.filter(p => p.alerte === trackFilter);
 
-  // Séparer par fiabilité
-  const rouge  = picks.filter(p => p.alerte === 'ROUGE');
-  const orange = picks.filter(p => p.alerte === 'ORANGE');
-  const vert   = picks.filter(p => p.alerte === 'VERT' || !p.alerte);
-
-  // Stats globales
-  const { won, total, wr, profit } = trackStats(picks);
+  // Stats sur la vue filtrée
+  const { won, total, wr, profit } = trackStats(filtered);
   const wrColor = wr >= 60 ? 'var(--green)' : wr >= 50 ? 'var(--gold)' : 'var(--red)';
 
   document.getElementById('total-picks').textContent = total;
   document.getElementById('track-winrate').textContent = wr + '%';
   document.getElementById('track-winrate').style.color = wrColor;
 
-  // Streak
+  // Streak sur vue filtrée
   let streak = 0;
-  for (const p of picks) {
+  for (const p of filtered) {
     if (p.won) { if (streak >= 0) streak++; else break; }
     else { if (streak <= 0) streak--; else break; }
   }
@@ -789,15 +823,12 @@ function renderTrack() {
   streakEl.textContent = streak > 0 ? `+${streak}🔥` : streak < 0 ? `${streak}❄️` : '—';
   streakEl.style.color = streak > 0 ? 'var(--green)' : 'var(--red)';
 
-  if (picks.length === 0) {
-    document.getElementById('track-list').innerHTML = `<div class="empty"><div class="empty-icon">📋</div><div class="empty-title">AUCUN PICK</div><div class="empty-text">Lance un scan et ajoute des picks.</div></div>`;
+  if (filtered.length === 0) {
+    document.getElementById('track-list').innerHTML = `<div class="empty"><div class="empty-icon">📋</div><div class="empty-title">AUCUN PICK</div><div class="empty-text">${trackFilter === 'all' ? 'Lance un scan et ajoute des picks.' : `Aucun pick ${trackFilter} pour l'instant.`}</div></div>`;
     return;
   }
 
-  document.getElementById('track-list').innerHTML =
-    trackSection('FIABILITÉ ROUGE', '#ef4444', '🔴', rouge) +
-    trackSection('FIABILITÉ ORANGE', '#f59e0b', '🟡', orange) +
-    trackSection('FIABILITÉ VERT', '#10b981', '🟢', vert);
+  document.getElementById('track-list').innerHTML = renderPicksList(filtered);
 }
 
 // ── STATS ─────────────────────────────────────────────────
