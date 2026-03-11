@@ -256,10 +256,13 @@
 
   <!-- TRACK RECORD PAGE -->
   <div class="page" id="page-track">
-    <div class="stat-grid" style="margin-bottom:14px">
-      <div class="stat-box"><div class="stat-label">TOTAL PICKS</div><div class="stat-value" id="total-picks" style="color:var(--accent)">0</div></div>
-      <div class="stat-box"><div class="stat-label">WIN RATE</div><div class="stat-value" id="track-winrate">0%</div></div>
-      <div class="stat-box"><div class="stat-label">STREAK</div><div class="stat-value" id="track-streak">—</div></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+      <div class="stat-grid" style="flex:1;margin-bottom:0">
+        <div class="stat-box"><div class="stat-label">TOTAL PICKS</div><div class="stat-value" id="total-picks" style="color:var(--accent)">0</div></div>
+        <div class="stat-box"><div class="stat-label">WIN RATE</div><div class="stat-value" id="track-winrate">0%</div></div>
+        <div class="stat-box"><div class="stat-label">STREAK</div><div class="stat-value" id="track-streak">—</div></div>
+      </div>
+      <button onclick="clearTrack()" style="margin-left:12px;padding:8px 14px;background:transparent;border:1px solid #ef444455;color:#ef4444;border-radius:6px;cursor:pointer;font-size:11px;white-space:nowrap;flex-shrink:0" onmouseover="this.style.background='#ef444422'" onmouseout="this.style.background='transparent'">🗑 VIDER</button>
     </div>
     <div id="track-list">
       <div class="empty">
@@ -711,6 +714,13 @@ function saveParams() {
 }
 
 // ── TRACK RECORD ─────────────────────────────────────────
+function clearTrack() {
+  if (!confirm('Supprimer tout le track record ? Cette action est irréversible.')) return;
+  state.picks = [];
+  localStorage.setItem('picksai_picks', JSON.stringify([]));
+  renderTrack();
+}
+
 function trackStats(picks) {
   const won = picks.filter(p => p.won).length;
   const wr = picks.length > 0 ? Math.round((won / picks.length) * 100) : 0;
