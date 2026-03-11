@@ -303,14 +303,15 @@ CONTEXTE: ${context}
 JOUEURS TITULAIRES DISPONIBLES (position API + stats saison):
 ${playerList}
 
-RÈGLES STRICTES:
-- ❌ JAMAIS choisir un défenseur ou gardien (POS: D, G, CB, LB, RB, GK) même s'il est dans la liste
-- ❌ JAMAIS choisir un milieu défensif (CDM, DM) avec 0 but et moins de 3 passes
-- ✅ Tu connais les vrais postes des joueurs — utilise ton jugement (ex: Dembélé est ailier même si l'API dit M)
-- ✅ Priorité: attaquant de pointe > ailier > milieu offensif (CAM, AM)
-- ✅ Critères: ratio buts/match > buts totaux > passes décisives
-- ✅ Si 2 joueurs proches: préfère le joueur à domicile
-- ✅ Prends en compte la forme récente et l'opposition (adversaire faible = plus de chances)
+RÈGLES STRICTES — RESPECTE-LES ABSOLUMENT:
+1. ❌ JAMAIS un défenseur/gardien (POS: D, G, CB, LB, RB, GK)
+2. ❌ JAMAIS un joueur avec 0 but ET 0 passe ET moins de 5 matchs — données insuffisantes
+3. ❌ JAMAIS un milieu défensif (tu connais les joueurs : N'Golo Kanté, Casemiro, Simões, Rodri = milieux défensifs → EXCLUS)
+4. ✅ Tu connais TOUS les joueurs de football — utilise tes connaissances réelles pour identifier leur vrai poste
+5. ✅ Si les stats semblent incomplètes (ex: Suárez avec 0 but alors qu'il en a 20+ en championnat) → choisis-le quand même si tu sais qu'il est attaquant prolifique
+6. ✅ Priorité absolue: attaquant de pointe connu > ailier connu > milieu offensif connu
+7. ✅ Critères de sélection: ratio buts/match réel (championnat inclus) > buts totaux > passes
+8. ✅ Si tu n'as AUCUN joueur offensif fiable dans la liste → réponds avec valide:false
 
 Réponds UNIQUEMENT en JSON:
 {"joueur":"Prénom Nom","equipe":"${matchInfo.domicile} ou ${matchInfo.exterieur}","type":"Joueur décisif","prob":72,"cote_estimee":1.65,"raison":"2 phrases max avec stats concrètes","buteur_alt":{"joueur":"Prénom Nom","equipe":"equipe","prob":45,"cote_estimee":2.20,"raison":"1 phrase"}}`;
@@ -487,8 +488,8 @@ app.get('/api/scan', async (req, res) => {
 
         // Claude choisit uniquement parmi les joueurs offensifs filtrés
         const pickData = await pickBestPlayer(matchData, allOffensive, matchData.context);
-        if (!pickData) {
-          rejected.push({ match: matchData.match, competition: matchData.competition, heure: matchData.heure, score_matriciel: matchData.scoreMatriciel, raison: 'Impossible de sélectionner un joueur' });
+        if (!pickData || pickData.valide === false) {
+          rejected.push({ match: matchData.match, competition: matchData.competition, heure: matchData.heure, score_matriciel: matchData.scoreMatriciel, raison: pickData?.raison || 'Aucun joueur offensif fiable trouvé' });
           continue;
         }
 
