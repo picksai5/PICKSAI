@@ -141,21 +141,15 @@ async function preloadCache() {
 function filterOffensivePlayers(players) {
   return players.filter(p => {
     const pos = (p.statistics?.[0]?.games?.position || p.player?.position || '').trim();
-    const goals = p.statistics?.[0]?.goals?.total || 0;
-    const assists = p.statistics?.[0]?.goals?.assists || 0;
-    const apps = p.statistics?.[0]?.games?.appearences || 0;
 
-    // ✅ Attaquants — toujours inclus
-    if (pos === 'F' || pos === 'Attacker') return true;
+    // ❌ Exclure UNIQUEMENT les défenseurs et gardiens certains
+    // On laisse passer tout le reste — Claude vérifie ensuite
+    if (pos === 'G' || pos === 'Goalkeeper') return false;
+    if (pos === 'D' || pos === 'Defender') return false;
 
-    // ✅ Milieux — inclus SEULEMENT si stats offensives (au moins 1 but OU 3 passes)
-    // Exclure les milieux défensifs qui n'ont aucune contribution offensive
-    if (pos === 'M' || pos === 'Midfielder') {
-      return goals >= 1 || assists >= 3;
-    }
-
-    // ❌ Défenseurs, gardiens, positions vides → exclus
-    return false;
+    // ✅ Tout le reste passe (F, M, positions vides, positions inconnues)
+    // Claude recevra la position dans le prompt et validera lui-même
+    return true;
   });
 }
 
@@ -297,24 +291,26 @@ async function pickBestPlayer(matchInfo, offensivePlayers, context) {
 
   const playerList = offensivePlayers.map(p => {
     const s = p.statistics?.[0];
-    return `- ${p.player?.name} | ${s?.games?.position||'?'} | ${s?.goals?.total||0} buts | ${s?.goals?.assists||0} passes | ${s?.games?.appearences||0} matchs`;
+    const pos = s?.games?.position || p.player?.position || '?';
+    return `- ${p.player?.name} | POS:${pos} | ${s?.goals?.total||0} buts | ${s?.goals?.assists||0} passes | ${s?.games?.appearences||0} matchs`;
   }).join('\n');
 
-  const prompt = `Tu es un expert football. Parmi ces joueurs OFFENSIFS TITULAIRES, choisis le MEILLEUR PICK pour ce match.
+  const prompt = `Tu es un expert football avec une connaissance parfaite des joueurs. Parmi ces joueurs TITULAIRES, choisis le MEILLEUR PICK offensif pour ce match.
 
 MATCH: ${matchInfo.match} | ${matchInfo.competition} | ${matchInfo.heure}
 CONTEXTE: ${context}
 
-JOUEURS OFFENSIFS TITULAIRES (attaquants et milieux uniquement):
+JOUEURS TITULAIRES DISPONIBLES (position API + stats saison):
 ${playerList}
 
-RÈGLES:
-- Choisis UNIQUEMENT parmi cette liste
-- Priorité ABSOLUE: attaquant de pointe (ST/CF) > ailier > milieu OFFENSIF
-- ❌ JAMAIS un milieu avec 0 but et moins de 3 passes — c'est un milieu défensif
-- ❌ JAMAIS choisir un joueur avec 0 but et 0 passe décisive comme pick principal
-- Priorité: buts > passes décisives > matchs joués
-- Si 2 joueurs égaux: préfère celui qui joue à domicile
+RÈGLES STRICTES:
+- ❌ JAMAIS choisir un défenseur ou gardien (POS: D, G, CB, LB, RB, GK) même s'il est dans la liste
+- ❌ JAMAIS choisir un milieu défensif (CDM, DM) avec 0 but et moins de 3 passes
+- ✅ Tu connais les vrais postes des joueurs — utilise ton jugement (ex: Dembélé est ailier même si l'API dit M)
+- ✅ Priorité: attaquant de pointe > ailier > milieu offensif (CAM, AM)
+- ✅ Critères: ratio buts/match > buts totaux > passes décisives
+- ✅ Si 2 joueurs proches: préfère le joueur à domicile
+- ✅ Prends en compte la forme récente et l'opposition (adversaire faible = plus de chances)
 
 Réponds UNIQUEMENT en JSON:
 {"joueur":"Prénom Nom","equipe":"${matchInfo.domicile} ou ${matchInfo.exterieur}","type":"Joueur décisif","prob":72,"cote_estimee":1.65,"raison":"2 phrases max avec stats concrètes","buteur_alt":{"joueur":"Prénom Nom","equipe":"equipe","prob":45,"cote_estimee":2.20,"raison":"1 phrase"}}`;
