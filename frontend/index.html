@@ -210,6 +210,7 @@
     <div class="scan-center">
       <button class="scan-btn" id="scan-btn" onclick="doScan()">⚡ LANCER LE SCAN</button>
       <div class="scan-sub">MATRICE F1→F14 · API FOOTBALL LIVE · TOP PICK AUTOMATIQUE</div>
+      <div id="last-scan-badge" style="margin-top:8px;font-size:11px;color:var(--muted)"></div>
     </div>
     <div class="log-box" id="log-box" style="display:none"></div>
     <div id="scan-results"></div>
@@ -384,6 +385,19 @@ async function loadState() {
     if (r?.value) state = { ...state, ...JSON.parse(r.value) };
   } catch { try { const r = localStorage.getItem(STATE_KEY); if (r) state = { ...state, ...JSON.parse(r) }; } catch {} }
   updateUI();
+
+  // Restaurer le dernier scan
+  try {
+    const lastScan = localStorage.getItem('picksai_last_scan');
+    if (lastScan) {
+      const data = JSON.parse(lastScan);
+      const scanDate = data.date || '';
+      renderScanResults(data, true);
+      // Afficher un badge "dernier scan"
+      const badge = document.getElementById('last-scan-badge');
+      if (badge) badge.textContent = `Dernier scan : ${scanDate}`;
+    }
+  } catch {}
 }
 
 async function saveState() {
@@ -438,6 +452,9 @@ async function doScan() {
     addLog(`✅ ${data.picks?.length || 0} picks retenus sur ${data.total_analyses} matchs analysés`, '#10b981');
     if (data.top_pick?.pick) addLog(`⭐ Top Pick: ${data.top_pick.pick.joueur} — Score ${data.top_pick.score_matriciel}`, '#f59e0b');
 
+    // Sauvegarder le scan en localStorage
+    try { localStorage.setItem('picksai_last_scan', JSON.stringify(data)); } catch {}
+
     renderScanResults(data);
   } catch (e) {
     addLog(`❌ ${e.message}`, '#ef4444');
@@ -448,8 +465,18 @@ async function doScan() {
   btn.innerHTML = '⚡ LANCER LE SCAN';
 }
 
-function renderScanResults(data) {
+function renderScanResults(data, isRestored = false) {
   const results = document.getElementById('scan-results');
+
+  // Mettre à jour le badge dernier scan
+  const badge = document.getElementById('last-scan-badge');
+  if (badge) {
+    const now = isRestored ? '' : ` · ${new Date().toLocaleTimeString('fr-FR', {hour:'2-digit',minute:'2-digit'})}`;
+    badge.innerHTML = isRestored
+      ? `🕐 Dernier scan : ${data.date}${now} <span style="color:#60a5fa;cursor:pointer" onclick="doScan()">— Relancer</span>`
+      : `✅ Scan du ${data.date}${now}`;
+  }
+
   if (!data.picks || data.picks.length === 0) {
     results.innerHTML = '<div class="empty"><div class="empty-icon">😴</div><div class="empty-title">AUCUN PICK AUJOURD\'HUI</div><div class="empty-text">Aucun match ne valide les critères de la matrice.</div></div>';
     return;
