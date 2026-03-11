@@ -140,10 +140,22 @@ async function preloadCache() {
 // Retourne uniquement les joueurs offensifs (attaquants + milieux)
 function filterOffensivePlayers(players) {
   return players.filter(p => {
-    const pos = p.statistics?.[0]?.games?.position || p.player?.position || '';
-    // Garder uniquement attaquants (F) et milieux (M)
-    // Exclure gardiens (G) et défenseurs (D)
-    return pos === 'F' || pos === 'M' || pos === 'Attacker' || pos === 'Midfielder';
+    const pos = (p.statistics?.[0]?.games?.position || p.player?.position || '').trim();
+    const goals = p.statistics?.[0]?.goals?.total || 0;
+    const assists = p.statistics?.[0]?.goals?.assists || 0;
+    const apps = p.statistics?.[0]?.games?.appearences || 0;
+
+    // ✅ Attaquants — toujours inclus
+    if (pos === 'F' || pos === 'Attacker') return true;
+
+    // ✅ Milieux — inclus SEULEMENT si stats offensives (au moins 1 but OU 3 passes)
+    // Exclure les milieux défensifs qui n'ont aucune contribution offensive
+    if (pos === 'M' || pos === 'Midfielder') {
+      return goals >= 1 || assists >= 3;
+    }
+
+    // ❌ Défenseurs, gardiens, positions vides → exclus
+    return false;
   });
 }
 
@@ -227,26 +239,54 @@ function calcMatrixScore(hStats, aStats, hStand, aStand, h2h, injuries, isEurope
   return { scoreMatriciel, factors, alerte };
 }
 
-// ── CALCUL CONFIANCE SCORE EN JS PUR ─────────────────────
-function calcConfianceScore(hStats, aStats, hStand, aStand, h2h, isEuropean, pickTeamIsHome) {
+// ── CALCUL SCORE FINAL (matriciel + joueur individuel) ───
+function calcConfianceScore(hStats, aStats, hStand, aStand, h2h, isEuropean, pickTeamIsHome, playerStats) {
   let c = 0;
+
+  // ── CONTEXTE MATCH ────────────────────────────────────
   const aGoalsAgainst = parseFloat(aStats?.goals?.against?.average?.away) || 0;
   const hWins = ((hStand?.form || '').slice(-5).match(/W/g) || []).length;
   const h2hWins = (h2h || []).filter(m => (m.goals?.home || 0) > (m.goals?.away || 0)).length;
   const hRank = hStand?.rank || 99;
   const aRank = aStand?.rank || 99;
 
-  if (pickTeamIsHome)          c += 15;  // domicile
-  if (aGoalsAgainst >= 2.0)    c += 15;  // défense très poreuse
-  else if (aGoalsAgainst >= 1.5) c += 8; // défense fragile
-  if (h2hWins >= 3)            c += 10;  // H2H très favorable
-  else if (h2hWins >= 2)       c += 5;
-  if (isEuropean)              c += 10;  // enjeu CL/EL
-  if (hWins >= 4)              c += 10;  // équipe en feu
-  else if (hWins >= 3)         c += 5;
-  if (aRank >= 15)             c += 8;   // adversaire faible
-  if (hRank <= 4)              c += 5;   // top 4
+  if (pickTeamIsHome)            c += 15;  // domicile
+  if (aGoalsAgainst >= 2.0)      c += 15;  // défense très poreuse
+  else if (aGoalsAgainst >= 1.5) c += 8;   // défense fragile
+  if (h2hWins >= 3)              c += 10;  // H2H très favorable
+  else if (h2hWins >= 2)         c += 5;
+  if (isEuropean)                c += 5;   // enjeu CL/EL
+  if (hWins >= 4)                c += 10;  // équipe en feu
+  else if (hWins >= 3)           c += 5;
+  if (aRank >= 20)               c += 12;  // adversaire très faible
+  else if (aRank >= 15)          c += 8;   // adversaire faible
+  if (hRank <= 4)                c += 5;   // top 4
   if (!pickTeamIsHome && isEuropean) c -= 10; // déplacement hostile CL/EL
+
+  // ── QUALITÉ INDIVIDUELLE DU JOUEUR ───────────────────
+  if (playerStats) {
+    const goals = playerStats.goals || 0;
+    const assists = playerStats.assists || 0;
+    const apps = playerStats.apps || 1;
+    const goalsPerMatch = goals / apps;
+
+    // Ratio buts/match — le critère le plus important
+    if (goalsPerMatch >= 0.6)      c += 20;  // 0.6+ buts/match = élite
+    else if (goalsPerMatch >= 0.45) c += 15; // 0.45+ = très bon
+    else if (goalsPerMatch >= 0.3)  c += 10; // 0.3+ = bon
+    else if (goalsPerMatch >= 0.15) c += 5;  // 0.15+ = correct
+
+    // Volume de buts absolus
+    if (goals >= 20)      c += 10;
+    else if (goals >= 15) c += 7;
+    else if (goals >= 10) c += 4;
+    else if (goals >= 5)  c += 2;
+
+    // Passes décisives (contribution offensive)
+    if (assists >= 8)     c += 5;
+    else if (assists >= 5) c += 3;
+    else if (assists >= 3) c += 1;
+  }
 
   return Math.min(100, Math.max(0, c));
 }
@@ -270,9 +310,11 @@ ${playerList}
 
 RÈGLES:
 - Choisis UNIQUEMENT parmi cette liste
-- Priorité: buts cette saison > passes > matchs joués
-- Préfère l'attaquant de pointe au milieu si stats comparables
-- Le joueur doit être titulaire (il est dans cette liste donc oui)
+- Priorité ABSOLUE: attaquant de pointe (ST/CF) > ailier > milieu OFFENSIF
+- ❌ JAMAIS un milieu avec 0 but et moins de 3 passes — c'est un milieu défensif
+- ❌ JAMAIS choisir un joueur avec 0 but et 0 passe décisive comme pick principal
+- Priorité: buts > passes décisives > matchs joués
+- Si 2 joueurs égaux: préfère celui qui joue à domicile
 
 Réponds UNIQUEMENT en JSON:
 {"joueur":"Prénom Nom","equipe":"${matchInfo.domicile} ou ${matchInfo.exterieur}","type":"Joueur décisif","prob":72,"cote_estimee":1.65,"raison":"2 phrases max avec stats concrètes","buteur_alt":{"joueur":"Prénom Nom","equipe":"equipe","prob":45,"cote_estimee":2.20,"raison":"1 phrase"}}`;
@@ -454,10 +496,23 @@ app.get('/api/scan', async (req, res) => {
           continue;
         }
 
-        // Calcul confiance score côté serveur
+        // Calcul confiance score côté serveur + qualité joueur
         const pickTeamIsHome = pickData.equipe === matchData.domicile;
         const { hStats, aStats, hStand, aStand, h2h } = matchData.raw;
-        const confianceScore = calcConfianceScore(hStats, aStats, hStand, aStand, h2h, matchData.isEuropean, pickTeamIsHome);
+
+        // Trouver les stats du joueur sélectionné
+        const allPlayers = [...matchData.hOffensive, ...matchData.aOffensive];
+        const selectedPlayer = allPlayers.find(p =>
+          p.player?.name?.toLowerCase().includes(pickData.joueur?.toLowerCase().split(' ').pop() || '') ||
+          pickData.joueur?.toLowerCase().includes(p.player?.name?.toLowerCase().split(' ').pop() || '')
+        );
+        const playerStats = selectedPlayer ? {
+          goals: selectedPlayer.statistics?.[0]?.goals?.total || 0,
+          assists: selectedPlayer.statistics?.[0]?.goals?.assists || 0,
+          apps: selectedPlayer.statistics?.[0]?.games?.appearences || 1,
+        } : null;
+
+        const confianceScore = calcConfianceScore(hStats, aStats, hStand, aStand, h2h, matchData.isEuropean, pickTeamIsHome, playerStats);
 
         const buteurAlt = pickData.buteur_alt ? {
           joueur: pickData.buteur_alt.joueur,
@@ -467,9 +522,12 @@ app.get('/api/scan', async (req, res) => {
           raison: pickData.buteur_alt.raison,
         } : null;
 
+        const scoreTotal = matchData.scoreMatriciel + confianceScore;
+
         picks.push({
           score_matriciel: matchData.scoreMatriciel,
           confiance_score: confianceScore,
+          score_total: scoreTotal,
           facteurs: matchData.factors,
           alerte: matchData.alerte,
           pick: {
@@ -494,11 +552,8 @@ app.get('/api/scan', async (req, res) => {
       }
     }
 
-    // Tri : score matriciel d'abord, confiance_score en départage — STABLE et DETERMINISTE
-    picks.sort((a, b) => {
-      if (b.score_matriciel !== a.score_matriciel) return b.score_matriciel - a.score_matriciel;
-      return (b.confiance_score || 0) - (a.confiance_score || 0);
-    });
+    // Tri par score_total (matriciel + qualité joueur) — STABLE et DETERMINISTE
+    picks.sort((a, b) => (b.score_total || 0) - (a.score_total || 0));
     rejected.sort((a, b) => b.score_matriciel - a.score_matriciel);
 
     res.json({
