@@ -23,6 +23,9 @@ const LEAGUES = [
   { id: 78,  name: 'Bundesliga' },
   { id: 2,   name: 'Champions League' },
   { id: 3,   name: 'Europa League' },
+  { id: 848, name: 'Conference League' },
+  { id: 88,  name: 'Eredivisie' },
+  { id: 94,  name: 'Liga Portugal' },
 ];
 
 const EURO_LEAGUES = [2, 3, 848];
