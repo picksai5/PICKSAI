@@ -332,6 +332,14 @@
         <button class="result-btn" id="btn-won" onclick="setWon(true)" style="background:var(--bg);border:2px solid var(--border);color:var(--muted)">✅ GAGNÉ</button>
         <button class="result-btn" id="btn-lost" onclick="setWon(false)" style="background:var(--bg);border:2px solid var(--border);color:var(--muted)">❌ PERDU</button>
       </div>
+      <div style="margin-bottom:14px">
+        <div class="form-label" style="margin-bottom:8px">NIVEAU DU PICK</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+          <button id="btn-niveau-vert" onclick="setNiveau('VERT')" style="padding:8px;border-radius:8px;cursor:pointer;font-family:'Bebas Neue';font-size:13px;letter-spacing:1px;background:var(--bg);border:2px solid var(--border);color:var(--muted)">🟢 VERT</button>
+          <button id="btn-niveau-orange" onclick="setNiveau('ORANGE')" style="padding:8px;border-radius:8px;cursor:pointer;font-family:'Bebas Neue';font-size:13px;letter-spacing:1px;background:var(--bg);border:2px solid var(--border);color:var(--muted)">🟡 ORANGE</button>
+          <button id="btn-niveau-rouge" onclick="setNiveau('ROUGE')" style="padding:8px;border-radius:8px;cursor:pointer;font-family:'Bebas Neue';font-size:13px;letter-spacing:1px;background:var(--bg);border:2px solid var(--border);color:var(--muted)">🔴 ROUGE</button>
+        </div>
+      </div>
     </div>
     <div class="impact-box" id="impact-box" style="text-align:center;padding:10px 14px;margin-bottom:16px;border-radius:8px;background:#3b82f611;border:1px solid #3b82f633">
       <div class="impact-label">MISE ENREGISTRÉE</div>
@@ -563,6 +571,20 @@ function alertColor(a) {
 
 // ── MODAL ─────────────────────────────────────────────────
 let editPickId = null; // null = ajout, id = édition résultat
+let niveauState = null;
+
+function setNiveau(niveau) {
+  niveauState = niveau;
+  const colors = { 'VERT': '#10b981', 'ORANGE': '#f59e0b', 'ROUGE': '#ef4444' };
+  ['VERT','ORANGE','ROUGE'].forEach(n => {
+    const btn = document.getElementById('btn-niveau-' + n.toLowerCase());
+    if (!btn) return;
+    btn.style.cssText = niveauState === n
+      ? `padding:8px;border-radius:8px;cursor:pointer;font-family:'Bebas Neue';font-size:13px;letter-spacing:1px;background:${colors[n]}22;border:2px solid ${colors[n]};color:${colors[n]}`
+      : 'padding:8px;border-radius:8px;cursor:pointer;font-family:\'Bebas Neue\';font-size:13px;letter-spacing:1px;background:var(--bg);border:2px solid var(--border);color:var(--muted)';
+  });
+}
+
 
 function openModal(pick) {
   currentPick = typeof pick === 'string' ? JSON.parse(pick) : pick;
@@ -603,6 +625,7 @@ function openEditModal(id) {
   document.getElementById('modal-result-section').style.display = 'block';
   document.getElementById('modal-confirm-btn').textContent = 'VALIDER';
   setWon(pick.won);
+  setNiveau(pick.alerte || null);
   updateImpact();
   document.getElementById('modal').classList.add('open');
 }
@@ -666,6 +689,7 @@ function confirmPick() {
     pick.gain = gain;
     pick.mise = mise;
     pick.cote = cote;
+    if (niveauState) pick.alerte = niveauState;
     if (!wonState) {
       state.consecutive_losses++;
       if (state.consecutive_losses >= 4) {
