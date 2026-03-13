@@ -229,9 +229,9 @@ function calcMatrixScore(hStats, aStats, hStand, aStand, h2h, injuries, isEurope
 
   const scoreMatriciel = Math.round(score * 2.5); // normalisé sur ~100
   let alerte = null;
-  if (scoreMatriciel >= 85) alerte = 'ROUGE';
+  if (scoreMatriciel >= 80) alerte = 'VERT';
   else if (scoreMatriciel >= 70) alerte = 'ORANGE';
-  else if (scoreMatriciel >= 60) alerte = 'VERT';
+  else if (scoreMatriciel >= 60) alerte = 'ROUGE';
 
   return { scoreMatriciel, factors, alerte };
 }
@@ -522,7 +522,7 @@ app.get('/api/scan', async (req, res) => {
           raison: pickData.buteur_alt.raison,
         } : null;
 
-        const scoreTotal = matchData.scoreMatriciel + confianceScore;
+        const scoreTotal = Math.min(100, matchData.scoreMatriciel + confianceScore);
 
         picks.push({
           score_matriciel: matchData.scoreMatriciel,
@@ -607,7 +607,7 @@ app.get('/api/backtest', async (req, res) => {
         if (!alerte) continue;
         const hGoals = fixture.goals?.home || 0; const aGoals = fixture.goals?.away || 0;
         const validated = hGoals >= 2;
-        const cote = alerte === 'ROUGE' ? 1.75 : 1.65;
+        const cote = alerte === 'VERT' ? 1.75 : 1.65;
         const gain = validated ? Math.round(MISE * (cote - 1)) : -MISE;
         const pick = { date: fixture.fixture?.date?.split('T')[0]||'?', match: `${hTeam.name} vs ${aTeam.name}`, competition: league.name, sm, alerte, factors, score: `${hGoals}-${aGoals}`, validated, cote, mise: MISE, gain };
         if (alerte === 'ROUGE') picksRouge.push(pick); else picksOrange.push(pick);
