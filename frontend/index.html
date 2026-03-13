@@ -448,7 +448,7 @@ async function doScan() {
     if (data.error) throw new Error(data.error);
 
     addLog(`✅ ${data.picks?.length || 0} picks retenus sur ${data.total_analyses} matchs analysés`, '#10b981');
-    if (data.top_pick?.pick) addLog(`⭐ Top Pick: ${data.top_pick.pick.joueur} — Score ${data.top_pick.score_matriciel}`, '#f59e0b');
+    if (data.top_pick?.pick) addLog(`⭐ Top Pick: ${data.top_pick.pick.joueur} — Score ${data.top_pick.score_total ?? data.top_pick.score_matriciel}`, '#f59e0b');
 
     // Sauvegarder le scan en localStorage
     try { localStorage.setItem('picksai_last_scan', JSON.stringify(data)); } catch {}
@@ -483,7 +483,7 @@ function renderScanResults(data, isRestored = false) {
   let html = `<div class="stat-grid" style="margin-bottom:12px">
     <div class="stat-box"><div class="stat-label">MATCHS ANALYSÉS</div><div class="stat-value" style="color:#60a5fa">${data.total_analyses}</div></div>
     <div class="stat-box"><div class="stat-label">PICKS RETENUS</div><div class="stat-value" style="color:var(--accent)">${data.picks.length}</div></div>
-    <div class="stat-box"><div class="stat-label">TOP SCORE</div><div class="stat-value" style="color:var(--gold)">${data.top_pick?.score_matriciel || '—'}</div></div>
+    <div class="stat-box"><div class="stat-label">TOP SCORE</div><div class="stat-value" style="color:var(--gold)">${data.top_pick?.score_total ?? data.top_pick?.score_matriciel || '—'}</div></div>
   </div>`;
 
   // Top Pick
@@ -493,7 +493,7 @@ function renderScanResults(data, isRestored = false) {
       <div class="top-pick-header">
         <span style="font-size:20px">⭐</span>
         <span class="top-pick-title">TOP PICK DU JOUR</span>
-        <span class="top-pick-score">${tp.score_matriciel}</span>
+        <span class="top-pick-score">${tp.score_total ?? tp.score_matriciel}</span>
       </div>
       <div class="top-pick-player">${tp.pick.joueur}</div>
       <div class="top-pick-match">${tp.match} · ${tp.pick.type}</div>
@@ -520,7 +520,7 @@ function renderScanResults(data, isRestored = false) {
         </div>
         <div class="pick-score">
           <div class="pick-alerte" style="color:${ac}">${pick.alerte}</div>
-          <div class="pick-score-val" style="color:${ac}">${pick.score_matriciel}</div>
+          <div class="pick-score-val" style="color:${ac}">${pick.score_total ?? pick.score_matriciel}</div>
         </div>
       </div>
       <div class="factors">${(pick.facteurs||[]).map(f => factorBadge(f)).join('')}</div>
@@ -556,7 +556,7 @@ function factorBadge(fid) {
 }
 
 function alertColor(a) {
-  return a === 'ROUGE' ? '#ef4444' : a === 'ORANGE' ? '#f59e0b' : '#10b981';
+  return a === 'VERT' ? '#10b981' : a === 'ORANGE' ? '#f59e0b' : '#ef4444';
 }
 
 // ── MODAL ─────────────────────────────────────────────────
@@ -793,9 +793,9 @@ function trackStats(picks) {
 }
 
 function alerteColor(alerte) {
-  if (alerte === 'ROUGE') return '#ef4444';
-  if (alerte === 'ORANGE') return '#f59e0b';
   if (alerte === 'VERT') return '#10b981';
+  if (alerte === 'ORANGE') return '#f59e0b';
+  if (alerte === 'ROUGE') return '#ef4444';
   return 'var(--muted)';
 }
 
@@ -1007,7 +1007,7 @@ function renderBacktestResults(data) {
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
       <span style="font-size:24px">🔴</span>
       <div>
-        <div style="font-family:'Bebas Neue';font-size:20px;letter-spacing:3px;color:#ef4444">PICKS ROUGE — Score ≥ 85</div>
+        <div style="font-family:'Bebas Neue';font-size:20px;letter-spacing:3px;color:#ef4444">PICKS ROUGE — Score 60-69</div>
         <div style="font-size:11px;color:var(--muted)">Mise : 100€ · Cote moyenne : 1.75</div>
       </div>
       <div style="margin-left:auto;text-align:right">
@@ -1049,7 +1049,7 @@ function renderBacktestResults(data) {
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
       <span style="font-size:24px">🟡</span>
       <div>
-        <div style="font-family:'Bebas Neue';font-size:20px;letter-spacing:3px;color:#f59e0b">PICKS ORANGE — Score 70-84</div>
+        <div style="font-family:'Bebas Neue';font-size:20px;letter-spacing:3px;color:#f59e0b">PICKS ORANGE — Score 70-79</div>
         <div style="font-size:11px;color:var(--muted)">Mise : 100€ · Cote moyenne : 1.65</div>
       </div>
       <div style="margin-left:auto;text-align:right">
