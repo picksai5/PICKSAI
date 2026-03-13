@@ -258,9 +258,9 @@
     <!-- Onglets filtre -->
     <div style="display:flex;gap:6px;margin-bottom:14px">
       <button id="tf-all" onclick="setTrackFilter('all')" style="flex:1;padding:8px;border-radius:6px;border:1px solid var(--accent);background:var(--accent);color:#fff;font-family:'Bebas Neue';font-size:13px;cursor:pointer">TOUS</button>
-      <button id="tf-rouge" onclick="setTrackFilter('ROUGE')" style="flex:1;padding:8px;border-radius:6px;border:1px solid #ef444455;background:transparent;color:#ef4444;font-family:'Bebas Neue';font-size:13px;cursor:pointer">🔴 ROUGE</button>
-      <button id="tf-orange" onclick="setTrackFilter('ORANGE')" style="flex:1;padding:8px;border-radius:6px;border:1px solid #f59e0b55;background:transparent;color:#f59e0b;font-family:'Bebas Neue';font-size:13px;cursor:pointer">🟡 ORANGE</button>
       <button id="tf-vert" onclick="setTrackFilter('VERT')" style="flex:1;padding:8px;border-radius:6px;border:1px solid #10b98155;background:transparent;color:#10b981;font-family:'Bebas Neue';font-size:13px;cursor:pointer">🟢 VERT</button>
+      <button id="tf-orange" onclick="setTrackFilter('ORANGE')" style="flex:1;padding:8px;border-radius:6px;border:1px solid #f59e0b55;background:transparent;color:#f59e0b;font-family:'Bebas Neue';font-size:13px;cursor:pointer">🟡 ORANGE</button>
+      <button id="tf-rouge" onclick="setTrackFilter('ROUGE')" style="flex:1;padding:8px;border-radius:6px;border:1px solid #ef444455;background:transparent;color:#ef4444;font-family:'Bebas Neue';font-size:13px;cursor:pointer">🔴 ROUGE</button>
     </div>
     <!-- Stats dynamiques selon filtre -->
     <div class="stat-grid" style="margin-bottom:14px">
@@ -320,25 +320,27 @@
 <!-- MODAL PICK -->
 <div class="modal-overlay" id="modal">
   <div class="modal">
-    <div class="modal-title">ENREGISTRER LE PICK</div>
+    <div class="modal-title" id="modal-title">ENREGISTRER LE PICK</div>
     <div class="modal-player" id="modal-player">—</div>
     <div class="modal-match" id="modal-match">—</div>
     <div class="form-grid">
       <div><div class="form-label">MISE (€)</div><input class="form-input" type="number" id="modal-mise" oninput="updateImpact()"></div>
       <div><div class="form-label">COTE RÉELLE</div><input class="form-input" type="number" step="0.01" id="modal-cote" oninput="updateImpact()"></div>
     </div>
-    <div class="result-grid">
-      <button class="result-btn" id="btn-won" onclick="setWon(true)" style="background:#10b98122;border:2px solid var(--green);color:var(--green)">✅ GAGNÉ</button>
-      <button class="result-btn" id="btn-lost" onclick="setWon(false)" style="background:var(--bg);border:2px solid var(--border);color:var(--muted)">❌ PERDU</button>
+    <div id="modal-result-section" style="display:none">
+      <div class="result-grid">
+        <button class="result-btn" id="btn-won" onclick="setWon(true)" style="background:var(--bg);border:2px solid var(--border);color:var(--muted)">✅ GAGNÉ</button>
+        <button class="result-btn" id="btn-lost" onclick="setWon(false)" style="background:var(--bg);border:2px solid var(--border);color:var(--muted)">❌ PERDU</button>
+      </div>
     </div>
-    <div class="impact-box" id="impact-box">
-      <div class="impact-label">IMPACT BANKROLL</div>
-      <div class="impact-amount" id="impact-amount">+0€</div>
-      <div class="impact-new" id="impact-new">Nouvelle bankroll : —</div>
+    <div class="impact-box" id="impact-box" style="text-align:center;padding:10px 14px;margin-bottom:16px;border-radius:8px;background:#3b82f611;border:1px solid #3b82f633">
+      <div class="impact-label">MISE ENREGISTRÉE</div>
+      <div class="impact-amount" id="impact-amount" style="color:var(--accent)">—</div>
+      <div class="impact-new" id="impact-new" style="font-size:11px;color:var(--muted)">Résultat à définir après le match</div>
     </div>
     <div class="modal-actions">
       <button class="btn" style="flex:1;background:var(--bg);border-color:var(--border);color:var(--muted)" onclick="closeModal()">ANNULER</button>
-      <button class="btn btn-primary" style="flex:2;font-size:15px" onclick="confirmPick()">CONFIRMER</button>
+      <button class="btn btn-primary" style="flex:2;font-size:15px" id="modal-confirm-btn" onclick="confirmPick()">CONFIRMER</button>
     </div>
   </div>
 </div>
@@ -560,26 +562,48 @@ function alertColor(a) {
 }
 
 // ── MODAL ─────────────────────────────────────────────────
+let editPickId = null; // null = ajout, id = édition résultat
+
 function openModal(pick) {
   currentPick = typeof pick === 'string' ? JSON.parse(pick) : pick;
+  editPickId = null;
   const joueur = currentPick.pick?.joueur || currentPick.joueur || '?';
   const match = currentPick.match || `${currentPick.domicile} vs ${currentPick.exterieur}`;
   const cote = currentPick.pick?.cote_estimee || currentPick.cote_estimee || 1.65;
 
+  document.getElementById('modal-title').textContent = 'ENREGISTRER LE PICK';
   document.getElementById('modal-player').textContent = joueur;
   document.getElementById('modal-match').textContent = match;
   document.getElementById('modal-mise').value = state.mise_actuelle;
   document.getElementById('modal-cote').value = cote;
-  wonState = true;
-  setWon(true);
+  document.getElementById('modal-result-section').style.display = 'none';
+  document.getElementById('modal-confirm-btn').textContent = 'CONFIRMER';
+  wonState = null;
   updateImpact();
 
-  // Alerte drawdown
   if (state.consecutive_losses >= 3) {
     document.getElementById('impact-box').insertAdjacentHTML('beforebegin',
       `<div class="drawdown-alert">⚠️ ${state.consecutive_losses} pertes consécutives — Mise réduite à ${state.mise_actuelle}€ (Drawdown actif)</div>`);
   }
+  document.getElementById('modal').classList.add('open');
+}
 
+function openEditModal(id) {
+  const pick = state.picks.find(p => p.id === id);
+  if (!pick) return;
+  editPickId = id;
+  currentPick = pick;
+  wonState = pick.won;
+
+  document.getElementById('modal-title').textContent = 'MODIFIER LE RÉSULTAT';
+  document.getElementById('modal-player').textContent = pick.joueur;
+  document.getElementById('modal-match').textContent = pick.match;
+  document.getElementById('modal-mise').value = pick.mise;
+  document.getElementById('modal-cote').value = pick.cote;
+  document.getElementById('modal-result-section').style.display = 'block';
+  document.getElementById('modal-confirm-btn').textContent = 'VALIDER';
+  setWon(pick.won);
+  updateImpact();
   document.getElementById('modal').classList.add('open');
 }
 
@@ -590,10 +614,12 @@ function closeModal() {
 
 function setWon(won) {
   wonState = won;
-  document.getElementById('btn-won').style.cssText = won
+  const btnWon = document.getElementById('btn-won');
+  const btnLost = document.getElementById('btn-lost');
+  if (btnWon) btnWon.style.cssText = won === true
     ? 'background:#10b98122;border:2px solid var(--green);color:var(--green)'
     : 'background:var(--bg);border:2px solid var(--border);color:var(--muted)';
-  document.getElementById('btn-lost').style.cssText = !won
+  if (btnLost) btnLost.style.cssText = won === false
     ? 'background:#ef444422;border:2px solid var(--red);color:var(--red)'
     : 'background:var(--bg);border:2px solid var(--border);color:var(--muted)';
   updateImpact();
@@ -602,25 +628,62 @@ function setWon(won) {
 function updateImpact() {
   const mise = parseFloat(document.getElementById('modal-mise').value) || 0;
   const cote = parseFloat(document.getElementById('modal-cote').value) || 1;
+  const box = document.getElementById('impact-box');
+  const amountEl = document.getElementById('impact-amount');
+  const newEl = document.getElementById('impact-new');
+
+  if (wonState === null || editPickId === null) {
+    // Mode ajout — juste afficher la mise
+    box.style.cssText = 'border-radius:8px;padding:10px 14px;margin-bottom:16px;text-align:center;background:#3b82f611;border:1px solid #3b82f633';
+    amountEl.style.color = 'var(--accent)';
+    amountEl.textContent = mise > 0 ? `Mise : ${mise}€ × ${cote}` : '—';
+    newEl.textContent = 'Résultat à définir après le match';
+    return;
+  }
   const gain = wonState ? Math.round(mise * (cote - 1)) : -Math.round(mise);
   const newBankroll = state.bankroll + gain;
-  const color = gain >= 0 ? 'var(--green)' : 'var(--red)';
-
-  document.getElementById('impact-box').style.cssText = `border-radius:8px;padding:10px 14px;margin-bottom:16px;text-align:center;background:${gain>=0?'#10b9810d':'#ef44440d'};border:1px solid ${gain>=0?'#10b98133':'#ef444433'}`;
-  document.getElementById('impact-amount').style.color = color;
-  document.getElementById('impact-amount').textContent = (gain >= 0 ? '+' : '') + gain + '€';
-  document.getElementById('impact-new').innerHTML = `Nouvelle bankroll : <strong style="color:var(--text)">${newBankroll.toLocaleString('fr-FR')}€</strong>`;
+  box.style.cssText = `border-radius:8px;padding:10px 14px;margin-bottom:16px;text-align:center;background:${gain>=0?'#10b9810d':'#ef44440d'};border:1px solid ${gain>=0?'#10b98133':'#ef444433'}`;
+  amountEl.style.color = gain >= 0 ? 'var(--green)' : 'var(--red)';
+  amountEl.textContent = (gain >= 0 ? '+' : '') + gain + '€';
+  newEl.innerHTML = `Nouvelle bankroll : <strong style="color:var(--text)">${newBankroll.toLocaleString('fr-FR')}€</strong>`;
 }
 
 function confirmPick() {
   if (!currentPick) return;
   const mise = parseFloat(document.getElementById('modal-mise').value) || state.mise_actuelle;
   const cote = parseFloat(document.getElementById('modal-cote').value) || 1.65;
-  const gain = wonState ? Math.round(mise * (cote - 1)) : -Math.round(mise);
 
+  // MODE ÉDITION — modifier un pick existant
+  if (editPickId !== null) {
+    const pick = state.picks.find(p => p.id === editPickId);
+    if (!pick || wonState === null) return;
+    const gain = wonState ? Math.round(mise * (cote - 1)) : -Math.round(mise);
+    const wasPending = pick.pending;
+    // Si c'était en attente, impacter la bankroll maintenant
+    if (wasPending) state.bankroll += gain;
+    pick.won = wonState;
+    pick.pending = false;
+    pick.gain = gain;
+    pick.mise = mise;
+    pick.cote = cote;
+    if (!wonState) {
+      state.consecutive_losses++;
+      if (state.consecutive_losses >= 4) {
+        state.drawdown_level++;
+        state.mise_actuelle = Math.max(state.mise_base / Math.pow(2, state.drawdown_level), 1);
+        state.consecutive_losses = 0;
+      }
+    } else {
+      state.consecutive_losses = 0;
+      if (state.drawdown_level > 0) { state.drawdown_level = 0; state.mise_actuelle = state.mise_base; }
+    }
+    saveState(); updateUI(); closeModal();
+    return;
+  }
+
+  // MODE AJOUT — nouveau pick EN ATTENTE
   const joueur = currentPick.pick?.joueur || currentPick.joueur || '?';
   const type = currentPick.pick?.type || currentPick.type || 'Joueur décisif';
-
   const newPick = {
     id: Date.now(),
     date: new Date().toISOString(),
@@ -628,44 +691,18 @@ function confirmPick() {
     competition: currentPick.competition || '',
     joueur, type,
     alerte: currentPick.alerte || null,
-    score_matriciel: currentPick.score_matriciel || 0,
+    score_matriciel: currentPick.score_total || currentPick.score_matriciel || 0,
     facteurs: currentPick.facteurs || [],
-    cote, mise, gain, won: wonState,
+    cote, mise, gain: null, won: null, pending: true,
   };
-
   state.picks.unshift(newPick);
-  state.bankroll += gain;
-
-  // Drawdown management
-  if (!wonState) {
-    state.consecutive_losses++;
-    if (state.consecutive_losses >= 4) {
-      state.drawdown_level++;
-      state.mise_actuelle = Math.max(state.mise_base / Math.pow(2, state.drawdown_level), 1);
-      state.consecutive_losses = 0;
-    }
-  } else {
-    state.consecutive_losses = 0;
-    if (state.drawdown_level > 0) {
-      state.drawdown_level = 0;
-      state.mise_actuelle = state.mise_base;
-    }
-    // Nouveau capital base après 6 gains
-    const recentGains = state.picks.slice(0, 6).filter(p => p.won).length;
-    if (recentGains >= 6) {
-      state.capital_base = state.bankroll;
-    }
-  }
-
-  saveState();
-  updateUI();
-  closeModal();
+  saveState(); updateUI(); closeModal();
 }
 
 // ── BANKROLL ──────────────────────────────────────────────
 function renderBankroll() {
   const picks = state.picks;
-  const totalGain = picks.reduce((a, p) => a + p.gain, 0);
+  const totalGain = picks.reduce((a, p) => a + (p.gain || 0), 0);
 
   document.getElementById('bankroll-amount').textContent = state.bankroll.toLocaleString('fr-FR') + '€';
   document.getElementById('bankroll-amount').style.color = state.bankroll >= state.capital_base ? 'var(--green)' : 'var(--red)';
@@ -785,11 +822,30 @@ function deletePick(index) {
   renderTrack();
 }
 
+
+function resolvePick(id, won) {
+  const pick = state.picks.find(p => p.id === id);
+  if (!pick || !pick.pending) return;
+  const gain = won ? Math.round(pick.mise * (pick.cote - 1)) : -Math.round(pick.mise);
+  pick.won = won;
+  pick.pending = false;
+  pick.gain = gain;
+  state.bankroll += gain;
+  if (!won) {
+    state.consecutive_losses++;
+    if (state.consecutive_losses >= 4) { state.drawdown_level++; state.mise_actuelle = Math.max(state.mise_base / Math.pow(2, state.drawdown_level), 1); state.consecutive_losses = 0; }
+  } else {
+    state.consecutive_losses = 0;
+    if (state.drawdown_level > 0) { state.drawdown_level = 0; state.mise_actuelle = state.mise_base; }
+  }
+  saveState(); renderTrack(); renderHeader();
+}
 function trackStats(picks) {
-  const won = picks.filter(p => p.won).length;
-  const wr = picks.length > 0 ? Math.round((won / picks.length) * 100) : 0;
-  const profit = picks.reduce((a, p) => a + p.gain, 0);
-  return { won, total: picks.length, wr, profit };
+  const resolved = picks.filter(p => !p.pending);
+  const won = resolved.filter(p => p.won).length;
+  const wr = resolved.length > 0 ? Math.round((won / resolved.length) * 100) : 0;
+  const profit = resolved.reduce((a, p) => a + (p.gain || 0), 0);
+  return { won, total: resolved.length, wr, profit };
 }
 
 function alerteColor(alerte) {
@@ -802,12 +858,18 @@ function alerteColor(alerte) {
 function renderPicksList(picks) {
   return picks.map((p, i) => {
     const ac = alerteColor(p.alerte);
+    const isPending = p.pending === true;
+    const borderColor = isPending ? '#f59e0b44' : p.won ? '#10b98133' : '#ef444422';
+    const statusIcon = isPending ? '⏳' : p.won ? '✅' : '❌';
+    const gainDisplay = isPending
+      ? `<div style="font-family:'Bebas Neue';font-size:14px;color:#f59e0b;letter-spacing:1px">⏳ EN ATTENTE</div>`
+      : `<div class="track-gain" style="color:${(p.gain||0)>=0?'var(--green)':'var(--red)'}">${(p.gain||0)>=0?'+':''}${p.gain||0}€</div>`;
     return `
-      <div class="track-item" style="border-color:${p.won ? '#10b98133' : '#ef444422'}">
+      <div class="track-item" style="border-color:${borderColor}">
         <div class="track-header">
-          <div>
+          <div style="flex:1">
             <div class="track-player">
-              <span>${p.won ? '✅' : '❌'}</span>
+              <span>${statusIcon}</span>
               <span class="track-name">${p.joueur}</span>
               <span class="track-type">${p.type}</span>
               ${p.alerte ? `<span style="font-size:10px;padding:2px 6px;border-radius:3px;background:${ac}22;color:${ac};border:1px solid ${ac}44">${p.alerte}</span>` : ''}
@@ -816,10 +878,13 @@ function renderPicksList(picks) {
             <div class="factors">${(p.facteurs||[]).map(f => factorBadge(f)).join('')}</div>
           </div>
           <div style="text-align:right;flex-shrink:0;margin-left:14px">
-            <div class="track-gain" style="color:${p.gain>=0?'var(--green)':'var(--red)'}">${p.gain>=0?'+':''}${p.gain}€</div>
+            ${gainDisplay}
             <div class="track-mise">Mise: ${p.mise}€ · ×${p.cote}</div>
             <div class="track-date">${new Date(p.date).toLocaleDateString('fr-FR')}</div>
-            <button onclick="deletePick(${i})" style="margin-top:6px;padding:3px 8px;background:transparent;border:1px solid #ef444444;color:#ef4444;border-radius:4px;cursor:pointer;font-size:10px" onmouseover="this.style.background='#ef444422'" onmouseout="this.style.background='transparent'">🗑</button>
+            <div style="display:flex;gap:6px;margin-top:6px;justify-content:flex-end">
+              <button onclick="openEditModal(${p.id})" style="padding:3px 8px;background:transparent;border:1px solid #3b82f644;color:#3b82f6;border-radius:4px;cursor:pointer;font-size:10px" onmouseover="this.style.background='#3b82f622'" onmouseout="this.style.background='transparent'">✏️ Modifier</button>
+              <button onclick="deletePick(${i})" style="padding:3px 8px;background:transparent;border:1px solid #ef444444;color:#ef4444;border-radius:4px;cursor:pointer;font-size:10px" onmouseover="this.style.background='#ef444422'" onmouseout="this.style.background='transparent'">🗑</button>
+            </div>
           </div>
         </div>
       </div>`;
