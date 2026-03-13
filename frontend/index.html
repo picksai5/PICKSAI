@@ -237,7 +237,42 @@
     <!-- DRAWDOWN STATUS -->
     <div id="drawdown-status" style="margin-bottom:12px"></div>
 
-    <div class="params-box">
+    <!-- STATS PAR CATÉGORIE -->
+    <div style="margin-bottom:12px">
+      <div style="font-family:'Bebas Neue';font-size:16px;letter-spacing:3px;color:var(--muted);margin-bottom:10px">STATS PAR CATÉGORIE</div>
+      <!-- VERT -->
+      <div style="background:var(--bg2);border:1px solid #10b98133;border-radius:12px;padding:14px;margin-bottom:8px">
+        <div style="font-family:'Bebas Neue';font-size:15px;letter-spacing:2px;color:#10b981;margin-bottom:10px">🟢 PICKS VERT — Score ≥ 80</div>
+        <div class="stat-grid-2">
+          <div class="stat-box"><div class="stat-label">PICKS</div><div class="stat-value" id="cat-vert-total" style="color:#10b981">0</div></div>
+          <div class="stat-box"><div class="stat-label">WIN RATE</div><div class="stat-value" id="cat-vert-wr">—</div></div>
+          <div class="stat-box"><div class="stat-label">PROFIT</div><div class="stat-value" id="cat-vert-profit">0€</div></div>
+          <div class="stat-box"><div class="stat-label">ROI</div><div class="stat-value" id="cat-vert-roi">—</div></div>
+        </div>
+      </div>
+      <!-- ORANGE -->
+      <div style="background:var(--bg2);border:1px solid #f59e0b33;border-radius:12px;padding:14px;margin-bottom:8px">
+        <div style="font-family:'Bebas Neue';font-size:15px;letter-spacing:2px;color:#f59e0b;margin-bottom:10px">🟡 PICKS ORANGE — Score 70-79</div>
+        <div class="stat-grid-2">
+          <div class="stat-box"><div class="stat-label">PICKS</div><div class="stat-value" id="cat-orange-total" style="color:#f59e0b">0</div></div>
+          <div class="stat-box"><div class="stat-label">WIN RATE</div><div class="stat-value" id="cat-orange-wr">—</div></div>
+          <div class="stat-box"><div class="stat-label">PROFIT</div><div class="stat-value" id="cat-orange-profit">0€</div></div>
+          <div class="stat-box"><div class="stat-label">ROI</div><div class="stat-value" id="cat-orange-roi">—</div></div>
+        </div>
+      </div>
+      <!-- ROUGE -->
+      <div style="background:var(--bg2);border:1px solid #ef444433;border-radius:12px;padding:14px;margin-bottom:8px">
+        <div style="font-family:'Bebas Neue';font-size:15px;letter-spacing:2px;color:#ef4444;margin-bottom:10px">🔴 PICKS ROUGE — Score 60-69</div>
+        <div class="stat-grid-2">
+          <div class="stat-box"><div class="stat-label">PICKS</div><div class="stat-value" id="cat-rouge-total" style="color:#ef4444">0</div></div>
+          <div class="stat-box"><div class="stat-label">WIN RATE</div><div class="stat-value" id="cat-rouge-wr">—</div></div>
+          <div class="stat-box"><div class="stat-label">PROFIT</div><div class="stat-value" id="cat-rouge-profit">0€</div></div>
+          <div class="stat-box"><div class="stat-label">ROI</div><div class="stat-value" id="cat-rouge-roi">—</div></div>
+        </div>
+      </div>
+    </div>
+
+
       <div class="params-title">⚙️ PARAMÈTRES</div>
       <div class="form-grid">
         <div>
@@ -775,6 +810,27 @@ function renderBankroll() {
   } else {
     ddEl.innerHTML = '';
   }
+
+  // Stats par catégorie
+  ['vert', 'orange', 'rouge'].forEach(cat => {
+    const alerte = cat.toUpperCase();
+    const catPicks = picks.filter(p => (p.alerte || '').toUpperCase() === alerte && !p.pending);
+    const won = catPicks.filter(p => p.won).length;
+    const total = catPicks.length;
+    const profit = catPicks.reduce((a, p) => a + (p.gain || 0), 0);
+    const totalMiseCat = catPicks.reduce((a, p) => a + (p.mise || 0), 0);
+    const wr = total > 0 ? Math.round((won / total) * 100) : null;
+    const roi = totalMiseCat > 0 ? Math.round((profit / totalMiseCat) * 100) : null;
+    const color = cat === 'vert' ? '#10b981' : cat === 'orange' ? '#f59e0b' : '#ef4444';
+
+    document.getElementById(`cat-${cat}-total`).textContent = total;
+    document.getElementById(`cat-${cat}-wr`).textContent = wr !== null ? `${wr}%` : '—';
+    document.getElementById(`cat-${cat}-wr`).style.color = wr === null ? 'var(--muted)' : wr >= 60 ? 'var(--green)' : wr >= 50 ? 'var(--gold)' : 'var(--red)';
+    document.getElementById(`cat-${cat}-profit`).textContent = (profit >= 0 ? '+' : '') + profit + '€';
+    document.getElementById(`cat-${cat}-profit`).style.color = profit >= 0 ? 'var(--green)' : 'var(--red)';
+    document.getElementById(`cat-${cat}-roi`).textContent = roi !== null ? (roi >= 0 ? '+' : '') + roi + '%' : '—';
+    document.getElementById(`cat-${cat}-roi`).style.color = roi === null ? 'var(--muted)' : roi >= 0 ? 'var(--green)' : 'var(--red)';
+  });
 
   // Sparkline
   drawSparkline();
