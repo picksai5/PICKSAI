@@ -538,7 +538,10 @@ function renderScanResults(data, isRestored = false) {
         ${pick.pick ? playerBox('🎯 JOUEUR DÉCISIF', pick.pick, '#3b82f6') : ''}
         ${pick.buteur_alternatif ? playerBox('⚽ BUTEUR', pick.buteur_alternatif, '#ef4444') : ''}
       </div>
-      <button class="btn btn-small" onclick="openModal(${JSON.stringify(pick).replace(/"/g,'&quot;')})">+ TRACK RECORD</button>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-small" onclick="openModal(${JSON.stringify(pick).replace(/\"/g,'&quot;')})">🎯 + TRACK RECORD</button>
+        ${pick.buteur_alternatif ? `<button class="btn btn-small" style="border-color:#ef444455;color:#ef4444" onclick="openModalButeur(${JSON.stringify(pick).replace(/\"/g,'&quot;')})">⚽ + BUTEUR TRACK</button>` : ''}
+      </div>
     </div>`;
   });
 
@@ -608,6 +611,21 @@ function openModal(pick) {
       `<div class="drawdown-alert">⚠️ ${state.consecutive_losses} pertes consécutives — Mise réduite à ${state.mise_actuelle}€ (Drawdown actif)</div>`);
   }
   document.getElementById('modal').classList.add('open');
+}
+
+function openModalButeur(pick) {
+  // Crée un pick synthétique basé sur le buteur alternatif
+  const buteur = pick.buteur_alternatif;
+  if (!buteur) return;
+  const synth = {
+    pick: { joueur: buteur.joueur, equipe: buteur.equipe, type: 'Buteur', prob: buteur.prob, cote_estimee: buteur.cote_estimee, raison: buteur.raison },
+    match: pick.match, competition: pick.competition,
+    domicile: pick.domicile, exterieur: pick.exterieur,
+    alerte: 'ROUGE', // buteur alternatif = rubrique ROUGE par défaut
+    score_total: pick.score_total, score_matriciel: pick.score_matriciel,
+    facteurs: pick.facteurs,
+  };
+  openModal(synth);
 }
 
 function openEditModal(id) {
