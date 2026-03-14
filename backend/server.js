@@ -316,29 +316,56 @@ function calcConfianceScore(hStats, aStats, hStand, aStand, h2h, isEuropean, pic
 async function pickBestPlayer(matchInfo, offensivePlayers, context) {
   if (offensivePlayers.length === 0) return null;
 
-  const playerList = offensivePlayers.map(p => {
-    const s = p.statistics?.[0];
-    const pos = s?.games?.position || p.player?.position || '?';
-    return `- ${p.player?.name} | POS:${pos} | ${s?.goals?.total||0} buts | ${s?.goals?.assists||0} passes | ${s?.games?.appearences||0} matchs`;
-  }).join('\n');
+  // Séparer joueurs par équipe
+  const homePlayers = offensivePlayers.filter(p => {
+    const team = p.statistics?.[0]?.team?.name || p.team?.name || '';
+    return team === matchInfo.domicile;
+  });
+  const awayPlayers = offensivePlayers.filter(p => {
+    const team = p.statistics?.[0]?.team?.name || p.team?.name || '';
+    return team === matchInfo.exterieur;
+  });
 
-  const prompt = `Tu es un expert football avec une connaissance parfaite des joueurs. Parmi ces joueurs TITULAIRES, choisis le MEILLEUR PICK offensif pour ce match.
+  // Déterminer l'équipe favorite (domicile ou mieux classée)
+  const hRank = matchInfo.raw?.hStand?.rank || 99;
+  const aRank = matchInfo.raw?.aStand?.rank || 99;
+  const homeIsFavorite = hRank <= aRank; // domicile mieux classé ou égal = favori
+
+  const formatPlayers = (players, teamName) => {
+    if (players.length === 0) return `  (aucun joueur offensif disponible pour ${teamName})`;
+    return players.map(p => {
+      const s = p.statistics?.[0];
+      const pos = s?.games?.position || p.player?.position || '?';
+      const apps = s?.games?.appearences || 0;
+      const goals = s?.goals?.total || 0;
+      const assists = s?.goals?.assists || 0;
+      const ratio = apps > 0 ? (goals / apps).toFixed(2) : '0';
+      return `  - ${p.player?.name} | ${pos} | ${goals}B ${assists}PD en ${apps}M (ratio ${ratio})`;
+    }).join('\n');
+  };
+
+  const homeLabel = homeIsFavorite ? `⭐ ${matchInfo.domicile} (FAVORI — domicile rang ${hRank})` : `${matchInfo.domicile} (rang ${hRank})`;
+  const awayLabel = !homeIsFavorite ? `⭐ ${matchInfo.exterieur} (FAVORI — mieux classé rang ${aRank})` : `${matchInfo.exterieur} (rang ${aRank}, DÉPLACEMENT)`;
+
+  const prompt = `Tu es un expert football. Choisis le MEILLEUR PICK offensif pour ce match.
 
 MATCH: ${matchInfo.match} | ${matchInfo.competition} | ${matchInfo.heure}
 CONTEXTE: ${context}
 
-JOUEURS DISPONIBLES (triés par poste — attaquants en premier):
-${playerList}
+--- ${homeLabel} ---
+${formatPlayers(homePlayers, matchInfo.domicile)}
 
-RÈGLES STRICTES:
-1. ❌ JAMAIS un défenseur/gardien (POS: D, G, CB, LB, RB, GK)
-2. ❌ JAMAIS un milieu DÉFENSIF (ex: Rodri, Casemiro, Kanté, Simões, Verratti = EXCLUS même si bons stats)
-3. ❌ JAMAIS un joueur BLESSÉ ou SUSPENDU — vérifie avec tes connaissances réelles
-4. ❌ JAMAIS un joueur avec 0 but ET 0 passe ET moins de 5 matchs
-5. ✅ PRIORITÉ: Attaquant de pointe > Ailier > Milieu offensif box-to-box
-6. ✅ Un milieu offensif (Bellingham, McTominay, Zielinski) n'est acceptable QUE si aucun attaquant/ailier n'est disponible ou si ses stats sont nettement supérieures
-7. ✅ Utilise tes connaissances réelles sur les joueurs — si un attaquant connu a 0 but en stats API mais tu sais qu'il marque régulièrement, choisis-le
-8. ✅ Si aucun joueur offensif fiable → réponds avec valide:false
+--- ${awayLabel} ---
+${formatPlayers(awayPlayers, matchInfo.exterieur)}
+
+RÈGLES ABSOLUES:
+1. ❌ JAMAIS défenseur/gardien (D, G, CB, LB, RB, GK)
+2. ❌ JAMAIS milieu DÉFENSIF (Rodri, Casemiro, Kanté, Simões = EXCLUS)
+3. ❌ JAMAIS joueur blessé/suspendu — utilise tes connaissances réelles
+4. ⭐ PRIORITÉ à l'équipe marquée FAVORI — ne propose un joueur de l'autre équipe QUE si son profil est nettement supérieur ET que son équipe est réaliste pour marquer
+5. 🥇 ORDRE: Attaquant de pointe > Ailier > Milieu offensif box-to-box
+6. ✅ Si stats API incomplètes, utilise tes connaissances réelles (ex: Alvarez, Griezmann, Sørloth = attaquants connus → priorité)
+7. ✅ Si aucun joueur fiable → valide:false
 
 Réponds UNIQUEMENT en JSON:
 {"joueur":"Prénom Nom","equipe":"${matchInfo.domicile} ou ${matchInfo.exterieur}","type":"Joueur décisif","prob":72,"cote_estimee":1.65,"raison":"2 phrases max avec stats concrètes","buteur_alt":{"joueur":"Prénom Nom","equipe":"equipe","prob":45,"cote_estimee":2.20,"raison":"1 phrase"}}`;
