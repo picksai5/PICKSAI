@@ -313,23 +313,14 @@ function calcConfianceScore(hStats, aStats, hStand, aStand, h2h, isEuropean, pic
 }
 
 // ── CLAUDE : UNIQUEMENT CHOISIR LE MEILLEUR JOUEUR ───────
-async function pickBestPlayer(matchInfo, offensivePlayers, context) {
-  if (offensivePlayers.length === 0) return null;
+async function pickBestPlayer(matchInfo, context) {
+  const homePlayers = matchInfo.hOffensive || [];
+  const awayPlayers = matchInfo.aOffensive || [];
+  if (homePlayers.length === 0 && awayPlayers.length === 0) return null;
 
-  // Séparer joueurs par équipe
-  const homePlayers = offensivePlayers.filter(p => {
-    const team = p.statistics?.[0]?.team?.name || p.team?.name || '';
-    return team === matchInfo.domicile;
-  });
-  const awayPlayers = offensivePlayers.filter(p => {
-    const team = p.statistics?.[0]?.team?.name || p.team?.name || '';
-    return team === matchInfo.exterieur;
-  });
-
-  // Déterminer l'équipe favorite (domicile ou mieux classée)
   const hRank = matchInfo.raw?.hStand?.rank || 99;
   const aRank = matchInfo.raw?.aStand?.rank || 99;
-  const homeIsFavorite = hRank <= aRank; // domicile mieux classé ou égal = favori
+  const homeIsFavorite = hRank <= aRank;
 
   const formatPlayers = (players, teamName) => {
     if (players.length === 0) return `  (aucun joueur offensif disponible pour ${teamName})`;
@@ -344,8 +335,12 @@ async function pickBestPlayer(matchInfo, offensivePlayers, context) {
     }).join('\n');
   };
 
-  const homeLabel = homeIsFavorite ? `⭐ ${matchInfo.domicile} (FAVORI — domicile rang ${hRank})` : `${matchInfo.domicile} (rang ${hRank})`;
-  const awayLabel = !homeIsFavorite ? `⭐ ${matchInfo.exterieur} (FAVORI — mieux classé rang ${aRank})` : `${matchInfo.exterieur} (rang ${aRank}, DÉPLACEMENT)`;
+  const homeLabel = homeIsFavorite
+    ? `⭐ ${matchInfo.domicile} (FAVORI — domicile rang ${hRank})`
+    : `${matchInfo.domicile} (rang ${hRank})`;
+  const awayLabel = !homeIsFavorite
+    ? `⭐ ${matchInfo.exterieur} (FAVORI — mieux classé rang ${aRank})`
+    : `${matchInfo.exterieur} (rang ${aRank}, DÉPLACEMENT — défavorisé)`;
 
   const prompt = `Tu es un expert football. Choisis le MEILLEUR PICK offensif pour ce match.
 
@@ -359,12 +354,12 @@ ${formatPlayers(homePlayers, matchInfo.domicile)}
 ${formatPlayers(awayPlayers, matchInfo.exterieur)}
 
 RÈGLES ABSOLUES:
-1. ❌ JAMAIS défenseur/gardien (D, G, CB, LB, RB, GK)
-2. ❌ JAMAIS milieu DÉFENSIF (Rodri, Casemiro, Kanté, Simões = EXCLUS)
-3. ❌ JAMAIS joueur blessé/suspendu — utilise tes connaissances réelles
-4. ⭐ PRIORITÉ à l'équipe marquée FAVORI — ne propose un joueur de l'autre équipe QUE si son profil est nettement supérieur ET que son équipe est réaliste pour marquer
-5. 🥇 ORDRE: Attaquant de pointe > Ailier > Milieu offensif box-to-box
-6. ✅ Si stats API incomplètes, utilise tes connaissances réelles (ex: Alvarez, Griezmann, Sørloth = attaquants connus → priorité)
+1. ❌ JAMAIS défenseur/gardien
+2. ❌ JAMAIS milieu défensif (Rodri, Casemiro, Kanté = EXCLUS)
+3. ❌ JAMAIS joueur BLESSÉ/SUSPENDU — utilise tes connaissances réelles (ex: Mbappé blessé mars 2026 = EXCLU)
+4. ⭐ PRIORITÉ ABSOLUE à l'équipe ⭐ FAVORI — un joueur en DÉPLACEMENT n'est acceptable QUE si son équipe est mieux classée et son profil exceptionnel
+5. 🥇 ORDRE: Attaquant de pointe > Ailier > Milieu offensif
+6. ✅ Utilise tes connaissances réelles — Lukaku, Alvarez, Griezmann, Sørloth = attaquants prioritaires
 7. ✅ Si aucun joueur fiable → valide:false
 
 Réponds UNIQUEMENT en JSON:
@@ -540,8 +535,7 @@ app.get('/api/scan', async (req, res) => {
           continue;
         }
 
-        // Claude choisit uniquement parmi les joueurs offensifs filtrés
-        const pickData = await pickBestPlayer(matchData, allOffensive, matchData.context);
+        const pickData = await pickBestPlayer(matchData, matchData.context);
         if (!pickData || pickData.valide === false) {
           rejected.push({ match: matchData.match, competition: matchData.competition, heure: matchData.heure, score_matriciel: matchData.scoreMatriciel, raison: pickData?.raison || 'Aucun joueur offensif fiable trouvé' });
           continue;
