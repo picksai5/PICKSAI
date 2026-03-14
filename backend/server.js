@@ -139,21 +139,32 @@ async function preloadCache() {
   console.log(`Cache OK — ${pairs.length} équipes, ${euroF.length} matchs européens`);
 }
 
-// ── FILTRE DÉFENSEURS ─────────────────────────────────────
-// Retourne uniquement les joueurs offensifs (attaquants + milieux)
-function filterOffensivePlayers(players) {
+// ── FILTRE DÉFENSEURS + BLESSÉS ───────────────────────────
+function filterOffensivePlayers(players, injuries = []) {
+  // Noms des blessés/suspendus normalisés
+  const injuredNames = new Set(
+    injuries.map(i => (i.player?.name || '').toLowerCase().trim())
+  );
+
   return players.filter(p => {
     const pos = (p.statistics?.[0]?.games?.position || p.player?.position || '').trim();
+    const name = (p.player?.name || '').toLowerCase().trim();
 
-    // ❌ Exclure UNIQUEMENT les défenseurs et gardiens certains
-    // On laisse passer tout le reste — Claude vérifie ensuite
+    // ❌ Exclure gardiens et défenseurs
     if (pos === 'G' || pos === 'Goalkeeper') return false;
     if (pos === 'D' || pos === 'Defender') return false;
 
-    // ✅ Tout le reste passe (F, M, positions vides, positions inconnues)
-    // Claude recevra la position dans le prompt et validera lui-même
+    // ❌ Exclure blessés et suspendus
+    if (injuredNames.has(name)) return false;
+
     return true;
-  });
+  }).map(p => {
+    // Score de priorité par poste
+    const pos = (p.statistics?.[0]?.games?.position || p.player?.position || '').trim();
+    const priority = (pos === 'F' || pos === 'Forward' || pos === 'Attacker') ? 3
+      : (pos === 'M' || pos === 'Midfielder') ? 2 : 1;
+    return { ...p, _priority: priority };
+  }).sort((a, b) => b._priority - a._priority);
 }
 
 // ── CALCUL SCORE MATRICIEL EN JS PUR ─────────────────────
@@ -260,6 +271,19 @@ function calcConfianceScore(hStats, aStats, hStand, aStand, h2h, isEuropean, pic
   if (hRank <= 4)                c += 5;   // top 4
   if (!pickTeamIsHome && isEuropean) c -= 10; // déplacement hostile CL/EL
 
+  // ── MALUS ÉQUIPE EXTÉRIEURE ──────────────────────────
+  if (!pickTeamIsHome) {
+    // aRank = rang équipe visitée (pick), hRank = rang équipe domicile (adversaire)
+    const pickRank = aRank;   // rang de l'équipe du pick (visiteur)
+    const oppRank = hRank;    // rang de l'adversaire (domicile)
+    const rankDiff = oppRank - pickRank; // positif = pick mieux classé que l'adversaire
+
+    if (rankDiff >= 5)       c -= 5;   // pick nettement meilleur → faible malus
+    else if (rankDiff >= 0)  c -= 12;  // pick légèrement meilleur ou égal → risqué en déplacement
+    else if (rankDiff >= -5) c -= 18;  // adversaire domicile légèrement meilleur → très risqué
+    else                     c -= 25;  // adversaire domicile nettement meilleur → à éviter
+  }
+
   // ── QUALITÉ INDIVIDUELLE DU JOUEUR ───────────────────
   if (playerStats) {
     const goals = playerStats.goals || 0;
@@ -303,18 +327,18 @@ async function pickBestPlayer(matchInfo, offensivePlayers, context) {
 MATCH: ${matchInfo.match} | ${matchInfo.competition} | ${matchInfo.heure}
 CONTEXTE: ${context}
 
-JOUEURS TITULAIRES DISPONIBLES (position API + stats saison):
+JOUEURS DISPONIBLES (triés par poste — attaquants en premier):
 ${playerList}
 
-RÈGLES STRICTES — RESPECTE-LES ABSOLUMENT:
+RÈGLES STRICTES:
 1. ❌ JAMAIS un défenseur/gardien (POS: D, G, CB, LB, RB, GK)
-2. ❌ JAMAIS un joueur avec 0 but ET 0 passe ET moins de 5 matchs — données insuffisantes
-3. ❌ JAMAIS un milieu défensif (tu connais les joueurs : N'Golo Kanté, Casemiro, Simões, Rodri = milieux défensifs → EXCLUS)
-4. ✅ Tu connais TOUS les joueurs de football — utilise tes connaissances réelles pour identifier leur vrai poste
-5. ✅ Si les stats semblent incomplètes (ex: Suárez avec 0 but alors qu'il en a 20+ en championnat) → choisis-le quand même si tu sais qu'il est attaquant prolifique
-6. ✅ Priorité absolue: attaquant de pointe connu > ailier connu > milieu offensif connu
-7. ✅ Critères de sélection: ratio buts/match réel (championnat inclus) > buts totaux > passes
-8. ✅ Si tu n'as AUCUN joueur offensif fiable dans la liste → réponds avec valide:false
+2. ❌ JAMAIS un milieu DÉFENSIF (ex: Rodri, Casemiro, Kanté, Simões, Verratti = EXCLUS même si bons stats)
+3. ❌ JAMAIS un joueur BLESSÉ ou SUSPENDU — vérifie avec tes connaissances réelles
+4. ❌ JAMAIS un joueur avec 0 but ET 0 passe ET moins de 5 matchs
+5. ✅ PRIORITÉ: Attaquant de pointe > Ailier > Milieu offensif box-to-box
+6. ✅ Un milieu offensif (Bellingham, McTominay, Zielinski) n'est acceptable QUE si aucun attaquant/ailier n'est disponible ou si ses stats sont nettement supérieures
+7. ✅ Utilise tes connaissances réelles sur les joueurs — si un attaquant connu a 0 but en stats API mais tu sais qu'il marque régulièrement, choisis-le
+8. ✅ Si aucun joueur offensif fiable → réponds avec valide:false
 
 Réponds UNIQUEMENT en JSON:
 {"joueur":"Prénom Nom","equipe":"${matchInfo.domicile} ou ${matchInfo.exterieur}","type":"Joueur décisif","prob":72,"cote_estimee":1.65,"raison":"2 phrases max avec stats concrètes","buteur_alt":{"joueur":"Prénom Nom","equipe":"equipe","prob":45,"cote_estimee":2.20,"raison":"1 phrase"}}`;
@@ -379,9 +403,9 @@ async function collectMatchData(fixture, leagueId, leagueName, standings) {
   const mergedHPlayers = isEuropean ? mergePlayerStats(hPlayers, hNatPlayers) : hPlayers;
   const mergedAPlayers = isEuropean ? mergePlayerStats(aPlayers, aNatPlayers) : aPlayers;
 
-  // Filtrer uniquement les joueurs offensifs
-  let hOffensive = filterOffensivePlayers(mergedHPlayers);
-  let aOffensive = filterOffensivePlayers(mergedAPlayers);
+  // Filtrer uniquement les joueurs offensifs — exclure blessés, trier attaquants en premier
+  let hOffensive = filterOffensivePlayers(mergedHPlayers, injuries);
+  let aOffensive = filterOffensivePlayers(mergedAPlayers, injuries);
 
   // Si compositions dispo → filtrer uniquement les titulaires
   if (composAvailable) {
