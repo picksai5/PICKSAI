@@ -567,12 +567,14 @@ app.get('/api/scan', async (req, res) => {
           raison: pickData.buteur_alt.raison,
         } : null;
 
-        const scoreTotal = Math.min(100, matchData.scoreMatriciel + confianceScore);
+        const scoreTotal = matchData.scoreMatriciel + confianceScore; // PAS de plafond — permet le tri
+        const scoreTotalDisplay = Math.min(100, scoreTotal); // Plafonné à 100 pour l'affichage alerte
 
         picks.push({
           score_matriciel: matchData.scoreMatriciel,
           confiance_score: confianceScore,
-          score_total: scoreTotal,
+          score_total: scoreTotalDisplay,   // affiché plafonné à 100
+          score_sort: scoreTotal,           // tri sans plafond
           facteurs: matchData.factors,
           alerte: matchData.alerte,
           pick: {
@@ -597,8 +599,11 @@ app.get('/api/scan', async (req, res) => {
       }
     }
 
-    // Tri par score_total (matriciel + qualité joueur) — STABLE et DETERMINISTE
-    picks.sort((a, b) => (b.score_total || 0) - (a.score_total || 0));
+    // Tri: d'abord par score_total, puis par confianceScore pour départager les ex-aequo
+    picks.sort((a, b) => {
+      if ((b.score_sort || 0) !== (a.score_sort || 0)) return (b.score_sort || 0) - (a.score_sort || 0);
+      return (b.confiance_score || 0) - (a.confiance_score || 0);
+    });
     rejected.sort((a, b) => b.score_matriciel - a.score_matriciel);
 
     res.json({
