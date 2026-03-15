@@ -59,7 +59,7 @@ const LEAGUES = [
 const EURO_LEAGUES = [2, 3, 848];
 
 // ── CACHE ─────────────────────────────────────────────────
-const cache = { standings: {}, teamStats: {}, players: {}, natLeagues: {}, lastDate: null };
+const cache = { standings: {}, teamStats: {}, players: {}, natLeagues: {}, fixtureStats: {}, predictions: {}, lastDate: null };
 const CACHE_TTL = 6 * 60 * 60 * 1000;
 function isCacheValid(e) { return e && Date.now() - e.timestamp < CACHE_TTL; }
 function getTodayStr() { return new Date().toISOString().split('T')[0]; }
@@ -102,6 +102,77 @@ async function getPlayersCached(teamId, leagueId) {
   return data;
 }
 
+// Récupère les stats avancées des 5 derniers matchs d'une équipe
+// Retourne moyennes : possession, tirs cadrés, tirs totaux, attaques dangereuses
+async function getAdvancedStatsCached(teamId, leagueId) {
+  const k = `adv_${teamId}_${leagueId}`;
+  if (isCacheValid(cache.fixtureStats[k])) return cache.fixtureStats[k].data;
+
+  // Récupérer les 5 derniers matchs joués
+  const lastFixtures = await footballAPI('/fixtures', {
+    team: teamId, league: leagueId, season: SEASON, last: 5, status: 'FT',
+  });
+
+  if (!lastFixtures || lastFixtures.length === 0) {
+    cache.fixtureStats[k] = { data: null, timestamp: Date.now() };
+    return null;
+  }
+
+  // Récupérer les stats de chaque match
+  const statsPerMatch = await Promise.all(
+    lastFixtures.slice(0, 5).map(f => footballAPI('/fixtures/statistics', { fixture: f.fixture?.id }))
+  );
+
+  // Calculer les moyennes pour cette équipe
+  let totalPossession = 0, totalShotsOn = 0, totalShotsTotal = 0, totalDangerous = 0;
+  let count = 0;
+
+  for (const matchStats of statsPerMatch) {
+    const teamStats = matchStats.find(s => s.team?.id === teamId);
+    if (!teamStats) continue;
+
+    const stats = teamStats.statistics || [];
+    const getStat = (type) => {
+      const s = stats.find(x => x.type === type);
+      if (!s?.value) return 0;
+      if (typeof s.value === 'string' && s.value.includes('%')) return parseFloat(s.value) || 0;
+      return parseFloat(s.value) || 0;
+    };
+
+    totalPossession  += getStat('Ball Possession');
+    totalShotsOn     += getStat('Shots on Goal');
+    totalShotsTotal  += getStat('Total Shots');
+    totalDangerous   += getStat('Dangerous Attacks');
+    count++;
+  }
+
+  if (count === 0) {
+    cache.fixtureStats[k] = { data: null, timestamp: Date.now() };
+    return null;
+  }
+
+  const data = {
+    possession:       Math.round(totalPossession  / count),
+    shotsOnTarget:    +(totalShotsOn     / count).toFixed(1),
+    shotsTotal:       +(totalShotsTotal  / count).toFixed(1),
+    dangerousAttacks: +(totalDangerous   / count).toFixed(1),
+  };
+
+  cache.fixtureStats[k] = { data, timestamp: Date.now() };
+  return data;
+}
+
+// Prédiction de l'API (pourcentage de victoire domicile/extérieur/nul)
+async function getPredictionCached(fixtureId) {
+  const k = `pred_${fixtureId}`;
+  if (isCacheValid(cache.predictions[k])) return cache.predictions[k].data;
+  const data = await footballAPI('/predictions', { fixture: fixtureId });
+  const pred = data[0]?.predictions || null;
+  cache.predictions[k] = { data: pred, timestamp: Date.now() };
+  return pred;
+}
+
+
 async function preloadCache() {
   const today = getTodayStr();
   if (cache.lastDate === today) return;
@@ -125,7 +196,14 @@ async function preloadCache() {
     await Promise.all(pairs.slice(i, i+5).map(p => Promise.all([
       getTeamStatsCached(p.teamId, p.leagueId),
       getPlayersCached(p.teamId, p.leagueId),
+      getAdvancedStatsCached(p.teamId, p.leagueId), // stats avancées préchargées
     ])));
+  }
+
+  // Précharger les prédictions pour tous les matchs du jour
+  const fixtureIds = [...new Set(fixtures.map(f => f.fixture?.id).filter(Boolean))];
+  for (let i = 0; i < fixtureIds.length; i += 5) {
+    await Promise.all(fixtureIds.slice(i, i+5).map(id => getPredictionCached(id)));
   }
   cache.lastDate = today;
   console.log(`Cache OK — ${pairs.length} equipes`);
@@ -133,7 +211,7 @@ async function preloadCache() {
 
 // ── MATRICE V4 — ANALYSE VICTOIRE ÉQUIPE ────────────────
 // 14 facteurs calibrés pour prédire la victoire, pas le joueur décisif
-function analyseMatchComplet(hStats, aStats, hStand, aStand, h2h, injuries, isEuropean, hPlayers, aPlayers, composH, composA) {
+function analyseMatchComplet(hStats, aStats, hStand, aStand, h2h, injuries, isEuropean, hPlayers, aPlayers, composH, composA, hAdvStats, aAdvStats, prediction) {
 
   // ── DONNÉES DE BASE ───────────────────────────────────
   const hRank = hStand?.rank  || 99;
@@ -263,6 +341,49 @@ function analyseMatchComplet(hStats, aStats, hStand, aStand, h2h, injuries, isEu
   // F12 — ENJEU EUROPÉEN
   if (isEuropean) { factors.push('F7'); }
 
+  // ── STATS AVANCÉES (possession, tirs cadrés, attaques dangereuses) ──
+  if (hAdvStats) {
+    // Possession domicile moyenne
+    if (hAdvStats.possession >= 58)      { hScore += 8; factors.push('F13'); }
+    else if (hAdvStats.possession >= 52) { hScore += 4; }
+    else if (hAdvStats.possession <= 42) { hScore -= 4; }
+
+    // Tirs cadrés domicile (dangerosité offensive)
+    if (hAdvStats.shotsOnTarget >= 6)    { hScore += 10; factors.push('F6'); }
+    else if (hAdvStats.shotsOnTarget >= 4.5) { hScore += 6; }
+    else if (hAdvStats.shotsOnTarget <= 2.5) { hScore -= 5; }
+
+    // Attaques dangereuses
+    if (hAdvStats.dangerousAttacks >= 120) { hScore += 6; }
+    else if (hAdvStats.dangerousAttacks >= 90)  { hScore += 3; }
+  }
+
+  if (aAdvStats) {
+    // Possession équipe extérieure
+    if (aAdvStats.possession >= 58)      { aScore += 7; factors.push('F13'); }
+    else if (aAdvStats.possession >= 52) { aScore += 3; }
+    else if (aAdvStats.possession <= 42) { aScore -= 4; }
+
+    // Tirs cadrés extérieur
+    if (aAdvStats.shotsOnTarget >= 6)    { aScore += 8; factors.push('F6'); }
+    else if (aAdvStats.shotsOnTarget >= 4.5) { aScore += 5; }
+    else if (aAdvStats.shotsOnTarget <= 2.5) { aScore -= 5; }
+  }
+
+  // ── PRÉDICTION API (pourcentage victoire) ──────────────
+  if (prediction) {
+    const pctHome = parseFloat(prediction.percent?.home?.replace('%','')) || 0;
+    const pctAway = parseFloat(prediction.percent?.away?.replace('%','')) || 0;
+    // Bonus si la prédiction API confirme notre analyse
+    if (pctHome >= 65)      { hScore += 10; factors.push('F8'); }
+    else if (pctHome >= 55) { hScore += 5; }
+    if (pctAway >= 65)      { aScore += 10; factors.push('F8'); }
+    else if (pctAway >= 55) { aScore += 5; }
+    // Si la prédiction contredit fortement notre analyse → signal de prudence
+    if (pctHome >= 60 && pctAway <= 25) { hScore += 8; }
+    if (pctAway >= 60 && pctHome <= 25) { aScore += 8; }
+  }
+
   // ── MALUS DERBY/CLASICO ───────────────────────────────
   // Les derbys sont imprévisibles même avec gros écart
   // Détecté via H2H très équilibré + équipes du même pays
@@ -375,33 +496,35 @@ async function genererAnalyse(matchInfo, favoriPlayers, context) {
     const assists = s?.goals?.assists || 0;
     const apps = s?.games?.appearences || 1;
     const pos = s?.games?.position || p.player?.position || '?';
-    return `  - ${p.player?.name} | ${pos} | ${goals}B ${assists}PD en ${apps}M`;
+    const ratio = apps > 0 ? (goals/apps).toFixed(2) : '0';
+    return `  - ${p.player?.name} | ${pos} | ${goals}B ${assists}PD en ${apps}M (ratio ${ratio})`;
   }).join('\n') || '  (données non disponibles)';
 
   const missingStr = matchInfo.hMissing?.missingNames?.length > 0
-    ? `Absents ${favori}: ${matchInfo.hMissing.missingNames.join(', ')}`
-    : '';
+    ? `⚠️ Absents ${favori}: ${matchInfo.hMissing.missingNames.join(', ')}`
+    : '✅ Pas d\'absents majeurs détectés';
 
-  const prompt = `Expert football. Analyse ce match et justifie le pronostic.
+  const prompt = `Expert football. Justifie le pronostic avec des données concrètes.
 
 MATCH: ${matchInfo.match} | ${matchInfo.competition} | ${matchInfo.heure}
-PRONOSTIC: Victoire ${favori}
+PRONOSTIC: Victoire ${favori} (score fiabilité: ${matchInfo.scoreMatriciel}/100)
 ${favori}: rang ${matchInfo.favoriRang}e (${matchInfo.favoriPts}pts, forme:${matchInfo.favoriForm})
 ${adversaire}: rang ${matchInfo.adversaireRang}e (${matchInfo.adversairePts}pts, forme:${matchInfo.adversaireForm})
 ${missingStr}
-CONTEXTE: ${context}
+CONTEXTE COMPLET: ${context}
 
-JOUEURS OFFENSIFS DE ${favori}:
+JOUEURS OFFENSIFS DE ${favori} (triés par ratio buts/match):
 ${playerList}
 
-RÈGLES:
-1. 2 phrases MAX sur pourquoi ${favori} gagne — chiffres concrets
-2. Joueur décisif: ATTAQUANT ou AILIER en priorité, ❌ jamais blessé/suspendu
-3. ❌ jamais milieu défensif
-4. Utilise tes connaissances réelles sur les joueurs et leur statut actuel
+RÈGLES STRICTES:
+1. 2 phrases MAX justifiant la victoire — cite des stats concrètes du contexte
+2. Joueur décisif: choisis l'ATTAQUANT ou AILIER avec le meilleur ratio
+3. ❌ JAMAIS blessé/suspendu (Mbappé blessé = EXCLU, utilise tes connaissances mars 2026)
+4. ❌ JAMAIS milieu défensif (Rodri, Casemiro etc)
+5. Si ratio API faible mais joueur connu prolifique → utilise tes connaissances réelles
 
 JSON UNIQUEMENT:
-{"raison":"2 phrases pourquoi victoire","joueur_decisif":{"joueur":"Prénom Nom","type":"Joueur décisif","prob":72,"cote_estimee":1.75,"raison":"1 phrase courte"}}`;
+{"raison":"2 phrases pourquoi victoire avec stats","joueur_decisif":{"joueur":"Prénom Nom","type":"Joueur décisif","prob":72,"cote_estimee":1.75,"raison":"1 phrase avec stat concrète"}}`;
 
   try {
     const response = await anthropic.messages.create({
@@ -453,7 +576,7 @@ async function collectMatchData(fixture, leagueId, leagueName, standings) {
     : '?';
   const isEuropean = EURO_LEAGUES.includes(leagueId);
 
-  const [hStats, aStats, hPlayers, aPlayers, injuries, h2h, lineups] = await Promise.all([
+  const [hStats, aStats, hPlayers, aPlayers, injuries, h2h, lineups, hAdvStats, aAdvStats, prediction] = await Promise.all([
     getTeamStatsCached(hTeam.id, leagueId),
     getTeamStatsCached(aTeam.id, leagueId),
     getPlayersCached(hTeam.id, leagueId),
@@ -461,6 +584,9 @@ async function collectMatchData(fixture, leagueId, leagueName, standings) {
     footballAPI('/injuries', { fixture: fixtureId }),
     footballAPI('/fixtures/headtohead', { h2h: `${hTeam.id}-${aTeam.id}`, last: 5 }),
     footballAPI('/fixtures/lineups', { fixture: fixtureId }),
+    getAdvancedStatsCached(hTeam.id, leagueId),
+    getAdvancedStatsCached(aTeam.id, leagueId),
+    getPredictionCached(fixtureId),
   ]);
 
   const hStand = standings.find(s => s.team?.id === hTeam.id);
@@ -474,7 +600,8 @@ async function collectMatchData(fixture, leagueId, leagueName, standings) {
 
   const analyse = analyseMatchComplet(
     hStats, aStats, hStand, aStand, h2h, injuries, isEuropean,
-    hPlayers, aPlayers, hStarters, aStarters
+    hPlayers, aPlayers, hStarters, aStarters,
+    hAdvStats, aAdvStats, prediction
   );
 
   if (!analyse.alerte) return null; // match trop équilibré ou score trop bas
@@ -497,7 +624,17 @@ async function collectMatchData(fixture, leagueId, leagueName, standings) {
 
   const blessesStr = injuries.slice(0, 4).map(i => i.player?.name).join(', ') || 'Aucun';
   const h2hStr = h2h.slice(0, 3).map(m => `${m.teams?.home?.name} ${m.goals?.home}-${m.goals?.away} ${m.teams?.away?.name}`).join(' | ') || '-';
-  const context = `${hTeam.name} ${analyse.hRank}e (${analyse.hPts}pts, forme:${analyse.hForm}) vs ${aTeam.name} ${analyse.aRank}e (${analyse.aPts}pts, forme:${analyse.aForm}). H2H: ${h2hStr}. Blessés: ${blessesStr}`;
+  const hAdvStr = hAdvStats
+    ? `Possession moy:${hAdvStats.possession}%, Tirs cadrés/match:${hAdvStats.shotsOnTarget}`
+    : '';
+  const aAdvStr = aAdvStats
+    ? `Possession moy:${aAdvStats.possession}%, Tirs cadrés/match:${aAdvStats.shotsOnTarget}`
+    : '';
+  const predStr = prediction
+    ? `Prédiction API: ${hTeam.name} ${prediction.percent?.home||'?'} / Nul ${prediction.percent?.draw||'?'} / ${aTeam.name} ${prediction.percent?.away||'?'}`
+    : '';
+
+  const context = `${hTeam.name} ${analyse.hRank}e (${analyse.hPts}pts, forme:${analyse.hForm}${hAdvStr ? ', ' + hAdvStr : ''}) vs ${aTeam.name} ${analyse.aRank}e (${analyse.aPts}pts, forme:${analyse.aForm}${aAdvStr ? ', ' + aAdvStr : ''}). H2H: ${h2hStr}. ${predStr} Blessés: ${blessesStr}`;
 
   return {
     match: `${hTeam.name} vs ${aTeam.name}`,
@@ -659,7 +796,7 @@ app.post('/api/check-compos', async (req, res) => {
 
 app.get('/api/reset-cache', (req, res) => {
   cache.lastDate = null;
-  ['standings','teamStats','players','natLeagues'].forEach(k => { cache[k] = {}; });
+  ['standings','teamStats','players','natLeagues','fixtureStats','predictions'].forEach(k => { cache[k] = {}; });
   res.json({ status: 'Cache réinitialisé' });
 });
 
