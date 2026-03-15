@@ -406,20 +406,17 @@ let currentPick = null;
 let wonState = true;
 
 const FACTORS_DATA = [
-  { id:'F1', name:'Attaquant en série + Défense poreuse', weight:10, rate:71, color:'#3b82f6', icon:'🔥', subs:['3+ buts/5 matchs','Concède 1.8+/match','Titulaire confirmé'] },
-  { id:'F2', name:'Favori domicile vs pire défense', weight:9, rate:68, color:'#60a5fa', icon:'🏠', subs:['Top 6 à domicile','Top 4 pires défenses','Écart >8pts'] },
-  { id:'F3', name:'Tireur de penaltys vs équipe fautive', weight:9, rate:65, color:'#f59e0b', icon:'⚽', subs:['Titulaire penalty','0.6+ pen/match','>75% conversion'] },
-  { id:'F4', name:'Milestone personnel attaquant', weight:8, rate:62, color:'#a78bfa', icon:'🎯', subs:['1-2 buts d\'un palier','Forme ≥3/5','Enjeu élevé'] },
-  { id:'F5', name:'Attaquant rapide vs défenseur lent', weight:8, rate:61, color:'#38bdf8', icon:'💨', subs:['xA élevé','Défenseur faible 1v1','Pressing haut'] },
-  { id:'F6', name:'xG équipe >2.2 vs bloc bas fragile', weight:7, rate:59, color:'#fb923c', icon:'📊', subs:['xG >2.2/match','Bloc bas fragile','>3 tirs cadrés'] },
-  { id:'F7', name:'Match fort enjeu + joueur en confiance', weight:7, rate:58, color:'#f472b6', icon:'🏆', subs:['Derby/Top6/Coupe','5+ buts en couperets','Forme positive'] },
-  { id:'F8', name:'Double combo F1+F2 réunis', weight:6, rate:74, color:'#10b981', icon:'⚡', subs:['F1+F2 actifs','Cote ≥1.65','Équipe dominante'] },
-  { id:'F9', name:'H2H favorable au joueur ciblé', weight:8, rate:64, color:'#34d399', icon:'🔄', subs:['Scoré 3/3 derniers H2H','Pattern favorable','Défense vulnérable'] },
-  { id:'F10', name:'Adversaire fatigué', weight:6, rate:61, color:'#94a3b8', icon:'😴', subs:['3+ matchs/10 jours','Déplacement long','Prolongations récentes'] },
-  { id:'F11', name:'Adversaire sous pression classement', weight:7, rate:63, color:'#f87171', icon:'📉', subs:['Zone relégation','Défense désorganisée','Résultats urgents'] },
-  { id:'F12', name:'Retour de blessure sous-coté', weight:7, rate:60, color:'#fbbf24', icon:'🏥', subs:['3+ sem absence','Match favorable retour','Cote pas ajustée'] },
-  { id:'F13', name:'Domination possession >60%', weight:6, rate:58, color:'#818cf8', icon:'⚽', subs:['>60% possession','Bloc bas adverse','Jeu de transition'] },
-  { id:'F14', name:'Value bet détectée', weight:9, rate:67, color:'#22d3ee', icon:'💎', subs:['Cote en baisse','Sharp money détecté','Valeur sous-évaluée'] },
+  { id:'F1', name:'Écart de classement significatif', weight:10, rate:72, color:'#3b82f6', icon:'🔥', subs:['Écart 6+ rangs','Favori clair','Hiérarchie respectée'] },
+  { id:'F2', name:'Top équipe à domicile', weight:9, rate:70, color:'#60a5fa', icon:'🏠', subs:['Top 5 à domicile','Forteresse domicile','Avantage terrain'] },
+  { id:'F5', name:'Défense adverse poreuse en déplacement', weight:9, rate:68, color:'#38bdf8', icon:'💨', subs:['2+ buts encaissés/match','Défense fragile','Vulnérable en déplacement'] },
+  { id:'F6', name:'Attaque prolifique à domicile', weight:8, rate:65, color:'#fb923c', icon:'📊', subs:['2+ buts marqués/match','Efficacité offensive','Pression constante'] },
+  { id:'F7', name:'Match à enjeu européen', weight:7, rate:63, color:'#f472b6', icon:'🏆', subs:['CL/EL/Conference','Enjeu qualification','Pression résultat'] },
+  { id:'F8', name:'Adversaire en mauvaise série', weight:8, rate:67, color:'#10b981', icon:'⚡', subs:['3+ défaites récentes','Moral en berne','Dynamique négative'] },
+  { id:'F9', name:'H2H historique favorable', weight:8, rate:64, color:'#34d399', icon:'🔄', subs:['3+ victoires/5 H2H','Dominance historique','Pattern favorable'] },
+  { id:'F11', name:'Adversaire en zone relégation', weight:8, rate:66, color:'#f87171', icon:'📉', subs:['Rang 16+','Sous pression','Défense désorganisée'] },
+  { id:'F12', name:'Équipe en grande forme', weight:9, rate:69, color:'#fbbf24', icon:'🏥', subs:['4-5 victoires/5 matchs','Momentum positif','Confiance au max'] },
+  { id:'F13', name:'Solidité défensive à domicile', weight:7, rate:62, color:'#818cf8', icon:'⚽', subs:['<1 but encaissé/match','Clean sheets fréquents','Défense organisée'] },
+  { id:'F14', name:'Écart de points au classement', weight:9, rate:68, color:'#22d3ee', icon:'💎', subs:['15+ points d\'écart','Niveau clairement différent','Supériorité confirmée'] },
 ];
 
 // ── STORAGE ───────────────────────────────────────────────
