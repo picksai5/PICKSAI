@@ -460,6 +460,8 @@ app.get('/api/scan', async (req, res) => {
     const allFixtures = [];
     for (const league of LEAGUES) {
       const data = await footballAPI('/fixtures', { date: today, league: league.id, season: SEASON });
+      // Scan complet = TOUS les matchs du jour, passés et futurs
+      // L'utilisateur décide lui-même quand scanner
       if (data.length > 0) allFixtures.push(...data.map(f => ({ ...f, leagueName: league.name, leagueId: league.id })));
     }
 
@@ -483,10 +485,10 @@ app.get('/api/scan', async (req, res) => {
           continue;
         }
 
-        // Claude rédige l'analyse
         const analyse = await genererAnalyse(matchData, matchData.favoriPlayers, matchData.context);
 
         allPicks.push({
+          fixture_id: fixture.fixture?.id,
           score_matriciel: matchData.scoreMatriciel,
           score_total: matchData.score_total,
           score_sort: matchData.scoreSort,
@@ -507,6 +509,7 @@ app.get('/api/scan', async (req, res) => {
             ...(matchData.aMissing?.missingNames || []),
           ],
           compos_officielles: matchData.composAvailable,
+          alerte_compo: null, // sera rempli par /api/check-compos
           match: matchData.match,
           competition: matchData.competition,
           heure: matchData.heure,
@@ -519,7 +522,6 @@ app.get('/api/scan', async (req, res) => {
 
     allPicks.sort((a, b) => (b.score_sort || 0) - (a.score_sort || 0));
 
-    // 1 VERT + 1 ORANGE + 1 ROUGE
     const topVert   = allPicks.find(p => p.alerte === 'VERT')   || null;
     const topOrange = allPicks.find(p => p.alerte === 'ORANGE') || null;
     const topRouge  = allPicks.find(p => p.alerte === 'ROUGE')  || null;
@@ -533,6 +535,53 @@ app.get('/api/scan', async (req, res) => {
       top_pick: picks[0] || null,
     });
 
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── VÉRIFICATION COMPOS — ne change pas les picks, ajoute juste des alertes ──
+app.post('/api/check-compos', async (req, res) => {
+  try {
+    const { picks } = req.body; // picks sauvegardés côté frontend
+    if (!picks || picks.length === 0) return res.json({ picks: [] });
+
+    const updatedPicks = await Promise.all(picks.map(async (pick) => {
+      if (!pick.fixture_id) return { ...pick, alerte_compo: null };
+
+      const [lineups, injuries] = await Promise.all([
+        footballAPI('/fixtures/lineups', { fixture: pick.fixture_id }),
+        footballAPI('/injuries', { fixture: pick.fixture_id }),
+      ]);
+
+      const hLineup = lineups.find(l => l.team?.name === pick.domicile);
+      const aLineup = lineups.find(l => l.team?.name === pick.exterieur);
+      const hStarters = (hLineup?.startXI || []).map(p => p.player?.name?.toLowerCase());
+      const aStarters = (aLineup?.startXI || []).map(p => p.player?.name?.toLowerCase());
+      const composDispo = hStarters.length > 0 || aStarters.length > 0;
+
+      const injuredNames = new Set(injuries.map(i => (i.player?.name || '').toLowerCase()));
+
+      // Vérifier si le joueur décisif est titulaire
+      let alerteCompo = null;
+      if (pick.joueur_decisif?.joueur) {
+        const nomJoueur = pick.joueur_decisif.joueur.toLowerCase();
+        const favoriIsHome = pick.prono_type !== 'victoire_exterieur';
+        const starters = favoriIsHome ? hStarters : aStarters;
+
+        if (injuredNames.has(nomJoueur)) {
+          alerteCompo = `⚠️ ${pick.joueur_decisif.joueur} BLESSÉ — joueur décisif bonus non disponible`;
+        } else if (composDispo && starters.length > 0 && !starters.includes(nomJoueur)) {
+          alerteCompo = `⚠️ ${pick.joueur_decisif.joueur} sur le BANC — pick victoire reste valable`;
+        }
+      }
+
+      return {
+        ...pick,
+        compos_officielles: composDispo,
+        alerte_compo: alerteCompo,
+      };
+    }));
+
+    res.json({ picks: updatedPicks });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
