@@ -318,6 +318,11 @@ function analyseMatchComplet(hStats, aStats, hStand, aStand, h2h, injuries, isEu
   if (aLoss >= 4 || (aLoss >= 3 && hWins >= 3)) { hScore += 10; factors.push('F8'); }
   if (hLoss >= 4 || (hLoss >= 3 && aWins >= 3)) { aScore += 10; factors.push('F8'); }
 
+  // MALUS ÉQUIPES QUI FONT SOUVENT NUL
+  // Un nul = mauvais pour un prono victoire
+  if (hDraws >= 3) { hScore -= 10; } // domicile nulise souvent → pick victoire risqué
+  if ((aForm.match(/D/g) || []).length >= 3) { aScore -= 10; }
+
   // F9 — POSITION AU CLASSEMENT (top équipe = bonus)
   if      (hRank <= 2)  { hScore += 12; factors.push('F2'); }
   else if (hRank <= 5)  { hScore += 7; factors.push('F2'); }
@@ -447,9 +452,15 @@ function analyseMatchComplet(hStats, aStats, hStand, aStand, h2h, injuries, isEu
   let alerte = null;
   let pronosType = null;
 
-  // Filtre rang minimum — écart de classement < 4 rangs = match trop équilibré
+  // Filtre rang minimum — écart de classement insuffisant = match trop équilibré
   const absRankDiff = Math.abs(rankDiff);
-  if (absRankDiff < 4) {
+
+  // Règle 1 : écart < 5 rangs = toujours trop serré
+  // Règle 2 : deux équipes dans le top 8 = écart minimum de 7 rangs requis
+  const bothTopEight = hRank <= 8 && aRank <= 8;
+  const minRankDiff = bothTopEight ? 7 : 5;
+
+  if (absRankDiff < minRankDiff) {
     return {
       scoreMatriciel: 0, scoreSort: 0, factors: uniqueFactors,
       alerte: null, coteEstimee: null, favoriIsHome: null,
