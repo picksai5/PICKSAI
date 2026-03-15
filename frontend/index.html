@@ -209,6 +209,7 @@
       <button class="scan-btn" id="scan-btn" onclick="doScan()">⚡ LANCER LE SCAN</button>
       <div class="scan-sub">MATRICE F1→F14 · API FOOTBALL LIVE · TOP PICK AUTOMATIQUE</div>
       <div id="last-scan-badge" style="margin-top:8px;font-size:11px;color:var(--muted)"></div>
+      <button id="check-compos-btn" onclick="checkCompos()" style="display:none;margin-top:12px;padding:10px 24px;background:transparent;border:1px solid #10b98155;color:#10b981;border-radius:8px;font-family:'Bebas Neue';font-size:14px;letter-spacing:3px;cursor:pointer">🔍 VÉRIFIER COMPOS</button>
     </div>
     <div class="log-box" id="log-box" style="display:none"></div>
     <div id="scan-results"></div>
@@ -513,6 +514,11 @@ async function doScan() {
     try { localStorage.setItem('picksai_last_scan', JSON.stringify(data)); } catch {}
 
     renderScanResults(data);
+    // Afficher le bouton vérifier compos et sauvegarder les picks pour check ultérieur
+    if (data.picks && data.picks.length > 0) {
+      document.getElementById('check-compos-btn').style.display = 'inline-block';
+      try { localStorage.setItem('picksai_scan_picks', JSON.stringify(data.picks)); } catch {}
+    }
   } catch (e) {
     addLog(`❌ ${e.message}`, '#ef4444');
     empty.style.display = 'block';
@@ -520,6 +526,55 @@ async function doScan() {
 
   btn.disabled = false;
   btn.innerHTML = '⚡ LANCER LE SCAN';
+}
+
+async function checkCompos() {
+  const btn = document.getElementById('check-compos-btn');
+  btn.textContent = '⏳ Vérification...';
+  btn.disabled = true;
+
+  try {
+    const savedPicks = JSON.parse(localStorage.getItem('picksai_scan_picks') || '[]');
+    if (savedPicks.length === 0) { btn.textContent = '🔍 VÉRIFIER COMPOS'; btn.disabled = false; return; }
+
+    const res = await fetch('/api/check-compos', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ picks: savedPicks }),
+    });
+    const data = await res.json();
+
+    if (data.picks) {
+      // Mettre à jour les picks sauvegardés avec les nouvelles infos compos
+      localStorage.setItem('picksai_scan_picks', JSON.stringify(data.picks));
+      // Mettre à jour l'affichage sans tout rescanner
+      const lastScan = JSON.parse(localStorage.getItem('picksai_last_scan') || '{}');
+      lastScan.picks = data.picks;
+      localStorage.setItem('picksai_last_scan', JSON.stringify(lastScan));
+      renderScanResults(lastScan, true);
+
+      // Log des alertes
+      const alertes = data.picks.filter(p => p.alerte_compo);
+      const composOk = data.picks.filter(p => p.compos_officielles).length;
+      if (composOk > 0) {
+        const logBox = document.getElementById('log-box');
+        logBox.style.display = 'block';
+        const t = new Date().toLocaleTimeString('fr-FR');
+        logBox.innerHTML += `<div class="log-line"><span class="log-time">${t}</span><span style="color:#10b981">✅ ${composOk} pick(s) avec compos officielles</span></div>`;
+        alertes.forEach(p => {
+          logBox.innerHTML += `<div class="log-line"><span class="log-time">${t}</span><span style="color:#f59e0b">${p.alerte_compo}</span></div>`;
+        });
+        if (alertes.length === 0) {
+          logBox.innerHTML += `<div class="log-line"><span class="log-time">${t}</span><span style="color:#10b981">✅ Tous les joueurs décisifs sont titulaires</span></div>`;
+        }
+      }
+    }
+  } catch (e) {
+    console.error('Erreur check compos:', e);
+  }
+
+  btn.textContent = '🔍 VÉRIFIER COMPOS';
+  btn.disabled = false;
 }
 
 function renderScanResults(data, isRestored = false) {
@@ -619,7 +674,10 @@ function pickCard(pick, isTop, topLabel, topColor) {
         <span style="font-size:11px;color:var(--muted)">vs rang ${pick.adversaire_rang||'?'}e · ${pick.adversaire_forme||'?'}</span>
       </div>
       ${pick.absents && pick.absents.length > 0
-        ? `<div style="margin-top:6px;font-size:10px;color:#f59e0b">⚠️ Absents: ${pick.absents.join(', ')}</div>`
+        ? `<div style="margin-top:6px;font-size:10px;color:#f59e0b">⚠️ Absents détectés: ${pick.absents.join(', ')}</div>`
+        : ''}
+      ${pick.alerte_compo
+        ? `<div style="margin-top:6px;font-size:11px;color:#f59e0b;font-weight:700">${pick.alerte_compo}</div>`
         : ''}
     </div>
 
