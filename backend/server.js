@@ -16,6 +16,34 @@ const FOOTBALL_API_BASE = 'https://v3.football.api-sports.io';
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 const SEASON = 2025;
 
+// ── COMPARAISON SOUPLE DES NOMS JOUEURS ──────────────────
+// Gère les variations : "A. Garnacho" vs "Alejandro Garnacho"
+function nomMatch(nom1, nom2) {
+  if (!nom1 || !nom2) return false;
+  const n1 = nom1.toLowerCase().trim();
+  const n2 = nom2.toLowerCase().trim();
+  if (n1 === n2) return true;
+  // Comparer le dernier mot (nom de famille)
+  const parts1 = n1.split(' ');
+  const parts2 = n2.split(' ');
+  const lastName1 = parts1[parts1.length - 1];
+  const lastName2 = parts2[parts2.length - 1];
+  if (lastName1.length >= 4 && lastName1 === lastName2) return true;
+  // L'un contient l'autre
+  if (n1.includes(lastName2) || n2.includes(lastName1)) return true;
+  return false;
+}
+
+function isInStarters(playerName, starters) {
+  return starters.some(s => nomMatch(playerName, s));
+}
+
+function isInjuredPlayer(playerName, injuredNames) {
+  return [...injuredNames].some(n => nomMatch(playerName, n));
+}
+
+
+
 const LEAGUES = [
   { id: 61,  name: 'Ligue 1' },
   { id: 140, name: 'La Liga' },
@@ -213,7 +241,7 @@ function analyseMatchComplet(hStats, aStats, hStand, aStand, h2h, injuries, isEu
     let missingNames = [];
     for (const scorer of topScorers) {
       const isInjured = injuredIds.has(scorer.id) || injuredNames.has((scorer.name||'').toLowerCase());
-      const notInCompo = starters.length > 0 && !starters.includes((scorer.name||'').toLowerCase());
+      const notInCompo = starters.length > 0 && !isInStarters(scorer.name||'', starters);
       if (isInjured || notInCompo) {
         missing++;
         missingNames.push(scorer.name);
@@ -273,9 +301,9 @@ function analyseMatchComplet(hStats, aStats, hStand, aStand, h2h, injuries, isEu
     coteEstimee = favoriIsHome ? 2.00 : 2.30;
   }
 
-  // Filtre cote minimum — rejeter les gros favoris évidents (Liverpool 1.24, Barça 1.27)
-  // Un score très élevé (>90) = équipe trop dominante = cote trop basse = pas de value
-  if (scoreMatriciel > 90) alerte = null; // rejeté car cote trop basse
+  // Filtre value bet — rejeter si cote estimée trop basse (pas de value)
+  // VERT domicile à 1.55 c'est bien, mais si le score est très haut = favori évident = cote réelle < 1.40
+  if (scoreMatriciel >= 85) alerte = null; // Score trop haut = favori trop évident = cote réelle ~1.20-1.35
 
   return {
     scoreMatriciel,
@@ -353,12 +381,12 @@ function filtrerOffensifs(players, injuries, starters) {
     const name = (p.player?.name || '').toLowerCase();
     if (pos === 'G' || pos === 'Goalkeeper') return false;
     if (pos === 'D' || pos === 'Defender') return false;
-    if (injuredNames.has(name)) return false;
+    if (isInjuredPlayer(name, injuredNames)) return false;
     return true;
   });
 
   if (starters.length > 0) {
-    filtered = filtered.filter(p => starters.includes(p.player?.name?.toLowerCase()));
+    filtered = filtered.filter(p => isInStarters(p.player?.name || '', starters));
   }
 
   return filtered.map(p => {
@@ -567,9 +595,9 @@ app.post('/api/check-compos', async (req, res) => {
         const favoriIsHome = pick.prono_type !== 'victoire_exterieur';
         const starters = favoriIsHome ? hStarters : aStarters;
 
-        if (injuredNames.has(nomJoueur)) {
+        if (isInjuredPlayer(nomJoueur, injuredNames)) {
           alerteCompo = `⚠️ ${pick.joueur_decisif.joueur} BLESSÉ — joueur décisif bonus non disponible`;
-        } else if (composDispo && starters.length > 0 && !starters.includes(nomJoueur)) {
+        } else if (composDispo && starters.length > 0 && !isInStarters(nomJoueur, starters)) {
           alerteCompo = `⚠️ ${pick.joueur_decisif.joueur} sur le BANC — pick victoire reste valable`;
         }
       }
