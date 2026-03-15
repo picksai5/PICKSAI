@@ -131,13 +131,13 @@ async function preloadCache() {
   console.log(`Cache OK — ${pairs.length} equipes`);
 }
 
-// ── ANALYSE COMPLETE DU MATCH ─────────────────────────────
-// Détermine quelle équipe est favorite ET avec quelle fiabilité
+// ── MATRICE V4 — ANALYSE VICTOIRE ÉQUIPE ────────────────
+// 14 facteurs calibrés pour prédire la victoire, pas le joueur décisif
 function analyseMatchComplet(hStats, aStats, hStand, aStand, h2h, injuries, isEuropean, hPlayers, aPlayers, composH, composA) {
-  
+
   // ── DONNÉES DE BASE ───────────────────────────────────
-  const hRank = hStand?.rank || 99;
-  const aRank = aStand?.rank || 99;
+  const hRank = hStand?.rank  || 99;
+  const aRank = aStand?.rank  || 99;
   const hPts  = hStand?.points || 0;
   const aPts  = aStand?.points || 0;
   const hForm = (hStand?.form || '').slice(-5);
@@ -146,88 +146,135 @@ function analyseMatchComplet(hStats, aStats, hStand, aStand, h2h, injuries, isEu
   const aWins = (aForm.match(/W/g) || []).length;
   const hLoss = (hForm.match(/L/g) || []).length;
   const aLoss = (aForm.match(/L/g) || []).length;
+  const hDraws = (hForm.match(/D/g) || []).length;
 
-  // Stats offensives/défensives
-  const hGoalsFor     = parseFloat(hStats?.goals?.for?.average?.home)     || 0;
-  const hGoalsAgainst = parseFloat(hStats?.goals?.against?.average?.home)  || 0;
-  const aGoalsFor     = parseFloat(aStats?.goals?.for?.average?.away)      || 0;
-  const aGoalsAgainst = parseFloat(aStats?.goals?.against?.average?.away)  || 0;
+  // Stats offensives et défensives
+  const hGoalsForHome     = parseFloat(hStats?.goals?.for?.average?.home)     || 0;
+  const hGoalsAgainstHome = parseFloat(hStats?.goals?.against?.average?.home)  || 0;
+  const aGoalsForAway     = parseFloat(aStats?.goals?.for?.average?.away)      || 0;
+  const aGoalsAgainstAway = parseFloat(aStats?.goals?.against?.average?.away)  || 0;
 
-  // H2H
-  const h2hTotal = Math.min(h2h?.length || 0, 5);
-  const h2hHomeWins = (h2h || []).slice(0,5).filter(m => (m.goals?.home||0) > (m.goals?.away||0)).length;
-  const h2hAwayWins = (h2h || []).slice(0,5).filter(m => (m.goals?.away||0) > (m.goals?.home||0)).length;
+  // Clean sheets (approximation via buts encaissés)
+  const hCleanSheetRate = hGoalsAgainstHome < 0.8 ? 'high' : hGoalsAgainstHome < 1.2 ? 'mid' : 'low';
+  const aCleanSheetRate = aGoalsAgainstAway < 0.8 ? 'high' : aGoalsAgainstAway < 1.2 ? 'mid' : 'low';
 
-  // ── SCORE BRUT CHAQUE ÉQUIPE ──────────────────────────
+  // H2H sur les 5 derniers
+  const h2hSlice = (h2h || []).slice(0, 5);
+  const h2hHomeWins = h2hSlice.filter(m => (m.goals?.home||0) > (m.goals?.away||0)).length;
+  const h2hAwayWins = h2hSlice.filter(m => (m.goals?.away||0) > (m.goals?.home||0)).length;
+  const h2hDraws    = h2hSlice.filter(m => (m.goals?.home||0) === (m.goals?.away||0)).length;
+
+  // ── SCORE POUR CHAQUE ÉQUIPE ──────────────────────────
   let hScore = 0;
   let aScore = 0;
   const factors = [];
 
-  // Classement (max 30pts)
+  // F1 — ÉCART DE CLASSEMENT (max 35pts)
   const rankDiff = aRank - hRank;
-  if (rankDiff >= 15)      { hScore += 30; factors.push('F1'); }
-  else if (rankDiff >= 10) { hScore += 22; factors.push('F1'); }
-  else if (rankDiff >= 5)  { hScore += 14; factors.push('F1'); }
-  else if (rankDiff >= 2)  { hScore += 7; }
-  else if (rankDiff <= -10){ aScore += 22; factors.push('F1'); }
-  else if (rankDiff <= -5) { aScore += 14; factors.push('F1'); }
-  else if (rankDiff <= -2) { aScore += 7; }
+  if      (rankDiff >= 15) { hScore += 35; factors.push('F1'); }
+  else if (rankDiff >= 10) { hScore += 25; factors.push('F1'); }
+  else if (rankDiff >= 6)  { hScore += 16; factors.push('F1'); }
+  else if (rankDiff >= 3)  { hScore += 8; }
+  else if (rankDiff <= -15){ aScore += 35; factors.push('F1'); }
+  else if (rankDiff <= -10){ aScore += 25; factors.push('F1'); }
+  else if (rankDiff <= -6) { aScore += 16; factors.push('F1'); }
+  else if (rankDiff <= -3) { aScore += 8; }
 
-  // Points (max 15pts)
+  // F2 — AVANTAGE DOMICILE (fixe +8, réduit si équipe extérieure très forte)
+  const homeBonus = (aRank < hRank - 5) ? 4 : 8; // réduit si visiteur nettement meilleur
+  hScore += homeBonus;
+
+  // F3 — ÉCART DE POINTS (max 18pts)
   const ptsDiff = hPts - aPts;
-  if (ptsDiff >= 20)       { hScore += 15; factors.push('F14'); }
-  else if (ptsDiff >= 12)  { hScore += 10; factors.push('F14'); }
-  else if (ptsDiff >= 6)   { hScore += 5; }
-  else if (ptsDiff <= -12) { aScore += 10; factors.push('F14'); }
-  else if (ptsDiff <= -6)  { aScore += 5; }
+  if      (ptsDiff >= 25) { hScore += 18; factors.push('F14'); }
+  else if (ptsDiff >= 15) { hScore += 13; factors.push('F14'); }
+  else if (ptsDiff >= 8)  { hScore += 7; factors.push('F14'); }
+  else if (ptsDiff >= 4)  { hScore += 3; }
+  else if (ptsDiff <= -15){ aScore += 13; factors.push('F14'); }
+  else if (ptsDiff <= -8) { aScore += 7; factors.push('F14'); }
+  else if (ptsDiff <= -4) { aScore += 3; }
 
-  // Avantage domicile (max 10pts)
-  hScore += 10;
+  // F4 — FORME RÉCENTE 5 MATCHS (max 18pts)
+  if      (hWins >= 5) { hScore += 18; factors.push('F12'); }
+  else if (hWins >= 4) { hScore += 13; factors.push('F12'); }
+  else if (hWins >= 3) { hScore += 8; factors.push('F12'); }
+  else if (hLoss >= 4) { hScore -= 12; }
+  else if (hLoss >= 3) { hScore -= 7; }
 
-  // Forme (max 15pts)
-  if (hWins >= 4)      { hScore += 15; factors.push('F12'); }
-  else if (hWins >= 3) { hScore += 9; factors.push('F12'); }
-  else if (hLoss >= 3) { hScore -= 8; }
-  if (aWins >= 4)      { aScore += 12; }
+  if      (aWins >= 5) { aScore += 15; factors.push('F12'); }
+  else if (aWins >= 4) { aScore += 11; factors.push('F12'); }
   else if (aWins >= 3) { aScore += 7; }
-  else if (aLoss >= 3) { aScore -= 8; }
+  else if (aLoss >= 4) { aScore -= 12; }
+  else if (aLoss >= 3) { aScore -= 7; }
 
-  // Défense adverse (max 12pts)
-  if (aGoalsAgainst >= 2.0)  { hScore += 12; factors.push('F5'); }
-  else if (aGoalsAgainst >= 1.5) { hScore += 7; factors.push('F5'); }
-  if (hGoalsAgainst >= 2.0)  { aScore += 12; factors.push('F5'); }
-  else if (hGoalsAgainst >= 1.5) { aScore += 7; }
+  // F5 — DÉFENSE ADVERSE EN DÉPLACEMENT (max 15pts)
+  if      (aGoalsAgainstAway >= 2.5) { hScore += 15; factors.push('F5'); }
+  else if (aGoalsAgainstAway >= 2.0) { hScore += 11; factors.push('F5'); }
+  else if (aGoalsAgainstAway >= 1.5) { hScore += 6; factors.push('F5'); }
+  else if (aGoalsAgainstAway <= 0.8) { aScore += 8; } // défense solide en déplacement
 
-  // Attaque (max 8pts)
-  if (hGoalsFor >= 2.0)  { hScore += 8; factors.push('F6'); }
-  else if (hGoalsFor >= 1.5) { hScore += 5; factors.push('F6'); }
-  if (aGoalsFor >= 2.0)  { aScore += 8; }
-  else if (aGoalsFor >= 1.5) { aScore += 5; }
+  if      (hGoalsAgainstHome >= 2.5) { aScore += 12; factors.push('F5'); }
+  else if (hGoalsAgainstHome >= 2.0) { aScore += 8; }
+  else if (hGoalsAgainstHome <= 0.8) { hScore += 8; } // défense solide à domicile
 
-  // H2H (max 10pts)
-  if (h2hHomeWins >= 4) { hScore += 10; factors.push('F9'); }
-  else if (h2hHomeWins >= 3) { hScore += 6; factors.push('F9'); }
-  if (h2hAwayWins >= 4) { aScore += 10; factors.push('F9'); }
-  else if (h2hAwayWins >= 3) { aScore += 6; }
+  // F6 — PUISSANCE OFFENSIVE (max 12pts)
+  if      (hGoalsForHome >= 2.5) { hScore += 12; factors.push('F6'); }
+  else if (hGoalsForHome >= 2.0) { hScore += 8; factors.push('F6'); }
+  else if (hGoalsForHome >= 1.5) { hScore += 4; }
 
-  // Top équipe domicile
-  if (hRank <= 3) { hScore += 10; factors.push('F2'); }
-  else if (hRank <= 6) { hScore += 5; factors.push('F2'); }
+  if      (aGoalsForAway >= 2.5) { aScore += 10; factors.push('F6'); }
+  else if (aGoalsForAway >= 2.0) { aScore += 7; }
+  else if (aGoalsForAway >= 1.5) { aScore += 3; }
 
-  // Adversaire très faible
-  if (aRank >= 17) { hScore += 12; factors.push('F11'); }
-  else if (aRank >= 15) { hScore += 7; factors.push('F11'); }
+  // F7 — H2H HISTORIQUE (max 12pts)
+  if      (h2hHomeWins >= 4) { hScore += 12; factors.push('F9'); }
+  else if (h2hHomeWins >= 3) { hScore += 7; factors.push('F9'); }
+  else if (h2hHomeWins >= 2) { hScore += 3; }
+  if      (h2hAwayWins >= 4) { aScore += 12; factors.push('F9'); }
+  else if (h2hAwayWins >= 3) { aScore += 7; factors.push('F9'); }
+  else if (h2hAwayWins >= 2) { aScore += 3; }
+  // H2H équilibré = signal de nul, réduit les deux scores
+  if (h2hDraws >= 3) { hScore -= 5; aScore -= 5; }
 
-  // Enjeu européen
+  // F8 — ADVERSAIRE SANS VICTOIRE RÉCENTE (série négative)
+  if (aLoss >= 4 || (aLoss >= 3 && hWins >= 3)) { hScore += 10; factors.push('F8'); }
+  if (hLoss >= 4 || (hLoss >= 3 && aWins >= 3)) { aScore += 10; factors.push('F8'); }
+
+  // F9 — POSITION AU CLASSEMENT (top équipe = bonus)
+  if      (hRank <= 2)  { hScore += 12; factors.push('F2'); }
+  else if (hRank <= 5)  { hScore += 7; factors.push('F2'); }
+  else if (hRank <= 8)  { hScore += 3; }
+  if      (aRank <= 2)  { aScore += 10; }
+  else if (aRank <= 5)  { aScore += 6; }
+
+  // F10 — ADVERSAIRE EN ZONE RELÉGATION (max 12pts)
+  if      (aRank >= 18) { hScore += 12; factors.push('F11'); }
+  else if (aRank >= 16) { hScore += 8; factors.push('F11'); }
+  else if (aRank >= 14) { hScore += 4; }
+  if      (hRank >= 18) { aScore += 10; factors.push('F11'); }
+  else if (hRank >= 16) { aScore += 7; }
+
+  // F11 — CLEAN SHEETS (solidité défensive)
+  if (hCleanSheetRate === 'high') { hScore += 8; factors.push('F13'); }
+  if (aCleanSheetRate === 'low')  { hScore += 5; }
+  if (aCleanSheetRate === 'high') { aScore += 8; factors.push('F13'); }
+  if (hCleanSheetRate === 'low')  { aScore += 5; }
+
+  // F12 — ENJEU EUROPÉEN
   if (isEuropean) { factors.push('F7'); }
 
-  // ── IMPACT BLESSÉS ────────────────────────────────────
-  // Identifier les joueurs clés blessés de chaque équipe
-  const injuredIds = new Set((injuries || []).map(i => i.player?.id).filter(Boolean));
+  // ── MALUS DERBY/CLASICO ───────────────────────────────
+  // Les derbys sont imprévisibles même avec gros écart
+  // Détecté via H2H très équilibré + équipes du même pays
+  if (h2hDraws >= 2 && Math.abs(rankDiff) <= 8) {
+    hScore -= 8; aScore -= 8; // match serré probable
+  }
+
+  // ── IMPACT BLESSÉS CLÉS ───────────────────────────────
+  const injuredIds   = new Set((injuries || []).map(i => i.player?.id).filter(Boolean));
   const injuredNames = new Set((injuries || []).map(i => (i.player?.name||'').toLowerCase()));
 
-  const getKeyPlayersMissing = (players, starters, teamInjuries) => {
-    // Joueurs offensifs clés manquants
+  const getKeyPlayersMissing = (players, starters) => {
     const offPlayers = players.filter(p => {
       const pos = (p.statistics?.[0]?.games?.position || p.player?.position || '');
       return pos === 'F' || pos === 'Forward' || pos === 'Attacker' || pos === 'M' || pos === 'Midfielder';
@@ -235,75 +282,72 @@ function analyseMatchComplet(hStats, aStats, hStand, aStand, h2h, injuries, isEu
     const topScorers = offPlayers
       .map(p => ({ name: p.player?.name, goals: p.statistics?.[0]?.goals?.total || 0, id: p.player?.id }))
       .sort((a, b) => b.goals - a.goals)
-      .slice(0, 3); // top 3 buteurs
+      .slice(0, 3);
 
     let missing = 0;
-    let missingNames = [];
+    const missingNames = [];
     for (const scorer of topScorers) {
-      const isInjured = injuredIds.has(scorer.id) || injuredNames.has((scorer.name||'').toLowerCase());
+      const isInjured = injuredIds.has(scorer.id) || isInjuredPlayer(scorer.name||'', injuredNames);
       const notInCompo = starters.length > 0 && !isInStarters(scorer.name||'', starters);
-      if (isInjured || notInCompo) {
-        missing++;
-        missingNames.push(scorer.name);
-      }
+      if (isInjured || notInCompo) { missing++; missingNames.push(scorer.name); }
     }
     return { missing, missingNames };
   };
 
-  const hMissing = getKeyPlayersMissing(hPlayers, composH, injuries);
-  const aMissing = getKeyPlayersMissing(aPlayers, composA, injuries);
+  const hMissing = getKeyPlayersMissing(hPlayers, composH);
+  const aMissing = getKeyPlayersMissing(aPlayers, composA);
 
-  // Malus pour joueurs clés manquants
-  if (hMissing.missing >= 2) { hScore -= 20; }
-  else if (hMissing.missing === 1) { hScore -= 10; }
-  if (aMissing.missing >= 2) { aScore -= 15; }
-  else if (aMissing.missing === 1) { aScore -= 8; }
+  // Malus blessés — proportionnel à l'importance des joueurs
+  if      (hMissing.missing >= 3) { hScore -= 25; }
+  else if (hMissing.missing === 2) { hScore -= 16; }
+  else if (hMissing.missing === 1) { hScore -= 8; }
+
+  if      (aMissing.missing >= 3) { aScore -= 20; }
+  else if (aMissing.missing === 2) { aScore -= 13; }
+  else if (aMissing.missing === 1) { aScore -= 6; }
 
   // ── DÉTERMINER LE FAVORI ──────────────────────────────
-  const totalScore = hScore + aScore;
-  const diff = hScore - aScore;
+  const diff    = hScore - aScore;
+  const absDiff = Math.abs(diff);
   const uniqueFactors = [...new Set(factors)];
 
   let favoriIsHome = null;
   let scoreMatriciel = 0;
   let alerte = null;
-  let pronosType = null; // 'victoire_domicile' | 'victoire_exterieur' | 'nul'
+  let pronosType = null;
 
-  const absDiff = Math.abs(diff);
-
-  if (absDiff < 15) {
-    // Match trop équilibré → rejeté ou nul
+  // Seuil minimum pour un pick — diff < 18 = trop équilibré
+  if (absDiff < 18) {
     pronosType = 'equilibre';
     scoreMatriciel = 0;
-  } else if (diff >= 15) {
+  } else if (diff >= 18) {
     favoriIsHome = true;
     pronosType = 'victoire_domicile';
-    scoreMatriciel = Math.min(100, Math.round(absDiff * 1.2));
+    scoreMatriciel = Math.min(100, Math.round(absDiff * 1.15));
   } else {
     favoriIsHome = false;
     pronosType = 'victoire_exterieur';
-    scoreMatriciel = Math.min(100, Math.round(absDiff * 1.0)); // légèrement pénalisé car extérieur
+    scoreMatriciel = Math.min(100, Math.round(absDiff * 0.95)); // pénalisé car déplacement
   }
 
-  if (scoreMatriciel >= 75) alerte = 'VERT';
-  else if (scoreMatriciel >= 55) alerte = 'ORANGE';
-  else if (scoreMatriciel >= 40) alerte = 'ROUGE';
+  if      (scoreMatriciel >= 72) alerte = 'VERT';
+  else if (scoreMatriciel >= 52) alerte = 'ORANGE';
+  else if (scoreMatriciel >= 38) alerte = 'ROUGE';
 
-  // Estimation cote victoire selon score et type de prono
-  // Plus le score est élevé, plus l'équipe est favorite → cote basse
-  // Un pick extérieur a naturellement une cote plus haute
+  // Cote estimée selon score et type
   let coteEstimee = null;
-  if (scoreMatriciel >= 75) {
-    coteEstimee = favoriIsHome ? 1.55 : 1.80;
-  } else if (scoreMatriciel >= 55) {
-    coteEstimee = favoriIsHome ? 1.75 : 2.00;
-  } else if (scoreMatriciel >= 40) {
-    coteEstimee = favoriIsHome ? 2.00 : 2.30;
+  if (pronosType === 'victoire_domicile') {
+    if      (scoreMatriciel >= 72) coteEstimee = 1.60;
+    else if (scoreMatriciel >= 52) coteEstimee = 1.80;
+    else if (scoreMatriciel >= 38) coteEstimee = 2.10;
+  } else if (pronosType === 'victoire_exterieur') {
+    if      (scoreMatriciel >= 72) coteEstimee = 1.90;
+    else if (scoreMatriciel >= 52) coteEstimee = 2.20;
+    else if (scoreMatriciel >= 38) coteEstimee = 2.50;
   }
 
-  // Filtre value bet — rejeter si cote estimée trop basse (pas de value)
-  // VERT domicile à 1.55 c'est bien, mais si le score est très haut = favori évident = cote réelle < 1.40
-  if (scoreMatriciel >= 85) alerte = null; // Score trop haut = favori trop évident = cote réelle ~1.20-1.35
+  // Filtre gros favoris évidents — score >= 85 = cote réelle < 1.40 = pas de value
+  if (scoreMatriciel >= 85) alerte = null;
 
   return {
     scoreMatriciel,
