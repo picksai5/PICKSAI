@@ -496,7 +496,12 @@ async function doScan() {
     if (data.error) throw new Error(data.error);
 
     addLog(`✅ ${data.picks?.length || 0} picks retenus sur ${data.total_analyses} matchs analysés`, '#10b981');
-    if (data.top_pick?.pick) addLog(`⭐ Top Pick: ${data.top_pick.pick.joueur} — Score ${data.top_pick.score_total || data.top_pick.score_matriciel}`, '#f59e0b');
+    if (data.top_pick) {
+      const label = data.top_pick.favori
+        ? `Victoire ${data.top_pick.favori}`
+        : (data.top_pick.pick?.joueur || '?');
+      addLog(`⭐ Top Pick: ${label} — Score ${data.top_pick.score_total || data.top_pick.score_matriciel}`, '#f59e0b');
+    }
 
     // Log compos officielles
     const avecCompo = (data.picks || []).filter(p => p.compos_officielles).length;
@@ -680,12 +685,17 @@ function setNiveau(niveau) {
 function openModal(pick) {
   currentPick = typeof pick === 'string' ? JSON.parse(pick) : pick;
   editPickId = null;
-  const joueur = currentPick.pick?.joueur || currentPick.joueur || '?';
+
+  // v3.0 — pick victoire équipe
+  const isTeamPick = !!(currentPick.favori || currentPick.prono_type);
+  const label = isTeamPick
+    ? `Victoire ${currentPick.favori || currentPick.domicile}`
+    : (currentPick.pick?.joueur || currentPick.joueur || '?');
   const match = currentPick.match || `${currentPick.domicile} vs ${currentPick.exterieur}`;
-  const cote = currentPick.pick?.cote_estimee || currentPick.cote_estimee || 1.65;
+  const cote = currentPick.cote_estimee_victoire || currentPick.pick?.cote_estimee || currentPick.cote_estimee || 1.65;
 
   document.getElementById('modal-title').textContent = 'ENREGISTRER LE PICK';
-  document.getElementById('modal-player').textContent = joueur;
+  document.getElementById('modal-player').textContent = label;
   document.getElementById('modal-match').textContent = match;
   document.getElementById('modal-mise').value = state.mise_actuelle;
   document.getElementById('modal-cote').value = cote;
@@ -812,8 +822,13 @@ function confirmPick() {
   }
 
   // MODE AJOUT — nouveau pick EN ATTENTE
-  const joueur = currentPick.pick?.joueur || currentPick.joueur || '?';
-  const type = currentPick.pick?.type || currentPick.type || 'Joueur décisif';
+  const isTeamPick = !!(currentPick.favori || currentPick.prono_type);
+  const joueur = isTeamPick
+    ? `Victoire ${currentPick.favori || currentPick.domicile}`
+    : (currentPick.pick?.joueur || currentPick.joueur || '?');
+  const type = isTeamPick
+    ? (currentPick.prono_type === 'victoire_exterieur' ? 'Victoire Extérieur' : 'Victoire Domicile')
+    : (currentPick.pick?.type || currentPick.type || 'Joueur décisif');
   const newPick = {
     id: Date.now(),
     date: new Date().toISOString(),
