@@ -707,9 +707,12 @@ app.get('/api/scan', async (req, res) => {
     const allFixtures = [];
     for (const league of LEAGUES) {
       const data = await footballAPI('/fixtures', { date: today, league: league.id, season: SEASON });
-      // Scan complet = TOUS les matchs du jour, passés et futurs
-      // L'utilisateur décide lui-même quand scanner
-      if (data.length > 0) allFixtures.push(...data.map(f => ({ ...f, leagueName: league.name, leagueId: league.id })));
+      // Exclure les matchs reportés (PST), annulés (CANC), abandonnés (ABD), suspendus (SUSP)
+      const validFixtures = data.filter(f => {
+        const status = f.fixture?.status?.short;
+        return !['PST', 'CANC', 'ABD', 'SUSP', 'AWD', 'WO'].includes(status);
+      });
+      if (validFixtures.length > 0) allFixtures.push(...validFixtures.map(f => ({ ...f, leagueName: league.name, leagueId: league.id })));
     }
 
     if (allFixtures.length === 0) {
