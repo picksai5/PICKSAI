@@ -1,684 +1,536 @@
-require('dotenv').config();
-const express = require('express');
-const cors = require('cors');
-const axios = require('axios');
-const Anthropic = require('@anthropic-ai/sdk');
-const path = require('path');
+require(‘dotenv’).config();
+const express = require(‘express’);
+const cors = require(‘cors’);
+const axios = require(‘axios’);
+const Anthropic = require(’@anthropic-ai/sdk’);
+const path = require(‘path’);
 
 const app = express();
 app.use(cors());
 app.use(express.json());
-app.use(express.static(path.join(__dirname, '../frontend')));
+app.use(express.static(path.join(__dirname, ‘../frontend’)));
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const FOOTBALL_API_KEY = process.env.FOOTBALL_API_KEY;
-const FOOTBALL_API_BASE = 'https://v3.football.api-sports.io';
+const FOOTBALL_API_BASE = ‘https://v3.football.api-sports.io’;
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+const SEASON = 2025;
 
 const LEAGUES = [
-  { id: 61,  name: 'Ligue 1' },
-  { id: 140, name: 'La Liga' },
-  { id: 39,  name: 'Premier League' },
-  { id: 135, name: 'Serie A' },
-  { id: 78,  name: 'Bundesliga' },
-  { id: 2,   name: 'Champions League' },
-  { id: 3,   name: 'Europa League' },
-  { id: 848, name: 'Conference League' },
-  { id: 88,  name: 'Eredivisie' },
-  { id: 94,  name: 'Liga Portugal' },
+{ id: 61,  name: ‘Ligue 1’ },
+{ id: 140, name: ‘La Liga’ },
+{ id: 39,  name: ‘Premier League’ },
+{ id: 135, name: ‘Serie A’ },
+{ id: 78,  name: ‘Bundesliga’ },
+{ id: 2,   name: ‘Champions League’ },
+{ id: 3,   name: ‘Europa League’ },
+{ id: 848, name: ‘Conference League’ },
+{ id: 88,  name: ‘Eredivisie’ },
+{ id: 94,  name: ‘Liga Portugal’ },
 ];
-
 const EURO_LEAGUES = [2, 3, 848];
 
-// Positions défensives à exclure des picks
-const DEFENSIVE_POSITIONS = ['G', 'GK', 'D', 'CB', 'LB', 'RB', 'WB', 'SW', 'Goalkeeper', 'Defender'];
-
 // ── CACHE ─────────────────────────────────────────────────
-const cache = {
-  standings: {}, teamStats: {}, players: {}, natLeagues: {}, lastDate: null,
-};
+const cache = { standings: {}, teamStats: {}, players: {}, natLeagues: {}, lastDate: null };
 const CACHE_TTL = 6 * 60 * 60 * 1000;
-
 function isCacheValid(e) { return e && Date.now() - e.timestamp < CACHE_TTL; }
-function getTodayStr() { return new Date().toISOString().split('T')[0]; }
+function getTodayStr() { return new Date().toISOString().split(‘T’)[0]; }
 
-// ── API FOOTBALL ──────────────────────────────────────────
 async function footballAPI(endpoint, params = {}) {
-  await sleep(200);
-  try {
-    const res = await axios.get(`${FOOTBALL_API_BASE}${endpoint}`, {
-      headers: { 'x-apisports-key': FOOTBALL_API_KEY, 'x-rapidapi-host': 'v3.football.api-sports.io' },
-      params,
-    });
-    return res.data.response || [];
-  } catch (e) {
-    console.error(`API error ${endpoint}:`, e.message);
-    return [];
-  }
+await sleep(200);
+try {
+const res = await axios.get(`${FOOTBALL_API_BASE}${endpoint}`, {
+headers: { ‘x-apisports-key’: FOOTBALL_API_KEY },
+params,
+});
+return res.data?.response || [];
+} catch (e) { console.error(‘API error:’, endpoint, e.message); return []; }
 }
 
-// ── CACHE FUNCTIONS ───────────────────────────────────────
 async function getStandingsCached(leagueId) {
-  const k = `${leagueId}`;
-  if (isCacheValid(cache.standings[k])) return cache.standings[k].data;
-  const data = await footballAPI('/standings', { league: leagueId, season: 2025 });
-  const s = data?.[0]?.league?.standings?.[0] || [];
-  cache.standings[k] = { data: s, timestamp: Date.now() };
-  return s;
+const k = `${leagueId}_${SEASON}`;
+if (isCacheValid(cache.standings[k])) return cache.standings[k].data;
+const s = await footballAPI(’/standings’, { league: leagueId, season: SEASON });
+const data = s[0]?.league?.standings?.[0] || [];
+cache.standings[k] = { data, timestamp: Date.now() };
+return data;
 }
 
 async function getTeamStatsCached(teamId, leagueId) {
-  const k = `${teamId}_${leagueId}`;
-  if (isCacheValid(cache.teamStats[k])) return cache.teamStats[k].data;
-  const data = await footballAPI('/teams/statistics', { team: teamId, league: leagueId, season: 2025 });
-  cache.teamStats[k] = { data, timestamp: Date.now() };
-  return data;
+const k = `${teamId}_${leagueId}`;
+if (isCacheValid(cache.teamStats[k])) return cache.teamStats[k].data;
+const data = await footballAPI(’/teams/statistics’, { team: teamId, league: leagueId, season: SEASON });
+cache.teamStats[k] = { data, timestamp: Date.now() };
+return data;
 }
 
 async function getPlayersCached(teamId, leagueId) {
-  const k = `${teamId}_${leagueId}`;
-  if (isCacheValid(cache.players[k])) return cache.players[k].data;
-  const data = await footballAPI('/players', { team: teamId, league: leagueId, season: 2025 });
-  cache.players[k] = { data, timestamp: Date.now() };
-  return data;
+const k = `${teamId}_${leagueId}`;
+if (isCacheValid(cache.players[k])) return cache.players[k].data;
+const p1 = await footballAPI(’/players’, { team: teamId, league: leagueId, season: SEASON, page: 1 });
+const p2 = await footballAPI(’/players’, { team: teamId, league: leagueId, season: SEASON, page: 2 });
+const data = […p1, …p2];
+cache.players[k] = { data, timestamp: Date.now() };
+return data;
 }
 
-async function getNatLeagueCached(teamId) {
-  const k = `${teamId}`;
-  if (isCacheValid(cache.natLeagues[k])) return cache.natLeagues[k].leagueId;
-  const data = await footballAPI('/leagues', { team: teamId, season: 2025, type: 'League' });
-  const priority = [39, 140, 135, 78, 61, 88, 94];
-  const ids = data.map(d => d.league?.id);
-  let lid = null;
-  for (const p of priority) { if (ids.includes(p)) { lid = p; break; } }
-  if (!lid) lid = data?.[0]?.league?.id || null;
-  cache.natLeagues[k] = { leagueId: lid, timestamp: Date.now() };
-  return lid;
-}
-
-// ── PRELOAD CACHE ─────────────────────────────────────────
 async function preloadCache() {
-  const today = getTodayStr();
-  if (cache.lastDate === today) return;
-  console.log('Préchargement cache...');
-  await Promise.all(LEAGUES.map(l => getStandingsCached(l.id)));
-
-  const fixtures = [];
-  for (const league of LEAGUES) {
-    const data = await footballAPI('/fixtures', { date: today, league: league.id, season: 2025 });
-    fixtures.push(...data.map(f => ({ ...f, leagueId: league.id })));
-  }
-
-  const seen = new Set();
-  const pairs = [];
-  for (const f of fixtures) {
-    for (const t of [f.teams?.home, f.teams?.away]) {
-      if (!t) continue;
-      const k = `${t.id}_${f.leagueId}`;
-      if (!seen.has(k)) { seen.add(k); pairs.push({ teamId: t.id, leagueId: f.leagueId }); }
-    }
-  }
-
-  for (let i = 0; i < pairs.length; i += 5) {
-    const batch = pairs.slice(i, i + 5);
-    await Promise.all(batch.map(p => Promise.all([
-      getTeamStatsCached(p.teamId, p.leagueId),
-      getPlayersCached(p.teamId, p.leagueId),
-    ])));
-  }
-
-  // Stats nationales pour matchs européens
-  const euroF = fixtures.filter(f => EURO_LEAGUES.includes(f.leagueId));
-  for (const f of euroF) {
-    const [hId, aId] = await Promise.all([getNatLeagueCached(f.teams?.home?.id), getNatLeagueCached(f.teams?.away?.id)]);
-    if (hId) await Promise.all([getTeamStatsCached(f.teams.home.id, hId), getPlayersCached(f.teams.home.id, hId)]);
-    if (aId) await Promise.all([getTeamStatsCached(f.teams.away.id, aId), getPlayersCached(f.teams.away.id, aId)]);
-  }
-
-  cache.lastDate = today;
-  console.log(`Cache OK — ${pairs.length} équipes, ${euroF.length} matchs européens`);
+const today = getTodayStr();
+if (cache.lastDate === today) return;
+console.log(‘Preload cache…’);
+await Promise.all(LEAGUES.map(l => getStandingsCached(l.id)));
+const fixtures = [];
+for (const league of LEAGUES) {
+const data = await footballAPI(’/fixtures’, { date: today, league: league.id, season: SEASON });
+fixtures.push(…data.map(f => ({ …f, leagueId: league.id })));
+}
+const seen = new Set();
+const pairs = [];
+for (const f of fixtures) {
+for (const t of [f.teams?.home, f.teams?.away]) {
+if (!t) continue;
+const k = `${t.id}_${f.leagueId}`;
+if (!seen.has(k)) { seen.add(k); pairs.push({ teamId: t.id, leagueId: f.leagueId }); }
+}
+}
+for (let i = 0; i < pairs.length; i += 5) {
+await Promise.all(pairs.slice(i, i+5).map(p => Promise.all([
+getTeamStatsCached(p.teamId, p.leagueId),
+getPlayersCached(p.teamId, p.leagueId),
+])));
+}
+cache.lastDate = today;
+console.log(`Cache OK — ${pairs.length} equipes`);
 }
 
-// ── FILTRE DÉFENSEURS + BLESSÉS ───────────────────────────
-function filterOffensivePlayers(players, injuries = []) {
-  // Noms des blessés/suspendus normalisés
-  const injuredNames = new Set(
-    injuries.map(i => (i.player?.name || '').toLowerCase().trim())
-  );
+// ── ANALYSE COMPLETE DU MATCH ─────────────────────────────
+// Détermine quelle équipe est favorite ET avec quelle fiabilité
+function analyseMatchComplet(hStats, aStats, hStand, aStand, h2h, injuries, isEuropean, hPlayers, aPlayers, composH, composA) {
 
-  return players.filter(p => {
-    const pos = (p.statistics?.[0]?.games?.position || p.player?.position || '').trim();
-    const name = (p.player?.name || '').toLowerCase().trim();
+// ── DONNÉES DE BASE ───────────────────────────────────
+const hRank = hStand?.rank || 99;
+const aRank = aStand?.rank || 99;
+const hPts  = hStand?.points || 0;
+const aPts  = aStand?.points || 0;
+const hForm = (hStand?.form || ‘’).slice(-5);
+const aForm = (aStand?.form || ‘’).slice(-5);
+const hWins = (hForm.match(/W/g) || []).length;
+const aWins = (aForm.match(/W/g) || []).length;
+const hLoss = (hForm.match(/L/g) || []).length;
+const aLoss = (aForm.match(/L/g) || []).length;
 
-    // ❌ Exclure gardiens et défenseurs
-    if (pos === 'G' || pos === 'Goalkeeper') return false;
-    if (pos === 'D' || pos === 'Defender') return false;
+// Stats offensives/défensives
+const hGoalsFor     = parseFloat(hStats?.goals?.for?.average?.home)     || 0;
+const hGoalsAgainst = parseFloat(hStats?.goals?.against?.average?.home)  || 0;
+const aGoalsFor     = parseFloat(aStats?.goals?.for?.average?.away)      || 0;
+const aGoalsAgainst = parseFloat(aStats?.goals?.against?.average?.away)  || 0;
 
-    // ❌ Exclure blessés et suspendus
-    if (injuredNames.has(name)) return false;
+// H2H
+const h2hTotal = Math.min(h2h?.length || 0, 5);
+const h2hHomeWins = (h2h || []).slice(0,5).filter(m => (m.goals?.home||0) > (m.goals?.away||0)).length;
+const h2hAwayWins = (h2h || []).slice(0,5).filter(m => (m.goals?.away||0) > (m.goals?.home||0)).length;
 
-    return true;
-  }).map(p => {
-    // Score de priorité par poste
-    const pos = (p.statistics?.[0]?.games?.position || p.player?.position || '').trim();
-    const priority = (pos === 'F' || pos === 'Forward' || pos === 'Attacker') ? 3
-      : (pos === 'M' || pos === 'Midfielder') ? 2 : 1;
-    return { ...p, _priority: priority };
-  }).sort((a, b) => b._priority - a._priority);
-}
+// ── SCORE BRUT CHAQUE ÉQUIPE ──────────────────────────
+let hScore = 0;
+let aScore = 0;
+const factors = [];
 
-// ── CALCUL SCORE MATRICIEL EN JS PUR ─────────────────────
-// Résultat identique à chaque scan sur les mêmes données
-function calcMatrixScore(hStats, aStats, hStand, aStand, h2h, injuries, isEuropean, leagueId) {
-  const factors = [];
-  let score = 0;
+// Classement (max 30pts)
+const rankDiff = aRank - hRank;
+if (rankDiff >= 15)      { hScore += 30; factors.push(‘F1’); }
+else if (rankDiff >= 10) { hScore += 22; factors.push(‘F1’); }
+else if (rankDiff >= 5)  { hScore += 14; factors.push(‘F1’); }
+else if (rankDiff >= 2)  { hScore += 7; }
+else if (rankDiff <= -10){ aScore += 22; factors.push(‘F1’); }
+else if (rankDiff <= -5) { aScore += 14; factors.push(‘F1’); }
+else if (rankDiff <= -2) { aScore += 7; }
 
-  const hGoalsFor   = parseFloat(hStats?.goals?.for?.average?.home)    || 0;
-  const aGoalsAgainst = parseFloat(aStats?.goals?.against?.average?.away) || 0;
-  const hRank  = hStand?.rank  || 99;
-  const aRank  = aStand?.rank  || 99;
-  const hPts   = hStand?.points || 0;
-  const aPts   = aStand?.points || 0;
-  const gap    = hPts - aPts;
-  const hForm  = (hStand?.form || '').slice(-5);
-  const hWins  = (hForm.match(/W/g) || []).length;
-  const hWinRate = (hStats?.fixtures?.wins?.home || 0) / Math.max(hStats?.fixtures?.played?.home || 1, 1);
-  const hPenScored   = hStats?.penalty?.scored?.total   || 0;
-  const aPenConceded = aStats?.penalty?.missed?.total   || 0;
+// Points (max 15pts)
+const ptsDiff = hPts - aPts;
+if (ptsDiff >= 20)       { hScore += 15; factors.push(‘F14’); }
+else if (ptsDiff >= 12)  { hScore += 10; factors.push(‘F14’); }
+else if (ptsDiff >= 6)   { hScore += 5; }
+else if (ptsDiff <= -12) { aScore += 10; factors.push(‘F14’); }
+else if (ptsDiff <= -6)  { aScore += 5; }
 
-  // Compter victoires H2H pour l'équipe domicile
-  const h2hWins = (h2h || []).filter(m => {
-    const hg = m.goals?.home || 0;
-    const ag = m.goals?.away || 0;
-    return hg > ag;
-  }).length;
+// Avantage domicile (max 10pts)
+hScore += 10;
 
-  // Vérifier blessés clés adverses
-  const injuredCount = (injuries || []).filter(i => i.team?.id === aStand?.team?.id).length;
+// Forme (max 15pts)
+if (hWins >= 4)      { hScore += 15; factors.push(‘F12’); }
+else if (hWins >= 3) { hScore += 9; factors.push(‘F12’); }
+else if (hLoss >= 3) { hScore -= 8; }
+if (aWins >= 4)      { aScore += 12; }
+else if (aWins >= 3) { aScore += 7; }
+else if (aLoss >= 3) { aScore -= 8; }
 
-  // F1 — Attaque prolifique vs défense poreuse
-  if (hGoalsFor >= 1.8 && aGoalsAgainst >= 1.5) { factors.push('F1'); score += 10; }
+// Défense adverse (max 12pts)
+if (aGoalsAgainst >= 2.0)  { hScore += 12; factors.push(‘F5’); }
+else if (aGoalsAgainst >= 1.5) { hScore += 7; factors.push(‘F5’); }
+if (hGoalsAgainst >= 2.0)  { aScore += 12; factors.push(‘F5’); }
+else if (hGoalsAgainst >= 1.5) { aScore += 7; }
 
-  // F2 — Top6 domicile vs bas du tableau
-  if (hRank <= 6 && aRank >= 14 && gap >= 8) { factors.push('F2'); score += 9; }
+// Attaque (max 8pts)
+if (hGoalsFor >= 2.0)  { hScore += 8; factors.push(‘F6’); }
+else if (hGoalsFor >= 1.5) { hScore += 5; factors.push(‘F6’); }
+if (aGoalsFor >= 2.0)  { aScore += 8; }
+else if (aGoalsFor >= 1.5) { aScore += 5; }
 
-  // F3 — Tireur penaltys
-  if (hPenScored >= 3 && aPenConceded >= 2) { factors.push('F3'); score += 9; }
+// H2H (max 10pts)
+if (h2hHomeWins >= 4) { hScore += 10; factors.push(‘F9’); }
+else if (h2hHomeWins >= 3) { hScore += 6; factors.push(‘F9’); }
+if (h2hAwayWins >= 4) { aScore += 10; factors.push(‘F9’); }
+else if (h2hAwayWins >= 3) { aScore += 6; }
 
-  // F5 — Attaque rapide (approx: top 6 attaque vs mauvaise défense)
-  if (hGoalsFor >= 2.0 && aGoalsAgainst >= 1.8) { factors.push('F5'); score += 8; }
+// Top équipe domicile
+if (hRank <= 3) { hScore += 10; factors.push(‘F2’); }
+else if (hRank <= 6) { hScore += 5; factors.push(‘F2’); }
 
-  // F6 — xG fort (approx via moyenne buts)
-  if (hGoalsFor >= 2.2 && aGoalsAgainst >= 1.3) { factors.push('F6'); score += 7; }
+// Adversaire très faible
+if (aRank >= 17) { hScore += 12; factors.push(‘F11’); }
+else if (aRank >= 15) { hScore += 7; factors.push(‘F11’); }
 
-  // F7 — Match fort enjeu + équipe en forme
-  if (isEuropean && hWins >= 3) { factors.push('F7'); score += 7; }
-  else if (!isEuropean && hWins >= 4 && hRank <= 5) { factors.push('F7'); score += 7; }
+// Enjeu européen
+if (isEuropean) { factors.push(‘F7’); }
 
-  // F8 — Combo F1+F2
-  if (factors.includes('F1') && factors.includes('F2')) { factors.push('F8'); score += 6; }
+// ── IMPACT BLESSÉS ────────────────────────────────────
+// Identifier les joueurs clés blessés de chaque équipe
+const injuredIds = new Set((injuries || []).map(i => i.player?.id).filter(Boolean));
+const injuredNames = new Set((injuries || []).map(i => (i.player?.name||’’).toLowerCase()));
 
-  // F9 — H2H favorable
-  if (h2hWins >= 3) { factors.push('F9'); score += 8; }
-  else if (h2hWins >= 2) { factors.push('F9'); score += 4; }
+const getKeyPlayersMissing = (players, starters, teamInjuries) => {
+// Joueurs offensifs clés manquants
+const offPlayers = players.filter(p => {
+const pos = (p.statistics?.[0]?.games?.position || p.player?.position || ‘’);
+return pos === ‘F’ || pos === ‘Forward’ || pos === ‘Attacker’ || pos === ‘M’ || pos === ‘Midfielder’;
+});
+const topScorers = offPlayers
+.map(p => ({ name: p.player?.name, goals: p.statistics?.[0]?.goals?.total || 0, id: p.player?.id }))
+.sort((a, b) => b.goals - a.goals)
+.slice(0, 3); // top 3 buteurs
 
-  // F10 — Adversaire fatigué (approx: pas de données précises, on skip)
-
-  // F11 — Adversaire en zone relégation
-  if (aRank >= 16) { factors.push('F11'); score += 7; }
-  else if (aRank >= 13) { factors.push('F11'); score += 3; }
-
-  // F12 — Blessés adverses clés
-  if (injuredCount >= 3) { factors.push('F12'); score += 7; }
-
-  // F13 — Possession dominante
-  if (hWinRate >= 0.65 && aRank >= 12) { factors.push('F13'); score += 6; }
-
-  // F14 — Value bet (écart classement + forme)
-  if (gap >= 15 && hWins >= 3) { factors.push('F14'); score += 9; }
-  else if (gap >= 10 && hWins >= 2) { factors.push('F14'); score += 5; }
-
-  const scoreMatriciel = Math.round(score * 2.5); // normalisé sur ~100
-  let alerte = null;
-  if (scoreMatriciel >= 80) alerte = 'VERT';
-  else if (scoreMatriciel >= 70) alerte = 'ORANGE';
-  else if (scoreMatriciel >= 60) alerte = 'ROUGE';
-
-  return { scoreMatriciel, factors, alerte };
-}
-
-// ── CALCUL SCORE FINAL (matriciel + joueur individuel) ───
-function calcConfianceScore(hStats, aStats, hStand, aStand, h2h, isEuropean, pickTeamIsHome, playerStats) {
-  let c = 0;
-
-  // ── CONTEXTE MATCH ────────────────────────────────────
-  const aGoalsAgainst = parseFloat(aStats?.goals?.against?.average?.away) || 0;
-  const hWins = ((hStand?.form || '').slice(-5).match(/W/g) || []).length;
-  const h2hWins = (h2h || []).filter(m => (m.goals?.home || 0) > (m.goals?.away || 0)).length;
-  const hRank = hStand?.rank || 99;
-  const aRank = aStand?.rank || 99;
-
-  if (pickTeamIsHome)            c += 15;  // domicile
-  if (aGoalsAgainst >= 2.0)      c += 15;  // défense très poreuse
-  else if (aGoalsAgainst >= 1.5) c += 8;   // défense fragile
-  if (h2hWins >= 3)              c += 10;  // H2H très favorable
-  else if (h2hWins >= 2)         c += 5;
-  if (isEuropean)                c += 5;   // enjeu CL/EL
-  if (hWins >= 4)                c += 10;  // équipe en feu
-  else if (hWins >= 3)           c += 5;
-  if (aRank >= 20)               c += 12;  // adversaire très faible
-  else if (aRank >= 15)          c += 8;   // adversaire faible
-  if (hRank <= 4)                c += 5;   // top 4
-  if (!pickTeamIsHome && isEuropean) c -= 10; // déplacement hostile CL/EL
-
-  // ── MALUS ÉQUIPE EXTÉRIEURE ──────────────────────────
-  if (!pickTeamIsHome) {
-    // aRank = rang équipe visitée (pick), hRank = rang équipe domicile (adversaire)
-    const pickRank = aRank;   // rang de l'équipe du pick (visiteur)
-    const oppRank = hRank;    // rang de l'adversaire (domicile)
-    const rankDiff = oppRank - pickRank; // positif = pick mieux classé que l'adversaire
-
-    if (rankDiff >= 5)       c -= 5;   // pick nettement meilleur → faible malus
-    else if (rankDiff >= 0)  c -= 12;  // pick légèrement meilleur ou égal → risqué en déplacement
-    else if (rankDiff >= -5) c -= 18;  // adversaire domicile légèrement meilleur → très risqué
-    else                     c -= 25;  // adversaire domicile nettement meilleur → à éviter
+```
+let missing = 0;
+let missingNames = [];
+for (const scorer of topScorers) {
+  const isInjured = injuredIds.has(scorer.id) || injuredNames.has((scorer.name||'').toLowerCase());
+  const notInCompo = starters.length > 0 && !starters.includes((scorer.name||'').toLowerCase());
+  if (isInjured || notInCompo) {
+    missing++;
+    missingNames.push(scorer.name);
   }
+}
+return { missing, missingNames };
+```
 
-  // ── QUALITÉ INDIVIDUELLE DU JOUEUR ───────────────────
-  if (playerStats) {
-    const goals = playerStats.goals || 0;
-    const assists = playerStats.assists || 0;
-    const apps = playerStats.apps || 1;
-    const goalsPerMatch = goals / apps;
+};
 
-    // Ratio buts/match — le critère le plus important
-    if (goalsPerMatch >= 0.6)      c += 20;  // 0.6+ buts/match = élite
-    else if (goalsPerMatch >= 0.45) c += 15; // 0.45+ = très bon
-    else if (goalsPerMatch >= 0.3)  c += 10; // 0.3+ = bon
-    else if (goalsPerMatch >= 0.15) c += 5;  // 0.15+ = correct
+const hMissing = getKeyPlayersMissing(hPlayers, composH, injuries);
+const aMissing = getKeyPlayersMissing(aPlayers, composA, injuries);
 
-    // Volume de buts absolus
-    if (goals >= 20)      c += 10;
-    else if (goals >= 15) c += 7;
-    else if (goals >= 10) c += 4;
-    else if (goals >= 5)  c += 2;
+// Malus pour joueurs clés manquants
+if (hMissing.missing >= 2) { hScore -= 20; }
+else if (hMissing.missing === 1) { hScore -= 10; }
+if (aMissing.missing >= 2) { aScore -= 15; }
+else if (aMissing.missing === 1) { aScore -= 8; }
 
-    // Passes décisives (contribution offensive)
-    if (assists >= 8)     c += 5;
-    else if (assists >= 5) c += 3;
-    else if (assists >= 3) c += 1;
-  }
+// ── DÉTERMINER LE FAVORI ──────────────────────────────
+const totalScore = hScore + aScore;
+const diff = hScore - aScore;
+const uniqueFactors = […new Set(factors)];
 
-  return Math.min(100, Math.max(0, c));
+let favoriIsHome = null;
+let scoreMatriciel = 0;
+let alerte = null;
+let pronosType = null; // ‘victoire_domicile’ | ‘victoire_exterieur’ | ‘nul’
+
+const absDiff = Math.abs(diff);
+
+if (absDiff < 15) {
+// Match trop équilibré → rejeté ou nul
+pronosType = ‘equilibre’;
+scoreMatriciel = 0;
+} else if (diff >= 15) {
+favoriIsHome = true;
+pronosType = ‘victoire_domicile’;
+scoreMatriciel = Math.min(100, Math.round(absDiff * 1.2));
+} else {
+favoriIsHome = false;
+pronosType = ‘victoire_exterieur’;
+scoreMatriciel = Math.min(100, Math.round(absDiff * 1.0)); // légèrement pénalisé car extérieur
 }
 
-// ── CLAUDE : UNIQUEMENT CHOISIR LE MEILLEUR JOUEUR ───────
-async function pickBestPlayer(matchInfo, context) {
-  const homePlayers = matchInfo.hOffensive || [];
-  const awayPlayers = matchInfo.aOffensive || [];
-  if (homePlayers.length === 0 && awayPlayers.length === 0) return null;
+if (scoreMatriciel >= 75) alerte = ‘VERT’;
+else if (scoreMatriciel >= 55) alerte = ‘ORANGE’;
+else if (scoreMatriciel >= 40) alerte = ‘ROUGE’;
 
-  const hRank = matchInfo.raw?.hStand?.rank || 99;
-  const aRank = matchInfo.raw?.aStand?.rank || 99;
-  const homeIsFavorite = hRank <= aRank;
+return {
+scoreMatriciel,
+scoreSort: scoreMatriciel,
+factors: uniqueFactors,
+alerte,
+favoriIsHome,
+pronosType,
+hScore, aScore,
+hMissing, aMissing,
+hRank, aRank, hPts, aPts, hForm, aForm,
+hWins, aWins,
+};
+}
 
-  const formatPlayers = (players, teamName) => {
-    if (players.length === 0) return `  (aucun joueur offensif disponible pour ${teamName})`;
-    return players.map(p => {
-      const s = p.statistics?.[0];
-      const pos = s?.games?.position || p.player?.position || '?';
-      const apps = s?.games?.appearences || 0;
-      const goals = s?.goals?.total || 0;
-      const assists = s?.goals?.assists || 0;
-      const ratio = apps > 0 ? (goals / apps).toFixed(2) : '0';
-      return `  - ${p.player?.name} | ${pos} | ${goals}B ${assists}PD en ${apps}M (ratio ${ratio})`;
-    }).join('\n');
-  };
+// ── CLAUDE : RÉDIGE L’ANALYSE + JOUEUR DÉCISIF ───────────
+async function genererAnalyse(matchInfo, favoriPlayers, context) {
+const favori = matchInfo.favoriNom;
+const adversaire = matchInfo.adversaireNom;
 
-  const homeLabel = homeIsFavorite
-    ? `⭐ ${matchInfo.domicile} (FAVORI — domicile rang ${hRank})`
-    : `${matchInfo.domicile} (rang ${hRank})`;
-  const awayLabel = !homeIsFavorite
-    ? `⭐ ${matchInfo.exterieur} (FAVORI — mieux classé rang ${aRank})`
-    : `${matchInfo.exterieur} (rang ${aRank}, DÉPLACEMENT — défavorisé)`;
+const playerList = favoriPlayers.slice(0, 8).map(p => {
+const s = p.statistics?.[0];
+const goals = s?.goals?.total || 0;
+const assists = s?.goals?.assists || 0;
+const apps = s?.games?.appearences || 1;
+const pos = s?.games?.position || p.player?.position || ‘?’;
+return `  - ${p.player?.name} | ${pos} | ${goals}B ${assists}PD en ${apps}M`;
+}).join(’\n’) || ’  (données non disponibles)’;
 
-  const prompt = `Tu es un expert football. Choisis le MEILLEUR PICK offensif pour ce match.
+const missingStr = matchInfo.hMissing?.missingNames?.length > 0
+? `Absents ${favori}: ${matchInfo.hMissing.missingNames.join(', ')}`
+: ‘’;
+
+const prompt = `Expert football. Analyse ce match et justifie le pronostic.
 
 MATCH: ${matchInfo.match} | ${matchInfo.competition} | ${matchInfo.heure}
+PRONOSTIC: Victoire ${favori}
+${favori}: rang ${matchInfo.favoriRang}e (${matchInfo.favoriPts}pts, forme:${matchInfo.favoriForm})
+${adversaire}: rang ${matchInfo.adversaireRang}e (${matchInfo.adversairePts}pts, forme:${matchInfo.adversaireForm})
+${missingStr}
 CONTEXTE: ${context}
 
---- ${homeLabel} ---
-${formatPlayers(homePlayers, matchInfo.domicile)}
+JOUEURS OFFENSIFS DE ${favori}:
+${playerList}
 
---- ${awayLabel} ---
-${formatPlayers(awayPlayers, matchInfo.exterieur)}
+RÈGLES:
 
-RÈGLES ABSOLUES:
-1. ❌ JAMAIS défenseur/gardien
-2. ❌ JAMAIS milieu défensif (Rodri, Casemiro, Kanté = EXCLUS)
-3. ❌ JAMAIS joueur BLESSÉ/SUSPENDU — utilise tes connaissances réelles (ex: Mbappé blessé mars 2026 = EXCLU)
-4. ⭐ PRIORITÉ ABSOLUE à l'équipe ⭐ FAVORI — un joueur en DÉPLACEMENT n'est acceptable QUE si son équipe est mieux classée et son profil exceptionnel
-5. 🥇 ORDRE: Attaquant de pointe > Ailier > Milieu offensif
-6. ✅ Utilise tes connaissances réelles — Lukaku, Alvarez, Griezmann, Sørloth = attaquants prioritaires
-7. ✅ Si aucun joueur fiable → valide:false
+1. 2 phrases MAX sur pourquoi ${favori} gagne — chiffres concrets
+1. Joueur décisif: ATTAQUANT ou AILIER en priorité, ❌ jamais blessé/suspendu
+1. ❌ jamais milieu défensif
+1. Utilise tes connaissances réelles sur les joueurs et leur statut actuel
 
-Réponds UNIQUEMENT en JSON:
-{"joueur":"Prénom Nom","equipe":"${matchInfo.domicile} ou ${matchInfo.exterieur}","type":"Joueur décisif","prob":72,"cote_estimee":1.65,"raison":"2 phrases max avec stats concrètes","buteur_alt":{"joueur":"Prénom Nom","equipe":"equipe","prob":45,"cote_estimee":2.20,"raison":"1 phrase"}}`;
+JSON UNIQUEMENT:
+{“raison”:“2 phrases pourquoi victoire”,“joueur_decisif”:{“joueur”:“Prénom Nom”,“type”:“Joueur décisif”,“prob”:72,“cote_estimee”:1.75,“raison”:“1 phrase courte”}}`;
 
-  try {
-    const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 500,
-      messages: [{ role: 'user', content: prompt }],
-    });
-    const text = response.content[0].text;
-    const m = text.match(/\{[\s\S]*\}/);
-    if (m) return JSON.parse(m[0]);
-    return null;
-  } catch (e) {
-    console.error('Claude error:', e.message);
-    return null;
-  }
+try {
+const response = await anthropic.messages.create({
+model: ‘claude-sonnet-4-20250514’,
+max_tokens: 400,
+messages: [{ role: ‘user’, content: prompt }],
+});
+const text = response.content[0].text;
+const m = text.match(/{[\s\S]*}/);
+if (m) return JSON.parse(m[0]);
+return null;
+} catch (e) { console.error(‘Claude error:’, e.message); return null; }
+}
+
+// ── FILTRER JOUEURS OFFENSIFS ─────────────────────────────
+function filtrerOffensifs(players, injuries, starters) {
+const injuredNames = new Set((injuries || []).map(i => (i.player?.name||’’).toLowerCase()));
+
+let filtered = players.filter(p => {
+const pos = (p.statistics?.[0]?.games?.position || p.player?.position || ‘’).trim();
+const name = (p.player?.name || ‘’).toLowerCase();
+if (pos === ‘G’ || pos === ‘Goalkeeper’) return false;
+if (pos === ‘D’ || pos === ‘Defender’) return false;
+if (injuredNames.has(name)) return false;
+return true;
+});
+
+if (starters.length > 0) {
+filtered = filtered.filter(p => starters.includes(p.player?.name?.toLowerCase()));
+}
+
+return filtered.map(p => {
+const pos = (p.statistics?.[0]?.games?.position || p.player?.position || ‘’).trim();
+const priority = (pos === ‘F’ || pos === ‘Forward’ || pos === ‘Attacker’) ? 3
+: (pos === ‘M’ || pos === ‘Midfielder’) ? 2 : 1;
+return { …p, _priority: priority };
+}).sort((a, b) => b._priority - a._priority);
 }
 
 // ── COLLECTE DONNÉES MATCH ────────────────────────────────
 async function collectMatchData(fixture, leagueId, leagueName, standings) {
-  const hTeam = fixture.teams?.home;
-  const aTeam = fixture.teams?.away;
-  const fixtureId = fixture.fixture?.id;
-  if (!hTeam || !aTeam) return null;
+const hTeam = fixture.teams?.home;
+const aTeam = fixture.teams?.away;
+const fixtureId = fixture.fixture?.id;
+if (!hTeam || !aTeam) return null;
 
-  const hTime = fixture.fixture?.date
-    ? new Date(fixture.fixture.date).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
-    : '?';
-  const isEuropean = EURO_LEAGUES.includes(leagueId);
+const hTime = fixture.fixture?.date
+? new Date(fixture.fixture.date).toLocaleTimeString(‘fr-FR’, { hour: ‘2-digit’, minute: ‘2-digit’ })
+: ‘?’;
+const isEuropean = EURO_LEAGUES.includes(leagueId);
 
-  const [hStats, aStats, hPlayers, aPlayers, injuries, h2h, lineups] = await Promise.all([
-    getTeamStatsCached(hTeam.id, leagueId),
-    getTeamStatsCached(aTeam.id, leagueId),
-    getPlayersCached(hTeam.id, leagueId),
-    getPlayersCached(aTeam.id, leagueId),
-    footballAPI('/injuries', { fixture: fixtureId }),
-    footballAPI('/fixtures/headtohead', { h2h: `${hTeam.id}-${aTeam.id}`, last: 5 }),
-    footballAPI('/fixtures/lineups', { fixture: fixtureId }),
-  ]);
+const [hStats, aStats, hPlayers, aPlayers, injuries, h2h, lineups] = await Promise.all([
+getTeamStatsCached(hTeam.id, leagueId),
+getTeamStatsCached(aTeam.id, leagueId),
+getPlayersCached(hTeam.id, leagueId),
+getPlayersCached(aTeam.id, leagueId),
+footballAPI(’/injuries’, { fixture: fixtureId }),
+footballAPI(’/fixtures/headtohead’, { h2h: `${hTeam.id}-${aTeam.id}`, last: 5 }),
+footballAPI(’/fixtures/lineups’, { fixture: fixtureId }),
+]);
 
-  // Stats nationales pour matchs européens
-  let hNatPlayers = [], aNatPlayers = [];
-  if (isEuropean) {
-    const [hNatId, aNatId] = await Promise.all([getNatLeagueCached(hTeam.id), getNatLeagueCached(aTeam.id)]);
-    if (hNatId) hNatPlayers = await getPlayersCached(hTeam.id, hNatId);
-    if (aNatId) aNatPlayers = await getPlayersCached(aTeam.id, aNatId);
-  }
+const hStand = standings.find(s => s.team?.id === hTeam.id);
+const aStand = standings.find(s => s.team?.id === aTeam.id);
 
-  const hStand = standings.find(s => s.team?.id === hTeam.id);
-  const aStand = standings.find(s => s.team?.id === aTeam.id);
+const hLineup = lineups.find(l => l.team?.id === hTeam.id);
+const aLineup = lineups.find(l => l.team?.id === aTeam.id);
+const hStarters = (hLineup?.startXI || []).map(p => p.player?.name?.toLowerCase()).filter(Boolean);
+const aStarters = (aLineup?.startXI || []).map(p => p.player?.name?.toLowerCase()).filter(Boolean);
+const composAvailable = hStarters.length > 0 || aStarters.length > 0;
 
-  // Compositions officielles
-  const hLineup = lineups.find(l => l.team?.id === hTeam.id);
-  const aLineup = lineups.find(l => l.team?.id === aTeam.id);
-  const hStarters = (hLineup?.startXI || []).map(p => p.player?.name?.toLowerCase()).filter(Boolean);
-  const aStarters = (aLineup?.startXI || []).map(p => p.player?.name?.toLowerCase()).filter(Boolean);
-  const composAvailable = hStarters.length > 0 && aStarters.length > 0;
+const analyse = analyseMatchComplet(
+hStats, aStats, hStand, aStand, h2h, injuries, isEuropean,
+hPlayers, aPlayers, hStarters, aStarters
+);
 
-  // Fusionner stats saison + stats nationales pour matchs euro
-  const mergedHPlayers = isEuropean ? mergePlayerStats(hPlayers, hNatPlayers) : hPlayers;
-  const mergedAPlayers = isEuropean ? mergePlayerStats(aPlayers, aNatPlayers) : aPlayers;
+if (!analyse.alerte) return null; // match trop équilibré ou score trop bas
 
-  // Filtrer uniquement les joueurs offensifs — exclure blessés, trier attaquants en premier
-  let hOffensive = filterOffensivePlayers(mergedHPlayers, injuries);
-  let aOffensive = filterOffensivePlayers(mergedAPlayers, injuries);
+// Déterminer favori et ses joueurs offensifs
+const favoriIsHome = analyse.favoriIsHome;
+const favoriTeam  = favoriIsHome ? hTeam : aTeam;
+const favoriStand = favoriIsHome ? hStand : aStand;
+const adversStand = favoriIsHome ? aStand : hStand;
+const favoriPlayers = favoriIsHome
+? filtrerOffensifs(hPlayers, injuries, hStarters)
+: filtrerOffensifs(aPlayers, injuries, aStarters);
 
-  // Si compositions dispo → filtrer uniquement les titulaires
-  if (composAvailable) {
-    hOffensive = hOffensive.filter(p => hStarters.includes(p.player?.name?.toLowerCase()));
-    aOffensive = aOffensive.filter(p => aStarters.includes(p.player?.name?.toLowerCase()));
-  }
+const favoriRang = favoriIsHome ? analyse.hRank : analyse.aRank;
+const adversaireRang = favoriIsHome ? analyse.aRank : analyse.hRank;
+const favoriPts  = favoriIsHome ? analyse.hPts : analyse.aPts;
+const adversairePts = favoriIsHome ? analyse.aPts : analyse.hPts;
+const favoriForm = favoriIsHome ? analyse.hForm : analyse.aForm;
+const adversaireForm = favoriIsHome ? analyse.aForm : analyse.hForm;
 
-  // Calculer score matriciel en JS pur (stable, identique à chaque scan)
-  const { scoreMatriciel, factors, alerte } = calcMatrixScore(
-    hStats, aStats, hStand, aStand, h2h, injuries, isEuropean, leagueId
-  );
+const blessesStr = injuries.slice(0, 4).map(i => i.player?.name).join(’, ‘) || ‘Aucun’;
+const h2hStr = h2h.slice(0, 3).map(m => `${m.teams?.home?.name} ${m.goals?.home}-${m.goals?.away} ${m.teams?.away?.name}`).join(’ | ’) || ‘-’;
+const context = `${hTeam.name} ${analyse.hRank}e (${analyse.hPts}pts, forme:${analyse.hForm}) vs ${aTeam.name} ${analyse.aRank}e (${analyse.aPts}pts, forme:${analyse.aForm}). H2H: ${h2hStr}. Blessés: ${blessesStr}`;
 
-  const blessesStr = injuries.slice(0,6).map(i => `${i.player?.name}(${i.team?.name})`).join(', ') || 'Aucune info';
-  const h2hStr = h2h.slice(0,5).map(m => `${m.teams?.home?.name} ${m.goals?.home}-${m.goals?.away} ${m.teams?.away?.name}`).join(' | ') || 'Pas de données';
-  const context = `${hTeam.name} ${hStand?.rank||'?'}e (${hStand?.points||'?'}pts, forme:${(hStand?.form||'').slice(-5)}) vs ${aTeam.name} ${aStand?.rank||'?'}e (${aStand?.points||'?'}pts). H2H: ${h2hStr}. Blessés: ${blessesStr}`;
-
-  return {
-    match: `${hTeam.name} vs ${aTeam.name}`,
-    competition: leagueName,
-    heure: hTime,
-    domicile: hTeam.name,
-    exterieur: aTeam.name,
-    isEuropean,
-    scoreMatriciel,
-    factors,
-    alerte,
-    hOffensive,
-    aOffensive,
-    context,
-    raw: { hStats, aStats, hStand, aStand, h2h },
-  };
+return {
+match: `${hTeam.name} vs ${aTeam.name}`,
+competition: leagueName,
+heure: hTime,
+favoriNom: favoriTeam.name,
+adversaireNom: favoriIsHome ? aTeam.name : hTeam.name,
+favoriRang, adversaireRang, favoriPts, adversairePts, favoriForm, adversaireForm,
+pronosType: analyse.pronosType,
+scoreMatriciel: analyse.scoreMatriciel,
+scoreSort: analyse.scoreSort,
+score_total: analyse.scoreMatriciel,
+factors: analyse.factors,
+alerte: analyse.alerte,
+hMissing: analyse.hMissing,
+aMissing: analyse.aMissing,
+favoriPlayers,
+composAvailable,
+context,
+domicile: hTeam.name,
+exterieur: aTeam.name,
+};
 }
 
-// ── FUSION STATS JOUEURS (saison nationale + européenne) ──
-function mergePlayerStats(euroPlayers, natPlayers) {
-  if (!natPlayers || natPlayers.length === 0) return euroPlayers;
-  const map = new Map();
-  for (const p of natPlayers) map.set(p.player?.id, p);
-  return euroPlayers.map(p => {
-    const nat = map.get(p.player?.id);
-    if (!nat) return p;
-    const es = p.statistics?.[0];
-    const ns = nat.statistics?.[0];
-    // Prendre le max des buts/passes entre euro et national
-    return {
-      ...p,
-      statistics: [{
-        ...es,
-        goals: {
-          total: Math.max(es?.goals?.total || 0, ns?.goals?.total || 0),
-          assists: Math.max(es?.goals?.assists || 0, ns?.goals?.assists || 0),
-        },
-        games: {
-          ...es?.games,
-          appearences: Math.max(es?.games?.appearences || 0, ns?.games?.appearences || 0),
-          position: es?.games?.position || ns?.games?.position,
-        }
-      }]
-    };
-  });
+// ── SCAN ──────────────────────────────────────────────────
+app.get(’/api/scan’, async (req, res) => {
+try {
+const today = getTodayStr();
+await preloadCache();
+
+```
+const allFixtures = [];
+for (const league of LEAGUES) {
+  const data = await footballAPI('/fixtures', { date: today, league: league.id, season: SEASON });
+  if (data.length > 0) allFixtures.push(...data.map(f => ({ ...f, leagueName: league.name, leagueId: league.id })));
 }
 
-// ── SCAN DU JOUR ──────────────────────────────────────────
-app.get('/api/scan', async (req, res) => {
+if (allFixtures.length === 0) {
+  return res.json({ picks: [], rejected: [], total_analyses: 0, date: new Date().toLocaleDateString('fr-FR') });
+}
+
+const allPicks = [];
+const rejected = [];
+
+for (const fixture of allFixtures) {
   try {
-    const today = getTodayStr();
-    await preloadCache();
+    const leagueId = fixture.leagueId || fixture.league?.id;
+    const standings = await getStandingsCached(leagueId);
+    const matchData = await collectMatchData(fixture, leagueId, fixture.leagueName, standings);
 
-    const allFixtures = [];
-    for (const league of LEAGUES) {
-      const data = await footballAPI('/fixtures', { date: today, league: league.id, season: 2025 });
-      if (data.length > 0) allFixtures.push(...data.map(f => ({ ...f, leagueName: league.name, leagueId: league.id })));
+    if (!matchData) {
+      const hTeam = fixture.teams?.home?.name || '?';
+      const aTeam = fixture.teams?.away?.name || '?';
+      rejected.push({ match: `${hTeam} vs ${aTeam}`, competition: fixture.leagueName, raison: 'Match trop équilibré ou données insuffisantes' });
+      continue;
     }
 
-    if (allFixtures.length === 0) {
-      return res.json({ picks: [], rejected: [], total_analyses: 0, date: new Date().toLocaleDateString('fr-FR') });
-    }
+    // Claude rédige l'analyse
+    const analyse = await genererAnalyse(matchData, matchData.favoriPlayers, matchData.context);
 
-    const picks = [];
-    const rejected = [];
-
-    for (const fixture of allFixtures) {
-      try {
-        const leagueId = fixture.leagueId || fixture.league?.id;
-        const standings = await getStandingsCached(leagueId);
-        const matchData = await collectMatchData(fixture, leagueId, fixture.leagueName, standings);
-        if (!matchData) continue;
-
-        // Score matriciel calculé en JS — si pas assez élevé, on rejette sans appeler Claude
-        if (!matchData.alerte) {
-          rejected.push({
-            match: matchData.match,
-            competition: matchData.competition,
-            heure: matchData.heure,
-            score_matriciel: matchData.scoreMatriciel,
-            raison: `Score ${matchData.scoreMatriciel} insuffisant (min 60)`,
-          });
-          continue;
-        }
-
-        // Rassembler les joueurs offensifs des deux équipes
-        const allOffensive = [...matchData.hOffensive, ...matchData.aOffensive];
-        if (allOffensive.length === 0) {
-          rejected.push({ match: matchData.match, competition: matchData.competition, heure: matchData.heure, score_matriciel: matchData.scoreMatriciel, raison: 'Aucun joueur offensif trouvé' });
-          continue;
-        }
-
-        const pickData = await pickBestPlayer(matchData, matchData.context);
-        if (!pickData || pickData.valide === false) {
-          rejected.push({ match: matchData.match, competition: matchData.competition, heure: matchData.heure, score_matriciel: matchData.scoreMatriciel, raison: pickData?.raison || 'Aucun joueur offensif fiable trouvé' });
-          continue;
-        }
-
-        // Calcul confiance score côté serveur + qualité joueur
-        const pickTeamIsHome = pickData.equipe === matchData.domicile;
-        const { hStats, aStats, hStand, aStand, h2h } = matchData.raw;
-
-        // Trouver les stats du joueur sélectionné
-        const allPlayers = [...matchData.hOffensive, ...matchData.aOffensive];
-        const selectedPlayer = allPlayers.find(p =>
-          p.player?.name?.toLowerCase().includes(pickData.joueur?.toLowerCase().split(' ').pop() || '') ||
-          pickData.joueur?.toLowerCase().includes(p.player?.name?.toLowerCase().split(' ').pop() || '')
-        );
-        const playerStats = selectedPlayer ? {
-          goals: selectedPlayer.statistics?.[0]?.goals?.total || 0,
-          assists: selectedPlayer.statistics?.[0]?.goals?.assists || 0,
-          apps: selectedPlayer.statistics?.[0]?.games?.appearences || 1,
-        } : null;
-
-        const confianceScore = calcConfianceScore(hStats, aStats, hStand, aStand, h2h, matchData.isEuropean, pickTeamIsHome, playerStats);
-
-        const buteurAlt = pickData.buteur_alt ? {
-          joueur: pickData.buteur_alt.joueur,
-          equipe: pickData.buteur_alt.equipe,
-          prob: pickData.buteur_alt.prob,
-          cote_estimee: pickData.buteur_alt.cote_estimee,
-          raison: pickData.buteur_alt.raison,
-        } : null;
-
-        const scoreTotal = matchData.scoreMatriciel + confianceScore; // PAS de plafond — permet le tri
-        const scoreTotalDisplay = Math.min(100, scoreTotal); // Plafonné à 100 pour l'affichage alerte
-
-        picks.push({
-          score_matriciel: matchData.scoreMatriciel,
-          confiance_score: confianceScore,
-          score_total: scoreTotalDisplay,   // affiché plafonné à 100
-          score_sort: scoreTotal,           // tri sans plafond
-          facteurs: matchData.factors,
-          alerte: matchData.alerte,
-          pick: {
-            joueur: pickData.joueur,
-            equipe: pickData.equipe,
-            type: pickData.type || 'Joueur décisif',
-            prob: pickData.prob,
-            cote_estimee: pickData.cote_estimee,
-            raison: pickData.raison,
-          },
-          buteur_alternatif: buteurAlt,
-          contexte: matchData.context.split('.')[0],
-          match: matchData.match,
-          competition: matchData.competition,
-          heure: matchData.heure,
-          domicile: matchData.domicile,
-          exterieur: matchData.exterieur,
-        });
-
-      } catch (e) {
-        console.error('Erreur match:', e.message);
-      }
-    }
-
-    // Tri: d'abord par score_total, puis par confianceScore pour départager les ex-aequo
-    picks.sort((a, b) => {
-      if ((b.score_sort || 0) !== (a.score_sort || 0)) return (b.score_sort || 0) - (a.score_sort || 0);
-      return (b.confiance_score || 0) - (a.confiance_score || 0);
+    allPicks.push({
+      score_matriciel: matchData.scoreMatriciel,
+      score_total: matchData.score_total,
+      score_sort: matchData.scoreSort,
+      facteurs: matchData.factors,
+      alerte: matchData.alerte,
+      favori: matchData.favoriNom,
+      adversaire: matchData.adversaireNom,
+      favori_rang: matchData.favoriRang,
+      adversaire_rang: matchData.adversaireRang,
+      favori_forme: matchData.favoriForm,
+      adversaire_forme: matchData.adversaireForm,
+      prono_type: matchData.pronosType,
+      raison_victoire: analyse?.raison || `${matchData.favoriNom} largement favori`,
+      joueur_decisif: analyse?.joueur_decisif || null,
+      absents: [
+        ...(matchData.hMissing?.missingNames || []),
+        ...(matchData.aMissing?.missingNames || []),
+      ],
+      compos_officielles: matchData.composAvailable,
+      match: matchData.match,
+      competition: matchData.competition,
+      heure: matchData.heure,
+      domicile: matchData.domicile,
+      exterieur: matchData.exterieur,
     });
-    rejected.sort((a, b) => b.score_matriciel - a.score_matriciel);
 
-    res.json({
-      date: new Date().toLocaleDateString('fr-FR'),
-      total_analyses: allFixtures.length,
-      picks,
-      rejected,
-      top_pick: picks[0] || null,
-    });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
+  } catch (e) { console.error('Erreur match:', e.message); }
+}
+
+allPicks.sort((a, b) => (b.score_sort || 0) - (a.score_sort || 0));
+
+// 1 VERT + 1 ORANGE + 1 ROUGE
+const topVert   = allPicks.find(p => p.alerte === 'VERT')   || null;
+const topOrange = allPicks.find(p => p.alerte === 'ORANGE') || null;
+const topRouge  = allPicks.find(p => p.alerte === 'ROUGE')  || null;
+const picks = [topVert, topOrange, topRouge].filter(Boolean);
+
+res.json({
+  date: new Date().toLocaleDateString('fr-FR'),
+  total_analyses: allFixtures.length,
+  picks,
+  rejected,
+  top_pick: picks[0] || null,
+});
+```
+
+} catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ── RESET CACHE ───────────────────────────────────────────
-app.get('/api/reset-cache', (req, res) => {
-  cache.lastDate = null;
-  ['standings','teamStats','players','natLeagues'].forEach(k => { cache[k] = {}; });
-  res.json({ status: 'Cache réinitialisé' });
+app.get(’/api/reset-cache’, (req, res) => {
+cache.lastDate = null;
+[‘standings’,‘teamStats’,‘players’,‘natLeagues’].forEach(k => { cache[k] = {}; });
+res.json({ status: ‘Cache réinitialisé’ });
 });
 
-// ── BACKTEST ──────────────────────────────────────────────
-app.get('/api/backtest', async (req, res) => {
-  const MISE = 100;
-  const SEASON = 2024;
-  const LEAGUES_BT = [
-    { id: 61, name: 'Ligue 1' }, { id: 140, name: 'La Liga' },
-    { id: 39, name: 'Premier League' }, { id: 135, name: 'Serie A' },
-    { id: 78, name: 'Bundesliga' }, { id: 2, name: 'Champions League' },
-  ];
-  const picksRouge = [], picksOrange = [];
-  let totalAnalyses = 0, reqCount = 0;
-  try {
-    for (const league of LEAGUES_BT) {
-      if (reqCount >= 180) break;
-      const standings = await footballAPI('/standings', { league: league.id, season: SEASON }); reqCount++;
-      const standList = standings?.[0]?.league?.standings?.[0] || [];
-      const fixtures = await footballAPI('/fixtures', { league: league.id, season: SEASON, status: 'FT', last: 25 }); reqCount++;
-      for (const fixture of fixtures.slice(0, 10)) {
-        if (reqCount >= 180) break;
-        const hTeam = fixture.teams?.home; const aTeam = fixture.teams?.away;
-        if (!hTeam || !aTeam) continue;
-        const [hStats, aStats] = await Promise.all([
-          footballAPI('/teams/statistics', { team: hTeam.id, league: league.id, season: SEASON }),
-          footballAPI('/teams/statistics', { team: aTeam.id, league: league.id, season: SEASON }),
-        ]); reqCount += 2;
-        const hStand = standList.find(s => s.team?.id === hTeam.id);
-        const aStand = standList.find(s => s.team?.id === aTeam.id);
-        const { scoreMatriciel: sm, factors, alerte } = calcMatrixScore(hStats, aStats, hStand, aStand, [], [], false, league.id);
-        totalAnalyses++;
-        if (!alerte) continue;
-        const hGoals = fixture.goals?.home || 0; const aGoals = fixture.goals?.away || 0;
-        const validated = hGoals >= 2;
-        const cote = alerte === 'VERT' ? 1.75 : 1.65;
-        const gain = validated ? Math.round(MISE * (cote - 1)) : -MISE;
-        const pick = { date: fixture.fixture?.date?.split('T')[0]||'?', match: `${hTeam.name} vs ${aTeam.name}`, competition: league.name, sm, alerte, factors, score: `${hGoals}-${aGoals}`, validated, cote, mise: MISE, gain };
-        if (alerte === 'ROUGE') picksRouge.push(pick); else picksOrange.push(pick);
-      }
-    }
-    function stats(picks) {
-      if (!picks.length) return { total:0,wins:0,losses:0,winRate:0,profit:0,roi:0,bestStreak:0,worstStreak:0 };
-      const wins = picks.filter(p=>p.validated).length;
-      const profit = picks.reduce((a,p)=>a+p.gain,0);
-      let best=0,cur=0,worst=0,curL=0;
-      for (const p of picks) { if(p.validated){cur++;curL=0;best=Math.max(best,cur);}else{curL++;cur=0;worst=Math.max(worst,curL);} }
-      return { total:picks.length,wins,losses:picks.length-wins,winRate:Math.round(wins/picks.length*100),profit,roi:Math.round(profit/(picks.length*MISE)*100),bestStreak:best,worstStreak:worst };
-    }
-    const sR=stats(picksRouge), sO=stats(picksOrange);
-    const totalProfit=sR.profit+sO.profit, totalPicks=sR.total+sO.total;
-    res.json({ meta:{totalAnalyses,reqCount,saison:SEASON,mise:MISE}, rouge:{stats:sR,picks:picksRouge}, orange:{stats:sO,picks:picksOrange}, global:{totalPicks,totalProfit,globalWR:totalPicks>0?Math.round(((sR.wins+sO.wins)/totalPicks)*100):0,globalROI:totalPicks>0?Math.round((totalProfit/(totalPicks*MISE))*100):0} });
-  } catch(e) { res.status(500).json({error:e.message}); }
-});
-
-app.get('/api/health', (req, res) => res.json({ status: 'ok', name: 'PicksAI', cacheDate: cache.lastDate }));
-app.get('*', (req, res) => res.sendFile(path.join(__dirname, '../frontend/index.html')));
+app.get(’/api/health’, (req, res) => res.json({ status: ‘ok’, name: ‘PicksAI’, version: ‘3.0’ }));
+app.get(’*’, (req, res) => res.sendFile(path.join(__dirname, ‘../frontend/index.html’)));
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`PicksAI running on port ${PORT}`));
+app.listen(PORT, () => console.log(`PicksAI v3.0 port ${PORT}`));
