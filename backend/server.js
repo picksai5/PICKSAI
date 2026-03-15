@@ -211,7 +211,7 @@ async function preloadCache() {
 
 // ── MATRICE V4 — ANALYSE VICTOIRE ÉQUIPE ────────────────
 // 14 facteurs calibrés pour prédire la victoire, pas le joueur décisif
-function analyseMatchComplet(hStats, aStats, hStand, aStand, h2h, injuries, isEuropean, hPlayers, aPlayers, composH, composA, hAdvStats, aAdvStats, prediction) {
+function analyseMatchComplet(hStats, aStats, hStand, aStand, h2h, injuries, isEuropean, hPlayers, aPlayers, composH, composA, hAdvStats, aAdvStats, prediction, hFatigued, aFatigued) {
 
   // ── DONNÉES DE BASE ───────────────────────────────────
   const hRank = hStand?.rank  || 99;
@@ -384,11 +384,21 @@ function analyseMatchComplet(hStats, aStats, hStand, aStand, h2h, injuries, isEu
     if (pctAway >= 60 && pctHome <= 25) { aScore += 8; }
   }
 
+  // ── MALUS FATIGUE — match dans les 4 derniers jours ──
+  // Equipe qui joue jeudi Europe + dimanche championnat = baisse de forme
+  if (hFatigued) {
+    hScore -= 15;
+    factors.push('F10');
+    console.log('Fatigue détectée domicile');
+  }
+  if (aFatigued) {
+    aScore -= 12;
+    factors.push('F10');
+  }
+
   // ── MALUS DERBY/CLASICO ───────────────────────────────
-  // Les derbys sont imprévisibles même avec gros écart
-  // Détecté via H2H très équilibré + équipes du même pays
   if (h2hDraws >= 2 && Math.abs(rankDiff) <= 8) {
-    hScore -= 8; aScore -= 8; // match serré probable
+    hScore -= 8; aScore -= 8;
   }
 
   // ── IMPACT BLESSÉS CLÉS ───────────────────────────────
@@ -437,25 +447,39 @@ function analyseMatchComplet(hStats, aStats, hStand, aStand, h2h, injuries, isEu
   let alerte = null;
   let pronosType = null;
 
-  // Seuil minimum pour un pick — diff < 18 = trop équilibré
-  if (absDiff < 18) {
+  // Filtre rang minimum — écart de classement < 4 rangs = match trop équilibré
+  const absRankDiff = Math.abs(rankDiff);
+  if (absRankDiff < 4) {
+    return {
+      scoreMatriciel: 0, scoreSort: 0, factors: uniqueFactors,
+      alerte: null, coteEstimee: null, favoriIsHome: null,
+      pronosType: 'equilibre', hScore, aScore,
+      hMissing: { missing: 0, missingNames: [] },
+      aMissing: { missing: 0, missingNames: [] },
+      hRank, aRank, hPts, aPts, hForm, aForm, hWins, aWins,
+    };
+  }
+
+  // Seuil minimum — diff < 25 = trop équilibré (monté de 18 à 25)
+  if (absDiff < 25) {
     pronosType = 'equilibre';
     scoreMatriciel = 0;
-  } else if (diff >= 18) {
+  } else if (diff >= 25) {
     favoriIsHome = true;
     pronosType = 'victoire_domicile';
     scoreMatriciel = Math.min(100, Math.round(absDiff * 1.15));
   } else {
     favoriIsHome = false;
     pronosType = 'victoire_exterieur';
-    scoreMatriciel = Math.min(100, Math.round(absDiff * 0.95)); // pénalisé car déplacement
+    scoreMatriciel = Math.min(100, Math.round(absDiff * 0.95));
   }
 
   if      (scoreMatriciel >= 72) alerte = 'VERT';
   else if (scoreMatriciel >= 52) alerte = 'ORANGE';
   else if (scoreMatriciel >= 38) alerte = 'ROUGE';
 
-  // Cote estimée selon score et type
+  // Cote estimée selon score et type — indicative seulement
+  // L'utilisateur décide lui-même si la cote vaut le coup
   let coteEstimee = null;
   if (pronosType === 'victoire_domicile') {
     if      (scoreMatriciel >= 72) coteEstimee = 1.60;
@@ -466,9 +490,6 @@ function analyseMatchComplet(hStats, aStats, hStand, aStand, h2h, injuries, isEu
     else if (scoreMatriciel >= 52) coteEstimee = 2.20;
     else if (scoreMatriciel >= 38) coteEstimee = 2.50;
   }
-
-  // Filtre gros favoris évidents — score >= 85 = cote réelle < 1.40 = pas de value
-  if (scoreMatriciel >= 85) alerte = null;
 
   return {
     scoreMatriciel,
@@ -576,7 +597,7 @@ async function collectMatchData(fixture, leagueId, leagueName, standings) {
     : '?';
   const isEuropean = EURO_LEAGUES.includes(leagueId);
 
-  const [hStats, aStats, hPlayers, aPlayers, injuries, h2h, lineups, hAdvStats, aAdvStats, prediction] = await Promise.all([
+  const [hStats, aStats, hPlayers, aPlayers, injuries, h2h, lineups, hAdvStats, aAdvStats, prediction, hRecentFixtures, aRecentFixtures] = await Promise.all([
     getTeamStatsCached(hTeam.id, leagueId),
     getTeamStatsCached(aTeam.id, leagueId),
     getPlayersCached(hTeam.id, leagueId),
@@ -587,7 +608,23 @@ async function collectMatchData(fixture, leagueId, leagueName, standings) {
     getAdvancedStatsCached(hTeam.id, leagueId),
     getAdvancedStatsCached(aTeam.id, leagueId),
     getPredictionCached(fixtureId),
+    footballAPI('/fixtures', { team: hTeam.id, last: 3, status: 'FT' }), // 3 derniers matchs domicile
+    footballAPI('/fixtures', { team: aTeam.id, last: 3, status: 'FT' }), // 3 derniers matchs extérieur
   ]);
+
+  // Détecter fatigue : match joué dans les 4 derniers jours ?
+  const matchDate = new Date(fixture.fixture?.date || Date.now());
+  const fatigueSeuil = 4 * 24 * 60 * 60 * 1000; // 4 jours en ms
+
+  const hasFatigue = (recentFixtures) => {
+    if (!recentFixtures || recentFixtures.length === 0) return false;
+    const lastMatch = recentFixtures[0];
+    const lastDate = new Date(lastMatch.fixture?.date || 0);
+    return (matchDate - lastDate) < fatigueSeuil;
+  };
+
+  const hFatigued = hasFatigue(hRecentFixtures);
+  const aFatigued = hasFatigue(aRecentFixtures);
 
   const hStand = standings.find(s => s.team?.id === hTeam.id);
   const aStand = standings.find(s => s.team?.id === aTeam.id);
@@ -601,7 +638,8 @@ async function collectMatchData(fixture, leagueId, leagueName, standings) {
   const analyse = analyseMatchComplet(
     hStats, aStats, hStand, aStand, h2h, injuries, isEuropean,
     hPlayers, aPlayers, hStarters, aStarters,
-    hAdvStats, aAdvStats, prediction
+    hAdvStats, aAdvStats, prediction,
+    hFatigued, aFatigued
   );
 
   if (!analyse.alerte) return null; // match trop équilibré ou score trop bas
