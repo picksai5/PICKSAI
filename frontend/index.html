@@ -1578,9 +1578,7 @@ function renderBacktestResults(data) {
             <span style="font-size:13px">${p.validated ? '✅' : '❌'}</span>
             <span style="font-size:12px;font-weight:700;margin-left:6px">${p.match}</span>
             <span style="font-size:10px;color:var(--muted);margin-left:6px">${p.competition}</span>
-            <div style="font-size:10px;color:var(--muted);margin-top:2px">${p.date} · Score réel: ${p.score} · Matrice: ${p.sm}</div>
-          </div>
-          <div style="text-align:right;flex-shrink:0;margin-left:10px">
+
             <div style="font-family:'Bebas Neue';font-size:18px;color:${p.gain >= 0 ? 'var(--green)' : 'var(--red)'}">${p.gain >= 0 ? '+' : ''}${p.gain}€</div>
             <div style="font-size:10px;color:var(--muted)">×${p.cote}</div>
           </div>
