@@ -435,6 +435,7 @@ let state = {
 };
 
 let currentPick = null;
+let currentTirsPick = null;
 let wonState = true;
 
 const FACTORS_DATA = [
@@ -571,23 +572,45 @@ async function doScanTirs() {
 }
 
 function addTirsPick(pick) {
-  const cote = parseFloat(prompt(`Cote réelle sur ton bookmaker pour "${pick.prono}" ?`, pick.cote_estimee) || pick.cote_estimee);
-  const mise = parseFloat(prompt('Mise (€) ?', '25') || '25');
-  if (!cote || !mise) return;
+  // Utilise le même modal que le track principal
+  currentTirsPick = pick;
+  editPickId = null;
+  wonState = null;
+
+  document.getElementById('modal-title').textContent = 'ENREGISTRER PICK TIRS';
+  document.getElementById('modal-player').textContent = pick.prono;
+  document.getElementById('modal-match').textContent = pick.match + ' · ' + pick.competition;
+  document.getElementById('modal-mise').value = tirsState.picks.length > 0 ? tirsState.picks[0].mise || 25 : 25;
+  document.getElementById('modal-cote').value = pick.cote_estimee || 1.70;
+  document.getElementById('modal-result-section').style.display = 'none';
+  document.getElementById('modal-confirm-btn').textContent = 'CONFIRMER';
+  document.getElementById('modal-confirm-btn').onclick = confirmTirsPick;
+  updateImpact();
+  document.getElementById('modal').classList.add('open');
+}
+
+function confirmTirsPick() {
+  if (!currentTirsPick) return;
+  const mise = parseFloat(document.getElementById('modal-mise').value) || 25;
+  const cote = parseFloat(document.getElementById('modal-cote').value) || 1.70;
 
   tirsState.picks.unshift({
     id: Date.now(),
     date: new Date().toISOString(),
-    match: pick.match,
-    competition: pick.competition,
-    prono: pick.prono,
-    alerte: pick.alerte,
-    fiabilite: pick.fiabilite,
+    match: currentTirsPick.match,
+    competition: currentTirsPick.competition,
+    prono: currentTirsPick.prono,
+    alerte: currentTirsPick.alerte,
+    fiabilite: currentTirsPick.fiabilite,
     cote, mise,
     gain: null, won: null, pending: true,
   });
+  currentTirsPick = null;
+  // Remettre le bouton confirmer sur confirmPick pour le track normal
+  document.getElementById('modal-confirm-btn').onclick = confirmPick;
   saveTirsState();
   renderTirsTrack();
+  closeModal();
 }
 
 function resolveTirsPick(id, won) {
