@@ -108,9 +108,10 @@ async function getAdvancedStatsCached(teamId, leagueId) {
   const k = `adv_${teamId}_${leagueId}`;
   if (isCacheValid(cache.fixtureStats[k])) return cache.fixtureStats[k].data;
 
-  // Récupérer les 5 derniers matchs joués
+  // Récupérer les 10 derniers matchs joués (toutes compétitions)
+  // Plus représentatif que seulement en championnat
   const lastFixtures = await footballAPI('/fixtures', {
-    team: teamId, league: leagueId, season: SEASON, last: 5, status: 'FT',
+    team: teamId, season: SEASON, last: 10, status: 'FT',
   });
 
   if (!lastFixtures || lastFixtures.length === 0) {
@@ -120,7 +121,7 @@ async function getAdvancedStatsCached(teamId, leagueId) {
 
   // Récupérer les stats de chaque match
   const statsPerMatch = await Promise.all(
-    lastFixtures.slice(0, 5).map(f => footballAPI('/fixtures/statistics', { fixture: f.fixture?.id }))
+    lastFixtures.slice(0, 10).map(f => footballAPI('/fixtures/statistics', { fixture: f.fixture?.id }))
   );
 
   // Calculer les moyennes pour cette équipe
@@ -850,6 +851,122 @@ app.get('/api/reset-cache', (req, res) => {
   cache.lastDate = null;
   ['standings','teamStats','players','natLeagues','fixtureStats','predictions'].forEach(k => { cache[k] = {}; });
   res.json({ status: 'Cache réinitialisé' });
+});
+
+// ── SCAN TIRS CADRÉS ──────────────────────────────────────
+app.get('/api/scan-tirs', async (req, res) => {
+  try {
+    const today = getTodayStr();
+    await preloadCache();
+
+    const allFixtures = [];
+    for (const league of LEAGUES) {
+      const data = await footballAPI('/fixtures', { date: today, league: league.id, season: SEASON });
+      const valid = data.filter(f => !['PST','CANC','ABD','SUSP','AWD','WO'].includes(f.fixture?.status?.short));
+      if (valid.length > 0) allFixtures.push(...valid.map(f => ({ ...f, leagueName: league.name, leagueId: league.id })));
+    }
+
+    if (allFixtures.length === 0) {
+      return res.json({ picks: [], total_analyses: 0, date: new Date().toLocaleDateString('fr-FR') });
+    }
+
+    const picks = [];
+
+    for (const fixture of allFixtures) {
+      try {
+        const hTeam = fixture.teams?.home;
+        const aTeam = fixture.teams?.away;
+        const leagueId = fixture.leagueId;
+        if (!hTeam || !aTeam) continue;
+
+        const hTime = fixture.fixture?.date
+          ? new Date(fixture.fixture.date).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
+          : '?';
+
+        // Récupérer stats avancées des deux équipes
+        const [hAdv, aAdv] = await Promise.all([
+          getAdvancedStatsCached(hTeam.id, leagueId),
+          getAdvancedStatsCached(aTeam.id, leagueId),
+        ]);
+
+        if (!hAdv || !aAdv) continue;
+
+        // Tirs cadrés moyens combinés des deux équipes
+        const hShotsOn = hAdv.shotsOnTarget || 0;
+        const aShotsOn = aAdv.shotsOnTarget || 0;
+        const totalMoyen = +(hShotsOn + aShotsOn).toFixed(1);
+
+        if (totalMoyen < 3) continue; // pas assez de données
+
+        // Définir la ligne et le prono
+        // Arrondir à 0.5 près pour avoir une ligne bookmaker réaliste
+        const ligne = Math.round(totalMoyen * 2) / 2;
+
+        // Fiabilité : plus l'équipe est régulière, plus c'est fiable
+        // On calcule l'écart-type approximatif (régularité)
+        // Si moyenne > 6 → over fiable, si < 4 → under fiable
+        let prono = null;
+        let fiabilite = 0;
+        let coteEstimee = 0;
+
+        if (totalMoyen >= 7) {
+          prono = `Plus de ${ligne - 0.5} tirs cadrés`;
+          fiabilite = Math.min(95, Math.round(60 + (totalMoyen - 7) * 5));
+          coteEstimee = 1.65;
+        } else if (totalMoyen >= 5.5) {
+          prono = `Plus de ${ligne - 1} tirs cadrés`;
+          fiabilite = Math.min(90, Math.round(55 + (totalMoyen - 5.5) * 6));
+          coteEstimee = 1.75;
+        } else if (totalMoyen <= 3.5) {
+          prono = `Moins de ${ligne + 0.5} tirs cadrés`;
+          fiabilite = Math.min(85, Math.round(60 + (3.5 - totalMoyen) * 8));
+          coteEstimee = 1.70;
+        } else {
+          continue; // zone trop incertaine
+        }
+
+        if (fiabilite < 60) continue;
+
+        // Niveau de confiance
+        let alerte = null;
+        if (fiabilite >= 80) alerte = 'VERT';
+        else if (fiabilite >= 70) alerte = 'ORANGE';
+        else if (fiabilite >= 60) alerte = 'ROUGE';
+
+        picks.push({
+          match: `${hTeam.name} vs ${aTeam.name}`,
+          competition: fixture.leagueName,
+          heure: hTime,
+          domicile: hTeam.name,
+          exterieur: aTeam.name,
+          prono,
+          ligne,
+          fiabilite,
+          alerte,
+          cote_estimee: coteEstimee,
+          h_tirs_cadres: hShotsOn,
+          a_tirs_cadres: aShotsOn,
+          total_moyen: totalMoyen,
+          raison: `${hTeam.name} moyenne ${hShotsOn} tirs cadrés/match, ${aTeam.name} ${aShotsOn}/match → total combiné moyen ${totalMoyen}`,
+        });
+
+      } catch (e) { console.error('Erreur tirs match:', e.message); }
+    }
+
+    // Trier par fiabilité décroissante, garder top 3
+    picks.sort((a, b) => b.fiabilite - a.fiabilite);
+    const topVert   = picks.find(p => p.alerte === 'VERT')   || null;
+    const topOrange = picks.find(p => p.alerte === 'ORANGE') || null;
+    const topRouge  = picks.find(p => p.alerte === 'ROUGE')  || null;
+    const top3 = [topVert, topOrange, topRouge].filter(Boolean);
+
+    res.json({
+      date: new Date().toLocaleDateString('fr-FR'),
+      total_analyses: allFixtures.length,
+      picks: top3,
+    });
+
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 app.get('/api/health', (req, res) => res.json({ status: 'ok', name: 'PicksAI', version: '3.0' }));
