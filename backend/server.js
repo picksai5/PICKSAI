@@ -698,6 +698,9 @@ async function collectMatchData(fixture, leagueId, leagueName, standings) {
   const aStarters = (aLineup?.startXI || []).map(p => p.player?.name?.toLowerCase()).filter(Boolean);
   const composAvailable = hStarters.length > 0 || aStarters.length > 0;
 
+  const hStand = standings.find(s => s.team?.id === hTeam.id);
+  const aStand = standings.find(s => s.team?.id === aTeam.id);
+
   const analyse = analyseMatchComplet(
     hStats, aStats, hStand, aStand, h2h, injuries, isEuropean,
     hPlayers, aPlayers, hStarters, aStarters,
@@ -974,17 +977,18 @@ app.get('/api/scan-tirs', async (req, res) => {
         const aShotsOn = aAdv.shotsOnTarget || 0;
         let totalMoyen = +(hShotsOn + aShotsOn).toFixed(1);
 
-        // Bonus contexte retour — équipe qui doit remonter tire BEAUCOUP plus
+        // Bonus contexte retour — équipe qui doit remonter tire plus
+        // Valeurs conservatrices basées sur l'observation réelle
         let bonusContexte = '';
         if (firstLegDeficit >= 3) {
-          totalMoyen = +(totalMoyen + 3.5).toFixed(1); // +3.5 tirs estimés
-          bonusContexte = ` (+3.5 bonus: doit remonter ${firstLegDeficit} buts)`;
-        } else if (firstLegDeficit === 2) {
           totalMoyen = +(totalMoyen + 2.0).toFixed(1);
-          bonusContexte = ` (+2.0 bonus: doit remonter 2 buts)`;
-        } else if (firstLegDeficit === 1) {
+          bonusContexte = ` (+2.0 retour: doit remonter ${firstLegDeficit} buts)`;
+        } else if (firstLegDeficit === 2) {
           totalMoyen = +(totalMoyen + 1.0).toFixed(1);
-          bonusContexte = ` (+1.0 bonus: doit remonter 1 but)`;
+          bonusContexte = ` (+1.0 retour: doit remonter 2 buts)`;
+        } else if (firstLegDeficit === 1) {
+          totalMoyen = +(totalMoyen + 0.5).toFixed(1);
+          bonusContexte = ` (+0.5 retour: doit remonter 1 but)`;
         }
 
         if (totalMoyen < 3) continue;
@@ -996,15 +1000,15 @@ app.get('/api/scan-tirs', async (req, res) => {
         let coteEstimee = 0;
 
         if (totalMoyen >= 7) {
-          prono = `Plus de ${ligne - 0.5} tirs cadrés`;
+          prono = `Plus de ${ligne} tirs cadrés`;
           fiabilite = Math.min(95, Math.round(60 + (totalMoyen - 7) * 5));
           coteEstimee = 1.65;
         } else if (totalMoyen >= 5.5) {
-          prono = `Plus de ${ligne - 1} tirs cadrés`;
+          prono = `Plus de ${ligne} tirs cadrés`;
           fiabilite = Math.min(90, Math.round(55 + (totalMoyen - 5.5) * 6));
           coteEstimee = 1.75;
         } else if (totalMoyen <= 3.5) {
-          prono = `Moins de ${ligne + 0.5} tirs cadrés`;
+          prono = `Moins de ${ligne} tirs cadrés`;
           fiabilite = Math.min(85, Math.round(60 + (3.5 - totalMoyen) * 8));
           coteEstimee = 1.70;
         } else {
