@@ -129,8 +129,9 @@ async function getAdvancedStatsCached(teamId, leagueId) {
     lastFixtures.slice(0, 10).map(f => footballAPI('/fixtures/statistics', { fixture: f.fixture?.id }))
   );
 
-  // Calculer les moyennes pour cette équipe
+  // Calculer les moyennes + tableau valeurs individuelles pour variance
   let totalPossession = 0, totalShotsOn = 0, totalShotsTotal = 0, totalDangerous = 0;
+  const shotsOnList = []; // tirs cadrés match par match pour calcul variance
   let count = 0;
 
   for (const matchStats of statsPerMatch) {
@@ -145,10 +146,12 @@ async function getAdvancedStatsCached(teamId, leagueId) {
       return parseFloat(s.value) || 0;
     };
 
+    const shotsOn = getStat('Shots on Goal');
     totalPossession  += getStat('Ball Possession');
-    totalShotsOn     += getStat('Shots on Goal');
+    totalShotsOn     += shotsOn;
     totalShotsTotal  += getStat('Total Shots');
     totalDangerous   += getStat('Dangerous Attacks');
+    shotsOnList.push(shotsOn);
     count++;
   }
 
@@ -157,11 +160,18 @@ async function getAdvancedStatsCached(teamId, leagueId) {
     return null;
   }
 
+  const avgShotsOn = totalShotsOn / count;
+  // Écart-type des tirs cadrés = mesure de régularité
+  const variance = shotsOnList.reduce((a, v) => a + Math.pow(v - avgShotsOn, 2), 0) / count;
+  const stdDev = +Math.sqrt(variance).toFixed(2);
+
   const data = {
     possession:       Math.round(totalPossession  / count),
-    shotsOnTarget:    +(totalShotsOn     / count).toFixed(1),
+    shotsOnTarget:    +avgShotsOn.toFixed(1),
     shotsTotal:       +(totalShotsTotal  / count).toFixed(1),
     dangerousAttacks: +(totalDangerous   / count).toFixed(1),
+    shotsOnList,      // valeurs individuelles
+    stdDev,           // écart-type tirs cadrés (régularité)
   };
 
   cache.fixtureStats[k] = { data, timestamp: Date.now() };
@@ -983,8 +993,15 @@ app.get('/api/scan-tirs', async (req, res) => {
         const aShotsOn = aAdv.shotsOnTarget || 0;
         let totalMoyen = +(hShotsOn + aShotsOn).toFixed(1);
 
+        // Régularité combinée des deux équipes (écart-type moyen)
+        const hStdDev = hAdv.stdDev || 2.0;
+        const aStdDev = aAdv.stdDev || 2.0;
+        const combinedStdDev = +((hStdDev + aStdDev) / 2).toFixed(2);
+        // Régulier = stdDev < 1.5 | Moyen = 1.5-2.5 | Irrégulier = > 2.5
+        const isRegular = combinedStdDev < 1.5;
+        const isIrregular = combinedStdDev > 2.5;
+
         // Bonus contexte retour — équipe qui doit remonter tire plus
-        // Valeurs conservatrices basées sur l'observation réelle
         let bonusContexte = '';
         if (firstLegDeficit >= 3) {
           totalMoyen = +(totalMoyen + 2.0).toFixed(1);
@@ -1005,21 +1022,47 @@ app.get('/api/scan-tirs', async (req, res) => {
         let fiabilite = 0;
         let coteEstimee = 0;
 
+        // Logique Over/Under selon moyenne ET régularité
+        // Équipe régulière (stdDev faible) → Under plus fiable si moyenne basse
+        // Équipe irrégulière → moins fiable dans les deux sens
+
         if (totalMoyen >= 7) {
+          // Très offensif → Over fiable, régularité booste encore
           prono = `Plus de ${ligne} tirs cadrés`;
-          fiabilite = Math.min(95, Math.round(60 + (totalMoyen - 7) * 5));
+          fiabilite = Math.min(95, Math.round(60 + (totalMoyen - 7) * 5 + (isRegular ? 5 : 0)));
           coteEstimee = 1.65;
         } else if (totalMoyen >= 5.5) {
+          // Offensif → Over, régularité confirme
           prono = `Plus de ${ligne} tirs cadrés`;
-          fiabilite = Math.min(90, Math.round(55 + (totalMoyen - 5.5) * 6));
+          fiabilite = Math.min(88, Math.round(55 + (totalMoyen - 5.5) * 6 + (isRegular ? 4 : isIrregular ? -5 : 0)));
           coteEstimee = 1.75;
-        } else if (totalMoyen <= 3.5) {
-          prono = `Moins de ${ligne} tirs cadrés`;
-          fiabilite = Math.min(85, Math.round(60 + (3.5 - totalMoyen) * 8));
-          coteEstimee = 1.70;
+        } else if (totalMoyen >= 4.5) {
+          // Zone pivot — régularité décide Over vs Under
+          if (isRegular) {
+            // Régulier autour de 4.5-5.5 → Under fiable (ne dépasse jamais beaucoup)
+            prono = `Moins de ${ligne + 0.5} tirs cadrés`;
+            fiabilite = Math.min(82, Math.round(58 + (5.0 - totalMoyen) * 6));
+            coteEstimee = 1.75;
+          } else {
+            // Pas régulier → Over avec ligne basse
+            prono = `Plus de ${ligne} tirs cadrés`;
+            fiabilite = Math.min(72, Math.round(50 + (totalMoyen - 4.5) * 5 + (isIrregular ? -6 : 0)));
+            coteEstimee = 1.85;
+          }
+        } else if (totalMoyen >= 3.5) {
+          // Défensif → Under, régularité booste la fiabilité
+          prono = `Moins de ${ligne + 0.5} tirs cadrés`;
+          fiabilite = Math.min(85, Math.round(55 + (4.5 - totalMoyen) * 8 + (isRegular ? 6 : isIrregular ? -4 : 0)));
+          coteEstimee = 1.75;
         } else {
-          continue; // zone trop incertaine
+          // Très défensif → Under solide
+          prono = `Moins de ${ligne + 0.5} tirs cadrés`;
+          fiabilite = Math.min(90, Math.round(65 + (3.5 - totalMoyen) * 8 + (isRegular ? 5 : 0)));
+          coteEstimee = 1.70;
         }
+
+        // Malus irrégularité globale — si les deux équipes sont très irrégulières, peu fiable
+        if (isIrregular) fiabilite = Math.max(0, fiabilite - 8);
 
         if (fiabilite < 60) continue;
 
@@ -1043,7 +1086,7 @@ app.get('/api/scan-tirs', async (req, res) => {
           h_tirs_cadres: hShotsOn,
           a_tirs_cadres: aShotsOn,
           total_moyen: totalMoyen,
-          raison: `${hTeam.name} moy. ${hShotsOn} tirs/match, ${aTeam.name} ${aShotsOn}/match → total moyen ${totalMoyen}${bonusContexte}. ${firstLegContext}`,
+          raison: `${hTeam.name} moy. ${hShotsOn} tirs/match (σ${hStdDev}), ${aTeam.name} ${aShotsOn}/match (σ${aStdDev}) → total ${totalMoyen}${bonusContexte}. Régularité: ${isRegular ? '✅ Bonne' : isIrregular ? '⚠️ Irrégulier' : '➖ Moyenne'}. ${firstLegContext}`,
         });
 
       } catch (e) { console.error('Erreur tirs match:', e.message); }
