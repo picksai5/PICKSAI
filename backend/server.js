@@ -1016,53 +1016,39 @@ app.get('/api/scan-tirs', async (req, res) => {
 
         if (totalMoyen < 3) continue;
 
-        const ligne = Math.round(totalMoyen * 2) / 2;
-
-        let prono = null;
+        // L'app fournit l'estimation brute + tendance
+        // L'utilisateur choisit lui-même la ligne chez son bookmaker
+        let tendance = null;
         let fiabilite = 0;
-        let coteEstimee = 0;
-
-        // Logique Over/Under selon moyenne ET régularité
-        // Équipe régulière (stdDev faible) → Under plus fiable si moyenne basse
-        // Équipe irrégulière → moins fiable dans les deux sens
 
         if (totalMoyen >= 7) {
-          // Très offensif → Over fiable, régularité booste encore
-          prono = `Plus de ${ligne} tirs cadrés`;
-          fiabilite = Math.min(95, Math.round(60 + (totalMoyen - 7) * 5 + (isRegular ? 5 : 0)));
-          coteEstimee = 1.65;
+          tendance = 'OVER';
+          fiabilite = Math.min(92, Math.round(62 + (totalMoyen - 7) * 4 + (isRegular ? 5 : 0)));
         } else if (totalMoyen >= 5.5) {
-          // Offensif → Over, régularité confirme
-          prono = `Plus de ${ligne} tirs cadrés`;
-          fiabilite = Math.min(88, Math.round(55 + (totalMoyen - 5.5) * 6 + (isRegular ? 4 : isIrregular ? -5 : 0)));
-          coteEstimee = 1.75;
+          tendance = 'OVER';
+          fiabilite = Math.min(84, Math.round(56 + (totalMoyen - 5.5) * 5 + (isRegular ? 4 : isIrregular ? -5 : 0)));
         } else if (totalMoyen >= 4.5) {
-          // Zone pivot — régularité décide Over vs Under
           if (isRegular) {
-            // Régulier autour de 4.5-5.5 → Under fiable (ne dépasse jamais beaucoup)
-            prono = `Moins de ${ligne + 0.5} tirs cadrés`;
-            fiabilite = Math.min(82, Math.round(58 + (5.0 - totalMoyen) * 6));
-            coteEstimee = 1.75;
+            tendance = 'UNDER'; // régulier + moyenne basse → Under fiable
+            fiabilite = Math.min(82, Math.round(60 + (5.0 - totalMoyen) * 5));
           } else {
-            // Pas régulier → Over avec ligne basse
-            prono = `Plus de ${ligne} tirs cadrés`;
-            fiabilite = Math.min(72, Math.round(50 + (totalMoyen - 4.5) * 5 + (isIrregular ? -6 : 0)));
-            coteEstimee = 1.85;
+            tendance = 'OVER';
+            fiabilite = Math.min(68, Math.round(48 + (totalMoyen - 4.5) * 4));
           }
         } else if (totalMoyen >= 3.5) {
-          // Défensif → Under, régularité booste la fiabilité
-          prono = `Moins de ${ligne + 0.5} tirs cadrés`;
-          fiabilite = Math.min(85, Math.round(55 + (4.5 - totalMoyen) * 8 + (isRegular ? 6 : isIrregular ? -4 : 0)));
-          coteEstimee = 1.75;
+          tendance = 'UNDER';
+          fiabilite = Math.min(85, Math.round(58 + (4.5 - totalMoyen) * 7 + (isRegular ? 6 : isIrregular ? -4 : 0)));
         } else {
-          // Très défensif → Under solide
-          prono = `Moins de ${ligne + 0.5} tirs cadrés`;
+          tendance = 'UNDER';
           fiabilite = Math.min(90, Math.round(65 + (3.5 - totalMoyen) * 8 + (isRegular ? 5 : 0)));
-          coteEstimee = 1.70;
         }
 
-        // Malus irrégularité globale — si les deux équipes sont très irrégulières, peu fiable
         if (isIrregular) fiabilite = Math.max(0, fiabilite - 8);
+
+        // Prono = estimation brute + tendance (pas de ligne fixe)
+        const regulariteLabel = isRegular ? '✅ Bonne' : isIrregular ? '⚠️ Irrégulier' : '➖ Moyenne';
+        const prono = `Estimation ${totalMoyen} tirs — tendance ${tendance}`;
+        const coteEstimee = tendance === 'OVER' ? (totalMoyen >= 7 ? 1.60 : 1.75) : 1.75;
 
         if (fiabilite < 60) continue;
 
@@ -1083,10 +1069,13 @@ app.get('/api/scan-tirs', async (req, res) => {
           fiabilite,
           alerte,
           cote_estimee: coteEstimee,
+          tendance,
+          estimation: totalMoyen,
+          regularite: regulariteLabel,
           h_tirs_cadres: hShotsOn,
           a_tirs_cadres: aShotsOn,
           total_moyen: totalMoyen,
-          raison: `${hTeam.name} moy. ${hShotsOn} tirs/match (σ${hStdDev}), ${aTeam.name} ${aShotsOn}/match (σ${aStdDev}) → total ${totalMoyen}${bonusContexte}. Régularité: ${isRegular ? '✅ Bonne' : isIrregular ? '⚠️ Irrégulier' : '➖ Moyenne'}. ${firstLegContext}`,
+          raison: `${hTeam.name} ${hShotsOn} tirs/match (σ${hStdDev}) · ${aTeam.name} ${aShotsOn}/match (σ${aStdDev})${bonusContexte} · Régularité ${regulariteLabel}${firstLegContext ? ' · ' + firstLegContext : ''}`,
         });
 
       } catch (e) { console.error('Erreur tirs match:', e.message); }
