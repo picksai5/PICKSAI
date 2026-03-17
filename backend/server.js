@@ -212,7 +212,7 @@ async function preloadCache() {
 
 // ── MATRICE V4 — ANALYSE VICTOIRE ÉQUIPE ────────────────
 // 14 facteurs calibrés pour prédire la victoire, pas le joueur décisif
-function analyseMatchComplet(hStats, aStats, hStand, aStand, h2h, injuries, isEuropean, hPlayers, aPlayers, composH, composA, hAdvStats, aAdvStats, prediction, hFatigued, aFatigued) {
+function analyseMatchComplet(hStats, aStats, hStand, aStand, h2h, injuries, isEuropean, hPlayers, aPlayers, composH, composA, hAdvStats, aAdvStats, prediction, hFatigued, aFatigued, firstLegScore) {
 
   // ── DONNÉES DE BASE ───────────────────────────────────
   const hRank = hStand?.rank  || 99;
@@ -390,7 +390,33 @@ function analyseMatchComplet(hStats, aStats, hStand, aStand, h2h, injuries, isEu
     if (pctAway >= 60 && pctHome <= 25) { aScore += 8; }
   }
 
-  // ── MALUS FATIGUE — match dans les 4 derniers jours ──
+  // ── IMPACT SCORE MATCH ALLER (matchs européens retour) ──
+  if (isEuropean && firstLegScore) {
+    const hGoalsAller = firstLegScore.hGoals; // buts marqués par l'équipe domicile au match aller
+    const aGoalsAller = firstLegScore.aGoals; // buts marqués par l'équipe extérieure au match aller
+    const diffAller = hGoalsAller - aGoalsAller; // positif = domicile menait à l'aller
+
+    // L'équipe qui menait à l'aller est dans une position favorable au retour
+    if (diffAller >= 3) {
+      // Ex: Bodo mène 3-0 → l'équipe extérieure (Bodo) est grandement favorisée
+      aScore += 35; hScore -= 20;
+      factors.push('F7');
+    } else if (diffAller >= 2) {
+      aScore += 22; hScore -= 12;
+      factors.push('F7');
+    } else if (diffAller >= 1) {
+      aScore += 10; hScore -= 5;
+    } else if (diffAller <= -2) {
+      // Domicile menait à l'aller de 2+ → position favorable
+      hScore += 18; aScore -= 10;
+      factors.push('F7');
+    } else if (diffAller <= -1) {
+      hScore += 8; aScore -= 5;
+    }
+    // diffAller = 0 → match aller nul → aucun avantage
+  }
+
+  // ── MALUS FATIGUE ────────────────────────────────────────
   // Equipe qui joue jeudi Europe + dimanche championnat = baisse de forme
   if (hFatigued) {
     hScore -= 15;
@@ -638,8 +664,33 @@ async function collectMatchData(fixture, leagueId, leagueName, standings) {
   const hFatigued = hasFatigue(hRecentFixtures);
   const aFatigued = hasFatigue(aRecentFixtures);
 
-  const hStand = standings.find(s => s.team?.id === hTeam.id);
-  const aStand = standings.find(s => s.team?.id === aTeam.id);
+  // Pour les matchs européens, récupérer le score du match aller
+  let firstLegScore = null;
+  if (isEuropean) {
+    const round = fixture.league?.round || '';
+    // Chercher le match aller entre les mêmes équipes dans cette compétition
+    const firstLegFixtures = await footballAPI('/fixtures', {
+      league: leagueId, season: SEASON,
+      team: hTeam.id, status: 'FT', last: 20,
+    });
+    // Trouver le match aller : même équipes, résultat connu, avant ce match
+    const firstLeg = firstLegFixtures.find(f => {
+      const isVsAway = (f.teams?.home?.id === aTeam.id && f.teams?.away?.id === hTeam.id) ||
+                       (f.teams?.home?.id === hTeam.id && f.teams?.away?.id === aTeam.id);
+      const isBefore = new Date(f.fixture?.date) < matchDate;
+      const isCompleted = f.fixture?.status?.short === 'FT';
+      return isVsAway && isBefore && isCompleted;
+    });
+
+    if (firstLeg) {
+      // Normaliser : hTeam = domicile du match retour
+      const hWasHome = firstLeg.teams?.home?.id === hTeam.id;
+      firstLegScore = {
+        hGoals: hWasHome ? (firstLeg.goals?.home || 0) : (firstLeg.goals?.away || 0),
+        aGoals: hWasHome ? (firstLeg.goals?.away || 0) : (firstLeg.goals?.home || 0),
+      };
+    }
+  }
 
   const hLineup = lineups.find(l => l.team?.id === hTeam.id);
   const aLineup = lineups.find(l => l.team?.id === aTeam.id);
@@ -651,7 +702,7 @@ async function collectMatchData(fixture, leagueId, leagueName, standings) {
     hStats, aStats, hStand, aStand, h2h, injuries, isEuropean,
     hPlayers, aPlayers, hStarters, aStarters,
     hAdvStats, aAdvStats, prediction,
-    hFatigued, aFatigued
+    hFatigued, aFatigued, firstLegScore
   );
 
   if (!analyse.alerte) return null; // match trop équilibré ou score trop bas
@@ -684,7 +735,11 @@ async function collectMatchData(fixture, leagueId, leagueName, standings) {
     ? `Prédiction API: ${hTeam.name} ${prediction.percent?.home||'?'} / Nul ${prediction.percent?.draw||'?'} / ${aTeam.name} ${prediction.percent?.away||'?'}`
     : '';
 
-  const context = `${hTeam.name} ${analyse.hRank}e (${analyse.hPts}pts, forme:${analyse.hForm}${hAdvStr ? ', ' + hAdvStr : ''}) vs ${aTeam.name} ${analyse.aRank}e (${analyse.aPts}pts, forme:${analyse.aForm}${aAdvStr ? ', ' + aAdvStr : ''}). H2H: ${h2hStr}. ${predStr} Blessés: ${blessesStr}`;
+  const firstLegStr = firstLegScore
+    ? `Match aller: ${hTeam.name} ${firstLegScore.hGoals}-${firstLegScore.aGoals} ${aTeam.name}.`
+    : '';
+
+  const context = `${hTeam.name} ${analyse.hRank}e (${analyse.hPts}pts, forme:${analyse.hForm}${hAdvStr ? ', ' + hAdvStr : ''}) vs ${aTeam.name} ${analyse.aRank}e (${analyse.aPts}pts, forme:${analyse.aForm}${aAdvStr ? ', ' + aAdvStr : ''}). ${firstLegStr} H2H: ${h2hStr}. ${predStr} Blessés: ${blessesStr}`;
 
   return {
     match: `${hTeam.name} vs ${aTeam.name}`,
@@ -884,6 +939,7 @@ app.get('/api/scan-tirs', async (req, res) => {
           : '?';
 
         // Récupérer stats avancées des deux équipes
+        const isEuro = EURO_LEAGUES.includes(leagueId);
         const [hAdv, aAdv] = await Promise.all([
           getAdvancedStatsCached(hTeam.id, leagueId),
           getAdvancedStatsCached(aTeam.id, leagueId),
@@ -891,20 +947,50 @@ app.get('/api/scan-tirs', async (req, res) => {
 
         if (!hAdv || !aAdv) continue;
 
-        // Tirs cadrés moyens combinés des deux équipes
+        // Score aller pour matchs européens
+        let firstLegDeficit = 0; // buts à remonter par l'équipe domicile
+        let firstLegContext = '';
+        if (isEuro) {
+          const matchDate = new Date(fixture.fixture?.date || Date.now());
+          const firstLegFixtures = await footballAPI('/fixtures', {
+            league: leagueId, season: SEASON, team: hTeam.id, status: 'FT', last: 10,
+          });
+          const firstLeg = firstLegFixtures.find(f => {
+            const isVsAway = (f.teams?.home?.id === aTeam.id && f.teams?.away?.id === hTeam.id) ||
+                             (f.teams?.home?.id === hTeam.id && f.teams?.away?.id === aTeam.id);
+            return isVsAway && new Date(f.fixture?.date) < matchDate && f.fixture?.status?.short === 'FT';
+          });
+          if (firstLeg) {
+            const hWasHome = firstLeg.teams?.home?.id === hTeam.id;
+            const hGoals = hWasHome ? (firstLeg.goals?.home||0) : (firstLeg.goals?.away||0);
+            const aGoals = hWasHome ? (firstLeg.goals?.away||0) : (firstLeg.goals?.home||0);
+            firstLegDeficit = aGoals - hGoals; // positif = domicile doit remonter
+            firstLegContext = `Match aller: ${hTeam.name} ${hGoals}-${aGoals} ${aTeam.name}`;
+          }
+        }
+
+        // Tirs cadrés moyens combinés
         const hShotsOn = hAdv.shotsOnTarget || 0;
         const aShotsOn = aAdv.shotsOnTarget || 0;
-        const totalMoyen = +(hShotsOn + aShotsOn).toFixed(1);
+        let totalMoyen = +(hShotsOn + aShotsOn).toFixed(1);
 
-        if (totalMoyen < 3) continue; // pas assez de données
+        // Bonus contexte retour — équipe qui doit remonter tire BEAUCOUP plus
+        let bonusContexte = '';
+        if (firstLegDeficit >= 3) {
+          totalMoyen = +(totalMoyen + 3.5).toFixed(1); // +3.5 tirs estimés
+          bonusContexte = ` (+3.5 bonus: doit remonter ${firstLegDeficit} buts)`;
+        } else if (firstLegDeficit === 2) {
+          totalMoyen = +(totalMoyen + 2.0).toFixed(1);
+          bonusContexte = ` (+2.0 bonus: doit remonter 2 buts)`;
+        } else if (firstLegDeficit === 1) {
+          totalMoyen = +(totalMoyen + 1.0).toFixed(1);
+          bonusContexte = ` (+1.0 bonus: doit remonter 1 but)`;
+        }
 
-        // Définir la ligne et le prono
-        // Arrondir à 0.5 près pour avoir une ligne bookmaker réaliste
+        if (totalMoyen < 3) continue;
+
         const ligne = Math.round(totalMoyen * 2) / 2;
 
-        // Fiabilité : plus l'équipe est régulière, plus c'est fiable
-        // On calcule l'écart-type approximatif (régularité)
-        // Si moyenne > 6 → over fiable, si < 4 → under fiable
         let prono = null;
         let fiabilite = 0;
         let coteEstimee = 0;
@@ -947,7 +1033,7 @@ app.get('/api/scan-tirs', async (req, res) => {
           h_tirs_cadres: hShotsOn,
           a_tirs_cadres: aShotsOn,
           total_moyen: totalMoyen,
-          raison: `${hTeam.name} moyenne ${hShotsOn} tirs cadrés/match, ${aTeam.name} ${aShotsOn}/match → total combiné moyen ${totalMoyen}`,
+          raison: `${hTeam.name} moy. ${hShotsOn} tirs/match, ${aTeam.name} ${aShotsOn}/match → total moyen ${totalMoyen}${bonusContexte}. ${firstLegContext}`,
         });
 
       } catch (e) { console.error('Erreur tirs match:', e.message); }
