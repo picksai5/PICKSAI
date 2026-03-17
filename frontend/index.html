@@ -233,19 +233,37 @@
     <!-- BANKROLL TIRS -->
     <div style="margin-top:16px">
       <div class="bankroll-hero" style="background:linear-gradient(135deg,#8b5cf611,var(--bg2));border:1px solid #8b5cf633;border-radius:14px;padding:16px;margin-bottom:12px">
-        <div class="bankroll-label">BANKROLL TIRS</div>
+        <div class="bankroll-label">BANKROLL TIRS CADRÉS</div>
         <div style="font-family:'Bebas Neue';font-size:42px;line-height:1" id="tirs-bankroll-amount">500€</div>
         <div style="font-size:12px;font-weight:700" id="tirs-bankroll-sub">0€ profit · 0 picks joués</div>
+        <div class="sparkline"><canvas id="tirs-sparkline" height="60"></canvas></div>
       </div>
       <div class="stat-grid-2" style="margin-bottom:12px">
         <div class="stat-box"><div class="stat-label">WIN RATE</div><div class="stat-value" id="tirs-wr">—</div></div>
         <div class="stat-box"><div class="stat-label">ROI</div><div class="stat-value" id="tirs-roi">—</div></div>
+        <div class="stat-box"><div class="stat-label">COTE MOYENNE</div><div class="stat-value" id="tirs-cote-moy" style="color:var(--accent)">—</div></div>
+        <div class="stat-box"><div class="stat-label">PICKS JOUÉS</div><div class="stat-value" id="tirs-total" style="color:var(--accent)">0</div></div>
       </div>
+    </div>
+
+    <!-- LAST SCAN TIRS -->
+    <div id="tirs-last-scan-badge" style="font-size:11px;color:var(--muted);margin-bottom:8px;text-align:center"></div>
+
+    <!-- COURBE ÉVOLUTIVE TIRS -->
+    <div id="tirs-curve-wrap" style="display:none;background:var(--bg2);border-radius:12px;padding:14px;margin-bottom:14px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <div style="font-family:'Bebas Neue';font-size:14px;letter-spacing:2px;color:var(--muted)">COURBE BANKROLL TIRS</div>
+        <div id="tirs-curve-stats" style="display:flex;gap:14px;font-size:11px"></div>
+      </div>
+      <canvas id="tirs-curve" height="100" style="width:100%"></canvas>
     </div>
 
     <!-- TRACK RECORD TIRS -->
     <div>
-      <div style="font-family:'Bebas Neue';font-size:16px;letter-spacing:3px;color:var(--muted);margin-bottom:10px">HISTORIQUE TIRS CADRÉS</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <div style="font-family:'Bebas Neue';font-size:16px;letter-spacing:3px;color:var(--muted)">HISTORIQUE TIRS CADRÉS</div>
+        <div id="tirs-track-cote-stat" style="font-size:11px;color:var(--muted)"></div>
+      </div>
       <div id="tirs-track-list">
         <div class="empty"><div class="empty-icon">🎯</div><div class="empty-title">AUCUN PICK TIRS</div><div class="empty-text">Lance un scan tirs pour analyser les matchs.</div></div>
       </div>
@@ -265,6 +283,7 @@
       <div class="stat-box"><div class="stat-label">ROI TOTAL</div><div class="stat-value" id="roi-total">0%</div></div>
       <div class="stat-box"><div class="stat-label">MEILLEUR GAIN</div><div class="stat-value" id="best-gain" style="color:var(--green)">—</div></div>
       <div class="stat-box"><div class="stat-label">PIRE PERTE</div><div class="stat-value" id="worst-loss" style="color:var(--red)">—</div></div>
+      <div class="stat-box"><div class="stat-label">COTE MOYENNE</div><div class="stat-value" id="cote-moyenne" style="color:var(--accent)">—</div></div>
     </div>
 
     <!-- DRAWDOWN STATUS -->
@@ -562,6 +581,10 @@ async function doScanTirs() {
         </div>`;
       });
       results.innerHTML = html;
+      // Sauvegarder le scan tirs en localStorage
+      try { localStorage.setItem('picksai_last_tirs_scan', JSON.stringify(data)); } catch {}
+      const badge = document.getElementById('tirs-last-scan-badge');
+      if (badge) badge.textContent = `✅ Scan du ${data.date} · ${new Date().toLocaleTimeString('fr-FR', {hour:'2-digit',minute:'2-digit'})}`;
     }
   } catch (e) {
     addLog(`❌ ${e.message}`, '#ef4444');
@@ -640,19 +663,158 @@ function renderTirsBankroll() {
   const totalMise = resolved.reduce((a, p) => a + p.mise, 0);
   const wr = resolved.length > 0 ? Math.round(won / resolved.length * 100) : null;
   const roi = totalMise > 0 ? Math.round(profit / totalMise * 100) : null;
+  const coteMoy = resolved.length > 0 ? (resolved.reduce((a, p) => a + p.cote, 0) / resolved.length).toFixed(2) : null;
 
   const amountEl = document.getElementById('tirs-bankroll-amount');
   const subEl = document.getElementById('tirs-bankroll-sub');
   const wrEl = document.getElementById('tirs-wr');
   const roiEl = document.getElementById('tirs-roi');
+  const coteMoyEl = document.getElementById('tirs-cote-moy');
+  const totalEl = document.getElementById('tirs-total');
 
   if (amountEl) {
     amountEl.textContent = tirsState.bankroll + '€';
     amountEl.style.color = tirsState.bankroll >= tirsState.capital_base ? '#10b981' : '#ef4444';
   }
   if (subEl) subEl.textContent = `${profit >= 0 ? '+' : ''}${profit}€ profit · ${resolved.length} picks`;
-  if (wrEl) { wrEl.textContent = wr !== null ? wr + '%' : '—'; wrEl.style.color = wr >= 60 ? '#10b981' : wr >= 50 ? '#f59e0b' : '#ef4444'; }
-  if (roiEl) { roiEl.textContent = roi !== null ? (roi >= 0 ? '+' : '') + roi + '%' : '—'; roiEl.style.color = roi >= 0 ? '#10b981' : '#ef4444'; }
+  if (wrEl) { wrEl.textContent = wr !== null ? wr + '%' : '—'; wrEl.style.color = wr === null ? 'var(--muted)' : wr >= 60 ? '#10b981' : wr >= 50 ? '#f59e0b' : '#ef4444'; }
+  if (roiEl) { roiEl.textContent = roi !== null ? (roi >= 0 ? '+' : '') + roi + '%' : '—'; roiEl.style.color = roi === null ? 'var(--muted)' : roi >= 0 ? '#10b981' : '#ef4444'; }
+  if (coteMoyEl) coteMoyEl.textContent = coteMoy ? '×' + coteMoy : '—';
+  if (totalEl) totalEl.textContent = tirsState.picks.length;
+
+  drawTirsSparkline();
+  drawTirsCurve();
+}
+
+function drawTirsSparkline() {
+  const canvas = document.getElementById('tirs-sparkline');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  canvas.width = canvas.offsetWidth || 300;
+  canvas.height = 60;
+  const picks = [...tirsState.picks].filter(p => !p.pending).reverse();
+  if (picks.length < 2) return;
+  let b = tirsState.bankroll - picks.reduce((a, p) => a + (p.gain || 0), 0);
+  const values = [b];
+  picks.forEach(p => { b += (p.gain || 0); values.push(b); });
+  const W = canvas.width, H = canvas.height;
+  const min = Math.min(...values) - 10;
+  const max = Math.max(...values) + 10;
+  const range = max - min || 1;
+  ctx.clearRect(0, 0, W, H);
+  ctx.strokeStyle = '#8b5cf6';
+  ctx.lineWidth = 2;
+  ctx.lineJoin = 'round';
+  ctx.beginPath();
+  values.forEach((v, i) => {
+    const x = (i / (values.length - 1)) * W;
+    const y = H - ((v - min) / range) * (H - 8) - 4;
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+}
+
+function drawTirsCurve() {
+  const wrap = document.getElementById('tirs-curve-wrap');
+  const canvas = document.getElementById('tirs-curve');
+  const statsEl = document.getElementById('tirs-curve-stats');
+  if (!wrap || !canvas) return;
+
+  const resolved = [...tirsState.picks].filter(p => !p.pending).reverse();
+  if (resolved.length < 2) { wrap.style.display = 'none'; return; }
+
+  wrap.style.display = 'block';
+  canvas.width = canvas.offsetWidth || 340;
+  canvas.height = 100;
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+
+  // Calculer courbe bankroll
+  let b = tirsState.bankroll - resolved.reduce((a, p) => a + (p.gain || 0), 0);
+  const values = [b];
+  resolved.forEach(p => { b += (p.gain || 0); values.push(b); });
+
+  const min = Math.min(...values) - 5;
+  const max = Math.max(...values) + 5;
+  const range = max - min || 1;
+
+  ctx.clearRect(0, 0, W, H);
+
+  // Zone de remplissage sous la courbe
+  const gradient = ctx.createLinearGradient(0, 0, 0, H);
+  gradient.addColorStop(0, 'rgba(139,92,246,0.25)');
+  gradient.addColorStop(1, 'rgba(139,92,246,0.02)');
+
+  ctx.beginPath();
+  values.forEach((v, i) => {
+    const x = (i / (values.length - 1)) * W;
+    const y = H - ((v - min) / range) * (H - 12) - 6;
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  });
+  ctx.lineTo(W, H); ctx.lineTo(0, H); ctx.closePath();
+  ctx.fillStyle = gradient; ctx.fill();
+
+  // Ligne principale
+  ctx.beginPath();
+  ctx.strokeStyle = '#8b5cf6'; ctx.lineWidth = 2; ctx.lineJoin = 'round';
+  values.forEach((v, i) => {
+    const x = (i / (values.length - 1)) * W;
+    const y = H - ((v - min) / range) * (H - 12) - 6;
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+
+  // Points ✅/❌ sur la courbe
+  resolved.forEach((p, i) => {
+    const x = ((i + 1) / (values.length - 1)) * W;
+    const y = H - ((values[i + 1] - min) / range) * (H - 12) - 6;
+    ctx.beginPath();
+    ctx.arc(x, y, 4, 0, Math.PI * 2);
+    ctx.fillStyle = p.won ? '#10b981' : '#ef4444';
+    ctx.fill();
+  });
+
+  // Stats au-dessus de la courbe
+  const coteMoy = resolved.length > 0
+    ? (resolved.reduce((a, p) => a + p.cote, 0) / resolved.length).toFixed(2)
+    : null;
+  const won = resolved.filter(p => p.won).length;
+  const profit = resolved.reduce((a, p) => a + (p.gain || 0), 0);
+
+  statsEl.innerHTML = `
+    <span style="color:#8b5cf6;font-weight:500">${won}W / ${resolved.length - won}L</span>
+    <span style="color:${profit >= 0 ? '#10b981' : '#ef4444'};font-weight:500">${profit >= 0 ? '+' : ''}${profit}€</span>
+    ${coteMoy ? `<span style="color:var(--muted)">Cote moy. <strong style="color:var(--text)">×${coteMoy}</strong></span>` : ''}
+  `;
+}
+
+function restoreTirsScan() {
+  try {
+    const data = JSON.parse(localStorage.getItem('picksai_last_tirs_scan') || '{}');
+    if (!data.picks || data.picks.length === 0) return;
+    const results = document.getElementById('tirs-results');
+    let html = '';
+    data.picks.forEach(pick => {
+      const ac = pick.alerte === 'VERT' ? '#10b981' : pick.alerte === 'ORANGE' ? '#f59e0b' : '#ef4444';
+      html += `<div class="pick-card" style="border:2px solid ${ac}44;background:linear-gradient(135deg,${ac}08,var(--bg2));margin-bottom:10px">
+        <div style="font-family:'Bebas Neue';font-size:11px;letter-spacing:2px;color:${ac};margin-bottom:6px">${pick.alerte} · ${pick.fiabilite}% fiabilité</div>
+        <div class="pick-header">
+          <div>
+            <div class="pick-comp">${pick.competition} · ${pick.heure}</div>
+            <div class="pick-teams">${pick.domicile} <span>vs</span> ${pick.exterieur}</div>
+          </div>
+          <div class="pick-score"><div style="font-family:'Bebas Neue';font-size:28px;color:${ac}">${pick.fiabilite}%</div></div>
+        </div>
+        <div style="background:${ac}11;border:1px solid ${ac}33;border-radius:10px;padding:12px;margin:8px 0">
+          <div style="font-family:'Bebas Neue';font-size:14px;color:${ac};margin-bottom:4px">🎯 ${pick.prono.toUpperCase()}</div>
+          <div style="font-size:12px;color:var(--muted)">${pick.raison}</div>
+          <div style="margin-top:4px;font-size:12px;color:var(--text)">Cote estimée : <strong>×${pick.cote_estimee}</strong></div>
+        </div>
+        <button class="btn btn-small" style="border-color:#8b5cf655;color:#8b5cf6" onclick="addTirsPick(${JSON.stringify(pick).replace(/"/g,'&quot;')})">🎯 + TRACK TIRS</button>
+      </div>`;
+    });
+    results.innerHTML = html;
+  } catch {}
 }
 
 function renderTirsTrack() {
@@ -664,6 +826,15 @@ function renderTirsTrack() {
     list.innerHTML = '<div class="empty"><div class="empty-icon">🎯</div><div class="empty-title">AUCUN PICK TIRS</div></div>';
     return;
   }
+
+  // Stat cote moyenne dans l'en-tête
+  const resolvedForStat = tirsState.picks.filter(p => !p.pending);
+  const coteMoyStatEl = document.getElementById('tirs-track-cote-stat');
+  if (coteMoyStatEl && resolvedForStat.length > 0) {
+    const cm = (resolvedForStat.reduce((a,p) => a + p.cote, 0) / resolvedForStat.length).toFixed(2);
+    const wr = Math.round(resolvedForStat.filter(p => p.won).length / resolvedForStat.length * 100);
+    coteMoyStatEl.innerHTML = `WR <strong style="color:${wr>=60?'#10b981':wr>=50?'#f59e0b':'#ef4444'}">${wr}%</strong> · Cote moy. <strong style="color:#8b5cf6">×${cm}</strong>`;
+  } else if (coteMoyStatEl) { coteMoyStatEl.innerHTML = ''; }
 
   list.innerHTML = tirsState.picks.map(p => {
     const isPending = p.pending === true;
@@ -690,7 +861,7 @@ function renderTirsTrack() {
         </div>
         <div style="text-align:right;flex-shrink:0;margin-left:14px">
           ${gainDisplay}
-          <div style="font-size:11px;color:var(--muted)">Mise: ${p.mise}€ · ×${p.cote}</div>
+          <div style="font-size:11px;color:var(--muted)">Mise: ${p.mise}€ · <span style="color:#8b5cf6;font-weight:500">×${p.cote}</span></div>
           <div style="font-size:10px;color:var(--muted)">${new Date(p.date).toLocaleDateString('fr-FR')}</div>
           <button onclick="deleteTirsPick(${p.id})" style="margin-top:6px;padding:3px 8px;background:transparent;border:1px solid #ef444444;color:#ef4444;border-radius:4px;cursor:pointer;font-size:10px">🗑</button>
         </div>
@@ -1157,10 +1328,16 @@ function renderBankroll() {
   document.getElementById('roi-total').textContent = (roi >= 0 ? '+' : '') + roi + '%';
   document.getElementById('roi-total').style.color = roi >= 0 ? 'var(--green)' : 'var(--red)';
 
+  // Cote moyenne
+  const resolved = picks.filter(p => !p.pending && p.cote);
+  const coteMoy = resolved.length > 0 ? (resolved.reduce((a, p) => a + p.cote, 0) / resolved.length).toFixed(2) : null;
+  const coteMoyEl = document.getElementById('cote-moyenne');
+  if (coteMoyEl) { coteMoyEl.textContent = coteMoy ? '×' + coteMoy : '—'; }
+
   // Best/worst
   if (picks.length > 0) {
-    document.getElementById('best-gain').textContent = '+' + Math.max(...picks.map(p => p.gain)) + '€';
-    document.getElementById('worst-loss').textContent = Math.min(...picks.map(p => p.gain)) + '€';
+    document.getElementById('best-gain').textContent = '+' + Math.max(...picks.map(p => p.gain || 0)) + '€';
+    document.getElementById('worst-loss').textContent = Math.min(...picks.map(p => p.gain || 0)) + '€';
   }
 
   // Drawdown status
@@ -1618,6 +1795,16 @@ function renderBacktestResults(data) {
 loadState();
 loadTirsState();
 renderMatrix();
+
+// Restaurer le dernier scan tirs si dispo
+const _lastTirsScan = localStorage.getItem('picksai_last_tirs_scan');
+if (_lastTirsScan) {
+  try {
+    const _tirsBadge = document.getElementById('tirs-last-scan-badge');
+    const _tirsData = JSON.parse(_lastTirsScan);
+    if (_tirsBadge) _tirsBadge.innerHTML = `🕐 Dernier scan : ${_tirsData.date} <span style="color:#60a5fa;cursor:pointer" onclick="restoreTirsScan()">— Voir les picks</span>`;
+  } catch {}
+}
 </script>
 </body>
 </html>
