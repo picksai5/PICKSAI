@@ -14,7 +14,12 @@ const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const FOOTBALL_API_KEY = process.env.FOOTBALL_API_KEY;
 const FOOTBALL_API_BASE = 'https://v3.football.api-sports.io';
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-const SEASON = 2025;
+// Saison dynamique : commence en août (mois >= 7)
+function getCurrentSeason() {
+  const now = new Date();
+  return now.getMonth() >= 7 ? now.getFullYear() : now.getFullYear() - 1;
+}
+const SEASON = getCurrentSeason();
 
 // ── COMPARAISON SOUPLE DES NOMS JOUEURS ──────────────────
 // Gère les variations : "A. Garnacho" vs "Alejandro Garnacho"
@@ -105,7 +110,7 @@ async function getPlayersCached(teamId, leagueId) {
 // Récupère les stats avancées des 5 derniers matchs d'une équipe
 // Retourne moyennes : possession, tirs cadrés, tirs totaux, attaques dangereuses
 async function getAdvancedStatsCached(teamId, leagueId) {
-  const k = `adv_${teamId}_${leagueId}`;
+  const k = `adv_${teamId}`; // toutes compétitions, pas par league
   if (isCacheValid(cache.fixtureStats[k])) return cache.fixtureStats[k].data;
 
   // Récupérer les 10 derniers matchs joués (toutes compétitions)
@@ -381,13 +386,14 @@ function analyseMatchComplet(hStats, aStats, hStand, aStand, h2h, injuries, isEu
     const pctHome = parseFloat(prediction.percent?.home?.replace('%','')) || 0;
     const pctAway = parseFloat(prediction.percent?.away?.replace('%','')) || 0;
     // Bonus si la prédiction API confirme notre analyse
-    if (pctHome >= 65)      { hScore += 10; factors.push('F8'); }
-    else if (pctHome >= 55) { hScore += 5; }
-    if (pctAway >= 65)      { aScore += 10; factors.push('F8'); }
-    else if (pctAway >= 55) { aScore += 5; }
-    // Si la prédiction contredit fortement notre analyse → signal de prudence
-    if (pctHome >= 60 && pctAway <= 25) { hScore += 8; }
-    if (pctAway >= 60 && pctHome <= 25) { aScore += 8; }
+    // Bonus réduit pour éviter double comptage avec F1/F3/F4 (classement/points/forme)
+    if (pctHome >= 65)      { hScore += 6; factors.push('F8'); }
+    else if (pctHome >= 55) { hScore += 3; }
+    if (pctAway >= 65)      { aScore += 6; factors.push('F8'); }
+    else if (pctAway >= 55) { aScore += 3; }
+    // Confirmation forte : prédiction et notre analyse convergent
+    if (pctHome >= 60 && pctAway <= 25) { hScore += 5; }
+    if (pctAway >= 60 && pctHome <= 25) { aScore += 5; }
   }
 
   // ── IMPACT SCORE MATCH ALLER (matchs européens retour) ──
@@ -1059,7 +1065,7 @@ app.get('/api/scan-tirs', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-app.get('/api/health', (req, res) => res.json({ status: 'ok', name: 'PicksAI', version: '3.0' }));
+app.get('/api/health', (req, res) => res.json({ status: 'ok', name: 'PicksAI', version: '4.1', season: SEASON }));
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, '../frontend/index.html')));
 
 const PORT = process.env.PORT || 3000;
