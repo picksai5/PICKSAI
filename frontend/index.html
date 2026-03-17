@@ -350,11 +350,22 @@
       <button id="tf-rouge" onclick="setTrackFilter('ROUGE')" style="flex:1;padding:8px;border-radius:6px;border:1px solid #ef444455;background:transparent;color:#ef4444;font-family:'Bebas Neue';font-size:13px;cursor:pointer">🔴 ROUGE</button>
     </div>
     <!-- Stats dynamiques selon filtre -->
-    <div class="stat-grid" style="margin-bottom:14px">
+    <div class="stat-grid" style="margin-bottom:10px">
       <div class="stat-box"><div class="stat-label">TOTAL PICKS</div><div class="stat-value" id="total-picks" style="color:var(--accent)">0</div></div>
       <div class="stat-box"><div class="stat-label">WIN RATE</div><div class="stat-value" id="track-winrate">0%</div></div>
+      <div class="stat-box"><div class="stat-label">COTE MOYENNE</div><div class="stat-value" id="track-cote-moy" style="color:var(--accent)">—</div></div>
       <div class="stat-box"><div class="stat-label">STREAK</div><div class="stat-value" id="track-streak">—</div></div>
     </div>
+
+    <!-- Courbe évolutive bankroll -->
+    <div id="track-curve-wrap" style="display:none;background:var(--bg2);border-radius:12px;padding:14px;margin-bottom:14px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <div style="font-family:'Bebas Neue';font-size:14px;letter-spacing:2px;color:var(--muted)">COURBE BANKROLL</div>
+        <div id="track-curve-stats" style="display:flex;gap:14px;font-size:11px"></div>
+      </div>
+      <canvas id="track-curve" height="100" style="width:100%"></canvas>
+    </div>
+
     <div id="track-list">
       <div class="empty">
         <div class="empty-icon">📋</div>
@@ -1516,7 +1527,7 @@ function renderPicksList(picks) {
           </div>
           <div style="text-align:right;flex-shrink:0;margin-left:14px">
             ${gainDisplay}
-            <div class="track-mise">Mise: ${p.mise}€ · ×${p.cote}</div>
+            <div class="track-mise">Mise: ${p.mise}€ · <span style="color:var(--accent);font-weight:500">×${p.cote}</span></div>
             <div class="track-date">${new Date(p.date).toLocaleDateString('fr-FR')}</div>
             <div style="display:flex;gap:6px;margin-top:6px;justify-content:flex-end">
               <button onclick="openEditModal(${p.id})" style="padding:3px 8px;background:transparent;border:1px solid #3b82f644;color:#3b82f6;border-radius:4px;cursor:pointer;font-size:10px" onmouseover="this.style.background='#3b82f622'" onmouseout="this.style.background='transparent'">✏️ Modifier</button>
@@ -1526,6 +1537,92 @@ function renderPicksList(picks) {
         </div>
       </div>`;
   }).join('');
+}
+
+function drawTrackCurve(picks) {
+  const wrap = document.getElementById('track-curve-wrap');
+  const canvas = document.getElementById('track-curve');
+  const statsEl = document.getElementById('track-curve-stats');
+  if (!wrap || !canvas) return;
+
+  const resolved = [...picks].filter(p => !p.pending).reverse();
+  if (resolved.length < 2) { wrap.style.display = 'none'; return; }
+
+  wrap.style.display = 'block';
+  canvas.width = canvas.offsetWidth || 340;
+  canvas.height = 100;
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+
+  // Calculer courbe bankroll
+  const totalProfit = resolved.reduce((a, p) => a + p.gain, 0);
+  let b = state.bankroll - totalProfit;
+  const values = [b];
+  resolved.forEach(p => { b += p.gain; values.push(b); });
+
+  const min = Math.min(...values) - 5;
+  const max = Math.max(...values) + 5;
+  const range = max - min || 1;
+
+  ctx.clearRect(0, 0, W, H);
+
+  // Couleur selon performance globale
+  const isPositive = values[values.length - 1] >= values[0];
+  const lineColor = isPositive ? '#10b981' : '#ef4444';
+  const fillColor = isPositive ? 'rgba(16,185,129,' : 'rgba(239,68,68,';
+
+  // Zone de remplissage
+  const gradient = ctx.createLinearGradient(0, 0, 0, H);
+  gradient.addColorStop(0, fillColor + '0.25)');
+  gradient.addColorStop(1, fillColor + '0.02)');
+
+  ctx.beginPath();
+  values.forEach((v, i) => {
+    const x = (i / (values.length - 1)) * W;
+    const y = H - ((v - min) / range) * (H - 12) - 6;
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  });
+  ctx.lineTo(W, H); ctx.lineTo(0, H); ctx.closePath();
+  ctx.fillStyle = gradient; ctx.fill();
+
+  // Ligne principale
+  ctx.beginPath();
+  ctx.strokeStyle = lineColor; ctx.lineWidth = 2; ctx.lineJoin = 'round';
+  values.forEach((v, i) => {
+    const x = (i / (values.length - 1)) * W;
+    const y = H - ((v - min) / range) * (H - 12) - 6;
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+
+  // Points ✅/❌ par couleur d'alerte
+  resolved.forEach((p, i) => {
+    const x = ((i + 1) / (values.length - 1)) * W;
+    const y = H - ((values[i + 1] - min) / range) * (H - 12) - 6;
+    const dotColor = p.alerte === 'VERT' ? '#10b981' : p.alerte === 'ORANGE' ? '#f59e0b' : '#ef4444';
+    ctx.beginPath();
+    ctx.arc(x, y, p.won ? 4 : 3, 0, Math.PI * 2);
+    ctx.fillStyle = p.won ? dotColor : '#ef4444';
+    ctx.fill();
+    if (!p.won) {
+      ctx.beginPath();
+      ctx.arc(x, y, 3, 0, Math.PI * 2);
+      ctx.strokeStyle = dotColor; ctx.lineWidth = 1; ctx.stroke();
+    }
+  });
+
+  // Stats résumées
+  const coteMoy = resolved.length > 0
+    ? (resolved.reduce((a, p) => a + p.cote, 0) / resolved.length).toFixed(2)
+    : null;
+  const won = resolved.filter(p => p.won).length;
+  const profit = resolved.reduce((a, p) => a + p.gain, 0);
+
+  statsEl.innerHTML = `
+    <span style="color:${lineColor};font-weight:500">${won}W / ${resolved.length - won}L</span>
+    <span style="color:${profit >= 0 ? '#10b981' : '#ef4444'};font-weight:500">${profit >= 0 ? '+' : ''}${profit}€</span>
+    ${coteMoy ? `<span style="color:var(--muted)">Cote moy. <strong style="color:var(--text)">×${coteMoy}</strong></span>` : ''}
+  `;
 }
 
 function renderTrack() {
@@ -1539,6 +1636,17 @@ function renderTrack() {
   document.getElementById('total-picks').textContent = total;
   document.getElementById('track-winrate').textContent = wr + '%';
   document.getElementById('track-winrate').style.color = wrColor;
+
+  // Cote moyenne sur la vue filtrée
+  const resolvedFiltered = filtered.filter(p => !p.pending);
+  const coteMoyTrack = resolvedFiltered.length > 0
+    ? '×' + (resolvedFiltered.reduce((a, p) => a + p.cote, 0) / resolvedFiltered.length).toFixed(2)
+    : '—';
+  const coteMoyEl = document.getElementById('track-cote-moy');
+  if (coteMoyEl) coteMoyEl.textContent = coteMoyTrack;
+
+  // Courbe évolutive
+  drawTrackCurve(filtered);
 
   // Streak sur vue filtrée
   let streak = 0;
