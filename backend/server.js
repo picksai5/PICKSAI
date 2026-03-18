@@ -964,7 +964,10 @@ app.get('/api/scan-tirs', async (req, res) => {
           getAdvancedStatsCached(aTeam.id, leagueId),
         ]);
 
-        if (!hAdv || !aAdv) continue;
+        if (!hAdv || !aAdv) {
+          console.log(`[TIRS] Skip ${hTeam.name} vs ${aTeam.name} — stats manquantes (h:${!!hAdv} a:${!!aAdv})`);
+          continue;
+        }
 
         // Score aller pour matchs européens
         let firstLegDeficit = 0; // buts à remonter par l'équipe domicile
@@ -991,7 +994,10 @@ app.get('/api/scan-tirs', async (req, res) => {
         // Tirs cadrés moyens combinés
         const hShotsOn = hAdv.shotsOnTarget || 0;
         const aShotsOn = aAdv.shotsOnTarget || 0;
+        const hShotsTotal = hAdv.shotsTotal || 0;
+        const aShotsTotal = aAdv.shotsTotal || 0;
         let totalMoyen = +(hShotsOn + aShotsOn).toFixed(1);
+        let totalMoyenShots = +(hShotsTotal + aShotsTotal).toFixed(1);
 
         // Régularité combinée des deux équipes (écart-type moyen)
         const hStdDev = hAdv.stdDev || 2.0;
@@ -1005,16 +1011,22 @@ app.get('/api/scan-tirs', async (req, res) => {
         let bonusContexte = '';
         if (firstLegDeficit >= 3) {
           totalMoyen = +(totalMoyen + 2.0).toFixed(1);
-          bonusContexte = ` (+2.0 retour: doit remonter ${firstLegDeficit} buts)`;
+          totalMoyenShots = +(totalMoyenShots + 5.0).toFixed(1); // plus de tirs totaux car équipe ouvre le jeu
+          bonusContexte = ` (+2.0 cadrés / +5.0 totaux retour: doit remonter ${firstLegDeficit} buts)`;
         } else if (firstLegDeficit === 2) {
           totalMoyen = +(totalMoyen + 1.0).toFixed(1);
-          bonusContexte = ` (+1.0 retour: doit remonter 2 buts)`;
+          totalMoyenShots = +(totalMoyenShots + 3.0).toFixed(1);
+          bonusContexte = ` (+1.0 cadrés / +3.0 totaux retour: doit remonter 2 buts)`;
         } else if (firstLegDeficit === 1) {
           totalMoyen = +(totalMoyen + 0.5).toFixed(1);
-          bonusContexte = ` (+0.5 retour: doit remonter 1 but)`;
+          totalMoyenShots = +(totalMoyenShots + 1.5).toFixed(1);
+          bonusContexte = ` (+0.5 cadrés / +1.5 totaux retour: doit remonter 1 but)`;
         }
 
-        if (totalMoyen < 3) continue;
+        if (totalMoyen < 3) {
+          console.log(`[TIRS] Skip ${hTeam.name} vs ${aTeam.name} — totalMoyen trop bas: ${totalMoyen}`);
+          continue;
+        }
 
         // L'app fournit l'estimation brute + tendance
         // L'utilisateur choisit lui-même la ligne chez son bookmaker
@@ -1050,7 +1062,10 @@ app.get('/api/scan-tirs', async (req, res) => {
         const prono = `Estimation ${totalMoyen} tirs — tendance ${tendance}`;
         const coteEstimee = tendance === 'OVER' ? (totalMoyen >= 7 ? 1.60 : 1.75) : 1.75;
 
-        if (fiabilite < 60) continue;
+        if (fiabilite < 60) {
+          console.log(`[TIRS] Skip ${hTeam.name} vs ${aTeam.name} — fiabilité trop basse: ${fiabilite}% (moy:${totalMoyen}, stdDev:${combinedStdDev})`);
+          continue;
+        }
 
         // Niveau de confiance
         let alerte = null;
@@ -1074,8 +1089,11 @@ app.get('/api/scan-tirs', async (req, res) => {
           regularite: regulariteLabel,
           h_tirs_cadres: hShotsOn,
           a_tirs_cadres: aShotsOn,
+          h_tirs_totaux: hShotsTotal,
+          a_tirs_totaux: aShotsTotal,
           total_moyen: totalMoyen,
-          raison: `${hTeam.name} ${hShotsOn} tirs/match (σ${hStdDev}) · ${aTeam.name} ${aShotsOn}/match (σ${aStdDev})${bonusContexte} · Régularité ${regulariteLabel}${firstLegContext ? ' · ' + firstLegContext : ''}`,
+          estimation_totaux: totalMoyenShots,
+          raison: `${hTeam.name} ${hShotsOn} cadrés / ${hShotsTotal} totaux · ${aTeam.name} ${aShotsOn} cadrés / ${aShotsTotal} totaux${bonusContexte} · Régularité ${regulariteLabel}${firstLegContext ? ' · ' + firstLegContext : ''}`,
         });
 
       } catch (e) { console.error('Erreur tirs match:', e.message); }
