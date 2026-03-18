@@ -113,74 +113,50 @@ async function getAdvancedStatsCached(teamId, leagueId) {
   const k = `adv_${teamId}`; // toutes compétitions, pas par league
   if (isCacheValid(cache.fixtureStats[k])) return cache.fixtureStats[k].data;
 
-  // Récupérer les 10 derniers matchs joués (toutes compétitions, sans filtre saison)
-  // Sans season= pour inclure les équipes de toutes ligues (Turquie, Turquie etc.)
-  const lastFixtures = await footballAPI('/fixtures', {
-    team: teamId, last: 10, status: 'FT',
+  // Utiliser /teams/statistics — stats agrégées de la saison, bien plus fiable
+  // que /fixtures/statistics qui ne retourne rien pour beaucoup de matchs
+  const teamStats = await footballAPI('/teams/statistics', {
+    team: teamId, season: SEASON,
   });
 
-  if (!lastFixtures || lastFixtures.length === 0) {
-    console.log(`[ADV] Aucun fixture trouvé pour team ${teamId}`);
+  // Chercher aussi saison précédente si pas de données
+  let ts = teamStats;
+  if (!ts?.statistics?.shots?.on?.total) {
+    const prev = await footballAPI('/teams/statistics', { team: teamId, season: SEASON - 1 });
+    if (prev?.statistics?.shots?.on?.total) ts = prev;
+  }
+
+  if (!ts || !ts.statistics) {
+    console.log(`[ADV] Team ${teamId} — aucune stat disponible`);
     cache.fixtureStats[k] = { data: null, timestamp: Date.now() };
     return null;
   }
 
-  console.log(`[ADV] Team ${teamId} — ${lastFixtures.length} fixtures trouvés`);
+  const played = ts.fixtures?.played?.total || 1;
+  const shotsOnTotal = ts.statistics?.shots?.on?.total || 0;
+  const shotsTotalVal = ts.statistics?.shots?.total?.total || 0;
+  const possession = parseFloat(ts.statistics?.fixtures?.wins?.total) || 0; // fallback
 
-  // Récupérer les stats de chaque match
-  const statsPerMatch = await Promise.all(
-    lastFixtures.slice(0, 10).map(f => footballAPI('/fixtures/statistics', { fixture: f.fixture?.id }))
-  );
+  // Possession via ballPossession si dispo
+  const possVal = ts.statistics?.ballPossession
+    ? parseFloat(ts.statistics.ballPossession) || 50
+    : 50;
 
-  // Calculer les moyennes + tableau valeurs individuelles pour variance
-  let totalPossession = 0, totalShotsOn = 0, totalShotsTotal = 0, totalDangerous = 0;
-  const shotsOnList = [];
-  let count = 0;
+  const avgShotsOn = +(shotsOnTotal / played).toFixed(1);
+  const avgShotsTotal = +(shotsTotalVal / played).toFixed(1);
 
-  for (const matchStats of statsPerMatch) {
-    const teamStats = matchStats.find(s => s.team?.id === teamId);
-    if (!teamStats) {
-      console.log(`[ADV] Team ${teamId} — pas de stats dans ce match`);
-      continue;
-    }
+  // Pas d'écart-type possible avec stats agrégées → estimation selon le ratio
+  const stdDev = avgShotsOn > 5 ? 1.8 : avgShotsOn > 3 ? 2.2 : 2.5;
 
-    const stats = teamStats.statistics || [];
-    const getStat = (type) => {
-      const s = stats.find(x => x.type === type);
-      if (!s?.value) return 0;
-      if (typeof s.value === 'string' && s.value.includes('%')) return parseFloat(s.value) || 0;
-      return parseFloat(s.value) || 0;
-    };
-
-    const shotsOn = getStat('Shots on Goal');
-    totalPossession  += getStat('Ball Possession');
-    totalShotsOn     += shotsOn;
-    totalShotsTotal  += getStat('Total Shots');
-    totalDangerous   += getStat('Dangerous Attacks');
-    shotsOnList.push(shotsOn);
-    count++;
-  }
-
-  if (count === 0) {
-    console.log(`[ADV] Team ${teamId} — count=0, stats impossibles à calculer`);
-    cache.fixtureStats[k] = { data: null, timestamp: Date.now() };
-    return null;
-  }
-
-  console.log(`[ADV] Team ${teamId} — stats OK sur ${count} matchs (tirs cadrés moy: ${+(totalShotsOn/count).toFixed(1)})`);
-
-  const avgShotsOn = totalShotsOn / count;
-  // Écart-type des tirs cadrés = mesure de régularité
-  const variance = shotsOnList.reduce((a, v) => a + Math.pow(v - avgShotsOn, 2), 0) / count;
-  const stdDev = +Math.sqrt(variance).toFixed(2);
+  console.log(`[ADV] Team ${teamId} — OK: ${avgShotsOn} cadrés/match, ${avgShotsTotal} totaux/match sur ${played} matchs`);
 
   const data = {
-    possession:       Math.round(totalPossession  / count),
-    shotsOnTarget:    +avgShotsOn.toFixed(1),
-    shotsTotal:       +(totalShotsTotal  / count).toFixed(1),
-    dangerousAttacks: +(totalDangerous   / count).toFixed(1),
-    shotsOnList,      // valeurs individuelles
-    stdDev,           // écart-type tirs cadrés (régularité)
+    possession:       possVal,
+    shotsOnTarget:    avgShotsOn,
+    shotsTotal:       avgShotsTotal,
+    dangerousAttacks: 0,
+    shotsOnList:      [],
+    stdDev,
   };
 
   cache.fixtureStats[k] = { data, timestamp: Date.now() };
@@ -1090,7 +1066,6 @@ app.get('/api/scan-tirs', async (req, res) => {
           domicile: hTeam.name,
           exterieur: aTeam.name,
           prono,
-          ligne,
           fiabilite,
           alerte,
           cote_estimee: coteEstimee,
