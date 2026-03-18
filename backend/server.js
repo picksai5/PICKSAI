@@ -174,7 +174,7 @@ async function getAdvancedStatsCached(teamId, leagueId) {
   console.log(`[ADV] Team ${teamId} — OK: ${avgShotsOn} cadrés/match, ${avgShotsTotal} totaux/match sur ${count} matchs`);
 
   const data = {
-    possession:       possVal,
+    possession:       avgPossession,
     shotsOnTarget:    avgShotsOn,
     shotsTotal:       avgShotsTotal,
     dangerousAttacks: 0,
