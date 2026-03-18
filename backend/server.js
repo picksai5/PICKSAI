@@ -113,10 +113,10 @@ async function getAdvancedStatsCached(teamId, leagueId) {
   const k = `adv_${teamId}`; // toutes compétitions, pas par league
   if (isCacheValid(cache.fixtureStats[k])) return cache.fixtureStats[k].data;
 
-  // Récupérer les 10 derniers matchs joués (toutes compétitions)
-  // Plus représentatif que seulement en championnat
+  // Récupérer les 10 derniers matchs joués (toutes compétitions, sans filtre saison)
+  // Sans season= pour inclure les équipes de toutes ligues (Turquie, Turquie etc.)
   const lastFixtures = await footballAPI('/fixtures', {
-    team: teamId, season: SEASON, last: 10, status: 'FT',
+    team: teamId, last: 10, status: 'FT',
   });
 
   if (!lastFixtures || lastFixtures.length === 0) {
