@@ -1035,27 +1035,28 @@ app.get('/api/scan-tirs', async (req, res) => {
 
         if (totalMoyen >= 7) {
           tendance = 'OVER';
-          fiabilite = Math.min(92, Math.round(62 + (totalMoyen - 7) * 4 + (isRegular ? 5 : 0)));
+          fiabilite = Math.min(92, Math.round(65 + (totalMoyen - 7) * 4 + (isRegular ? 4 : 0)));
         } else if (totalMoyen >= 5.5) {
           tendance = 'OVER';
-          fiabilite = Math.min(84, Math.round(56 + (totalMoyen - 5.5) * 5 + (isRegular ? 4 : isIrregular ? -5 : 0)));
+          fiabilite = Math.min(84, Math.round(60 + (totalMoyen - 5.5) * 4 + (isRegular ? 3 : 0)));
         } else if (totalMoyen >= 4.5) {
           if (isRegular) {
-            tendance = 'UNDER'; // régulier + moyenne basse → Under fiable
-            fiabilite = Math.min(82, Math.round(60 + (5.0 - totalMoyen) * 5));
+            tendance = 'UNDER';
+            fiabilite = Math.min(80, Math.round(62 + (5.0 - totalMoyen) * 4));
           } else {
             tendance = 'OVER';
-            fiabilite = Math.min(68, Math.round(48 + (totalMoyen - 4.5) * 4));
+            fiabilite = Math.min(72, Math.round(58 + (totalMoyen - 4.5) * 4));
           }
         } else if (totalMoyen >= 3.5) {
           tendance = 'UNDER';
-          fiabilite = Math.min(85, Math.round(58 + (4.5 - totalMoyen) * 7 + (isRegular ? 6 : isIrregular ? -4 : 0)));
+          fiabilite = Math.min(84, Math.round(62 + (4.5 - totalMoyen) * 6 + (isRegular ? 4 : 0)));
         } else {
           tendance = 'UNDER';
-          fiabilite = Math.min(90, Math.round(65 + (3.5 - totalMoyen) * 8 + (isRegular ? 5 : 0)));
+          fiabilite = Math.min(90, Math.round(68 + (3.5 - totalMoyen) * 6 + (isRegular ? 4 : 0)));
         }
 
-        if (isIrregular) fiabilite = Math.max(0, fiabilite - 8);
+        // Malus irrégularité réduit — les équipes LDC jouent beaucoup de compétitions
+        if (isIrregular) fiabilite = Math.max(0, fiabilite - 4);
 
         // Prono = estimation brute + tendance (pas de ligne fixe)
         const regulariteLabel = isRegular ? '✅ Bonne' : isIrregular ? '⚠️ Irrégulier' : '➖ Moyenne';
