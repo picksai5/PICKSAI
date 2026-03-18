@@ -581,16 +581,26 @@ async function doScanTirs() {
             </div>
           </div>
           <div style="background:${ac}11;border:1px solid ${ac}33;border-radius:10px;padding:12px;margin:8px 0">
-            <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
-              <div style="font-family:'Bebas Neue';font-size:22px;color:${ac}">${pick.estimation} tirs</div>
-              <div style="font-family:'Bebas Neue';font-size:13px;padding:3px 10px;border-radius:6px;background:${ac}22;color:${ac};border:1px solid ${ac}44">
-                tendance ${pick.tendance || (pick.estimation >= 5.5 ? 'OVER' : 'UNDER')}
-              </div>
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+              <div style="font-family:'Bebas Neue';font-size:13px;padding:2px 8px;border-radius:6px;background:${ac}22;color:${ac};border:1px solid ${ac}44">tendance ${pick.tendance || 'OVER'}</div>
               <div style="font-size:10px;color:var(--muted)">${pick.regularite || ''}</div>
             </div>
-            <div style="font-size:11px;color:var(--muted);margin-bottom:6px">${pick.raison}</div>
+            <!-- Deux estimations côte à côte -->
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
+              <div style="background:var(--bg3);border-radius:8px;padding:10px;text-align:center;border:1px solid ${ac}33">
+                <div style="font-size:10px;color:var(--muted);letter-spacing:1px;margin-bottom:4px">🎯 TIRS CADRÉS</div>
+                <div style="font-family:'Bebas Neue';font-size:26px;color:${ac}">${pick.estimation}</div>
+                <div style="font-size:10px;color:var(--muted)">${pick.h_tirs_cadres} + ${pick.a_tirs_cadres} base</div>
+              </div>
+              <div style="background:var(--bg3);border-radius:8px;padding:10px;text-align:center;border:1px solid #3b82f633">
+                <div style="font-size:10px;color:var(--muted);letter-spacing:1px;margin-bottom:4px">⚽ TIRS TOTAUX</div>
+                <div style="font-family:'Bebas Neue';font-size:26px;color:#3b82f6">${pick.estimation_totaux || '—'}</div>
+                <div style="font-size:10px;color:var(--muted)">${pick.h_tirs_totaux || '?'} + ${pick.a_tirs_totaux || '?'} base</div>
+              </div>
+            </div>
+            <div style="font-size:11px;color:var(--muted);margin-bottom:8px">${pick.raison}</div>
             <div style="background:var(--bg3);border-radius:6px;padding:8px;font-size:11px;color:var(--muted)">
-              💡 Cherche chez ton bookmaker la ligne la plus proche de <strong style="color:var(--text)">${pick.estimation}</strong> tirs
+              💡 Tirs cadrés → cherche ligne proche de <strong style="color:${ac}">${pick.estimation}</strong> · Tirs totaux → proche de <strong style="color:#3b82f6">${pick.estimation_totaux || '?'}</strong>
             </div>
           </div>
           <button class="btn btn-small" style="border-color:#8b5cf655;color:#8b5cf6" onclick="addTirsPick(${JSON.stringify(pick).replace(/"/g,'&quot;')})">🎯 + TRACK TIRS</button>
@@ -822,16 +832,25 @@ function restoreTirsScan() {
           <div class="pick-score"><div style="font-family:'Bebas Neue';font-size:28px;color:${ac}">${pick.fiabilite}%</div></div>
         </div>
         <div style="background:${ac}11;border:1px solid ${ac}33;border-radius:10px;padding:12px;margin:8px 0">
-          <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
-            <div style="font-family:'Bebas Neue';font-size:22px;color:${ac}">${pick.estimation || pick.total_moyen || '?'} tirs</div>
-            <div style="font-family:'Bebas Neue';font-size:13px;padding:3px 10px;border-radius:6px;background:${ac}22;color:${ac};border:1px solid ${ac}44">
-              tendance ${pick.tendance || (pick.estimation >= 5.5 ? 'OVER' : 'UNDER')}
-            </div>
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+            <div style="font-family:'Bebas Neue';font-size:13px;padding:2px 8px;border-radius:6px;background:${ac}22;color:${ac};border:1px solid ${ac}44">tendance ${pick.tendance || 'OVER'}</div>
             <div style="font-size:10px;color:var(--muted)">${pick.regularite || ''}</div>
           </div>
-          <div style="font-size:11px;color:var(--muted);margin-bottom:6px">${pick.raison}</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
+            <div style="background:var(--bg3);border-radius:8px;padding:10px;text-align:center;border:1px solid ${ac}33">
+              <div style="font-size:10px;color:var(--muted);letter-spacing:1px;margin-bottom:4px">🎯 TIRS CADRÉS</div>
+              <div style="font-family:'Bebas Neue';font-size:26px;color:${ac}">${pick.estimation || pick.total_moyen || '?'}</div>
+              <div style="font-size:10px;color:var(--muted)">${pick.h_tirs_cadres || '?'} + ${pick.a_tirs_cadres || '?'} base</div>
+            </div>
+            <div style="background:var(--bg3);border-radius:8px;padding:10px;text-align:center;border:1px solid #3b82f633">
+              <div style="font-size:10px;color:var(--muted);letter-spacing:1px;margin-bottom:4px">⚽ TIRS TOTAUX</div>
+              <div style="font-family:'Bebas Neue';font-size:26px;color:#3b82f6">${pick.estimation_totaux || '—'}</div>
+              <div style="font-size:10px;color:var(--muted)">${pick.h_tirs_totaux || '?'} + ${pick.a_tirs_totaux || '?'} base</div>
+            </div>
+          </div>
+          <div style="font-size:11px;color:var(--muted);margin-bottom:8px">${pick.raison}</div>
           <div style="background:var(--bg3);border-radius:6px;padding:8px;font-size:11px;color:var(--muted)">
-            💡 Cherche la ligne la plus proche de <strong style="color:var(--text)">${pick.estimation || pick.total_moyen || '?'}</strong> tirs chez ton bookmaker
+            💡 Tirs cadrés → proche de <strong style="color:${ac}">${pick.estimation || pick.total_moyen || '?'}</strong> · Tirs totaux → proche de <strong style="color:#3b82f6">${pick.estimation_totaux || '?'}</strong>
           </div>
         </div>
         <button class="btn btn-small" style="border-color:#8b5cf655;color:#8b5cf6" onclick="addTirsPick(${JSON.stringify(pick).replace(/"/g,'&quot;')})">🎯 + TRACK TIRS</button>
