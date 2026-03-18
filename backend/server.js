@@ -220,7 +220,7 @@ async function preloadCache() {
     await Promise.all(pairs.slice(i, i+5).map(p => Promise.all([
       getTeamStatsCached(p.teamId, p.leagueId),
       getPlayersCached(p.teamId, p.leagueId),
-      getAdvancedStatsCached(p.teamId, p.leagueId), // stats avancées préchargées
+      // getAdvancedStatsCached retiré du preload — trop d'appels API séquentiels
     ])));
   }
 
