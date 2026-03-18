@@ -113,21 +113,25 @@ async function getAdvancedStatsCached(teamId, leagueId) {
   const k = `adv_${teamId}`; // toutes compétitions, pas par league
   if (isCacheValid(cache.fixtureStats[k])) return cache.fixtureStats[k].data;
 
-  // Utiliser /teams/statistics — stats agrégées de la saison, bien plus fiable
-  // que /fixtures/statistics qui ne retourne rien pour beaucoup de matchs
-  const teamStats = await footballAPI('/teams/statistics', {
-    team: teamId, season: SEASON,
-  });
+  // /teams/statistics nécessite league + team + season
+  // On essaie d'abord avec la league passée, puis les autres leagues connues si ça échoue
+  const leaguesToTry = [leagueId, ...LEAGUES.map(l => l.id).filter(id => id !== leagueId)];
+  let ts = null;
 
-  // Chercher aussi saison précédente si pas de données
-  let ts = teamStats;
-  if (!ts?.statistics?.shots?.on?.total) {
-    const prev = await footballAPI('/teams/statistics', { team: teamId, season: SEASON - 1 });
-    if (prev?.statistics?.shots?.on?.total) ts = prev;
+  for (const lid of leaguesToTry) {
+    const res = await footballAPI('/teams/statistics', { team: teamId, league: lid, season: SEASON });
+    if (res?.statistics?.shots?.on?.total || res?.fixtures?.played?.total > 0) {
+      ts = res; break;
+    }
+    // Essayer saison précédente si saison courante vide
+    const prev = await footballAPI('/teams/statistics', { team: teamId, league: lid, season: SEASON - 1 });
+    if (prev?.statistics?.shots?.on?.total || prev?.fixtures?.played?.total > 0) {
+      ts = prev; break;
+    }
   }
 
-  if (!ts || !ts.statistics) {
-    console.log(`[ADV] Team ${teamId} — aucune stat disponible`);
+  if (!ts || !ts.fixtures?.played?.total) {
+    console.log(`[ADV] Team ${teamId} — aucune stat disponible après essais multiples`);
     cache.fixtureStats[k] = { data: null, timestamp: Date.now() };
     return null;
   }
@@ -135,9 +139,6 @@ async function getAdvancedStatsCached(teamId, leagueId) {
   const played = ts.fixtures?.played?.total || 1;
   const shotsOnTotal = ts.statistics?.shots?.on?.total || 0;
   const shotsTotalVal = ts.statistics?.shots?.total?.total || 0;
-  const possession = parseFloat(ts.statistics?.fixtures?.wins?.total) || 0; // fallback
-
-  // Possession via ballPossession si dispo
   const possVal = ts.statistics?.ballPossession
     ? parseFloat(ts.statistics.ballPossession) || 50
     : 50;
@@ -145,10 +146,9 @@ async function getAdvancedStatsCached(teamId, leagueId) {
   const avgShotsOn = +(shotsOnTotal / played).toFixed(1);
   const avgShotsTotal = +(shotsTotalVal / played).toFixed(1);
 
-  // Pas d'écart-type possible avec stats agrégées → estimation selon le ratio
   const stdDev = avgShotsOn > 5 ? 1.8 : avgShotsOn > 3 ? 2.2 : 2.5;
 
-  console.log(`[ADV] Team ${teamId} — OK: ${avgShotsOn} cadrés/match, ${avgShotsTotal} totaux/match sur ${played} matchs`);
+  console.log(`[ADV] Team ${teamId} (league ${ts.league?.id}) — OK: ${avgShotsOn} cadrés/match, ${avgShotsTotal} totaux/match sur ${played} matchs`);
 
   const data = {
     possession:       possVal,
