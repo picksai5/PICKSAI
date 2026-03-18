@@ -561,7 +561,7 @@ async function doScanTirs() {
     const res = await fetch('/api/scan-tirs');
     const data = await res.json();
 
-    addLog(`✅ ${data.picks?.length || 0} picks tirs retenus sur ${data.total_analyses} matchs`, '#10b981');
+    addLog(`✅ ${data.picks?.length || 0} picks tirs retenus sur ${data.total_analyses || 0} matchs`, '#10b981');
 
     if (!data.picks || data.picks.length === 0) {
       results.innerHTML = '<div class="empty"><div class="empty-icon">😴</div><div class="empty-title">AUCUN PICK TIRS</div></div>';
@@ -946,7 +946,7 @@ async function doScan() {
 
     if (data.error) throw new Error(data.error);
 
-    addLog(`✅ ${data.picks?.length || 0} picks retenus sur ${data.total_analyses} matchs analysés`, '#10b981');
+    addLog(`✅ ${data.picks?.length || 0} picks retenus sur ${data.total_analyses || 0} matchs analysés`, '#10b981');
     if (data.top_pick) {
       const label = data.top_pick.favori
         ? `Victoire ${data.top_pick.favori}`
