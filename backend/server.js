@@ -120,9 +120,12 @@ async function getAdvancedStatsCached(teamId, leagueId) {
   });
 
   if (!lastFixtures || lastFixtures.length === 0) {
+    console.log(`[ADV] Aucun fixture trouvé pour team ${teamId}`);
     cache.fixtureStats[k] = { data: null, timestamp: Date.now() };
     return null;
   }
+
+  console.log(`[ADV] Team ${teamId} — ${lastFixtures.length} fixtures trouvés`);
 
   // Récupérer les stats de chaque match
   const statsPerMatch = await Promise.all(
@@ -131,12 +134,15 @@ async function getAdvancedStatsCached(teamId, leagueId) {
 
   // Calculer les moyennes + tableau valeurs individuelles pour variance
   let totalPossession = 0, totalShotsOn = 0, totalShotsTotal = 0, totalDangerous = 0;
-  const shotsOnList = []; // tirs cadrés match par match pour calcul variance
+  const shotsOnList = [];
   let count = 0;
 
   for (const matchStats of statsPerMatch) {
     const teamStats = matchStats.find(s => s.team?.id === teamId);
-    if (!teamStats) continue;
+    if (!teamStats) {
+      console.log(`[ADV] Team ${teamId} — pas de stats dans ce match`);
+      continue;
+    }
 
     const stats = teamStats.statistics || [];
     const getStat = (type) => {
@@ -156,9 +162,12 @@ async function getAdvancedStatsCached(teamId, leagueId) {
   }
 
   if (count === 0) {
+    console.log(`[ADV] Team ${teamId} — count=0, stats impossibles à calculer`);
     cache.fixtureStats[k] = { data: null, timestamp: Date.now() };
     return null;
   }
+
+  console.log(`[ADV] Team ${teamId} — stats OK sur ${count} matchs (tirs cadrés moy: ${+(totalShotsOn/count).toFixed(1)})`);
 
   const avgShotsOn = totalShotsOn / count;
   // Écart-type des tirs cadrés = mesure de régularité
