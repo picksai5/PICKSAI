@@ -115,48 +115,63 @@ async function getAdvancedStatsCached(teamId, leagueId) {
 
   // /teams/statistics nécessite league + team + season
   // On essaie d'abord avec la league passée, puis les autres leagues connues si ça échoue
-  const leaguesToTry = [leagueId, ...LEAGUES.map(l => l.id).filter(id => id !== leagueId)];
-  let ts = null;
+  // /teams/statistics ne retourne pas les tirs sur ce plan API
+  // On utilise /fixtures avec last:10 puis /fixtures/statistics sur chaque match
+  const lastFixtures = await footballAPI('/fixtures', {
+    team: teamId, last: 10, status: 'FT',
+  });
 
-  for (const lid of leaguesToTry) {
-    const res = await footballAPI('/teams/statistics', { team: teamId, league: lid, season: SEASON });
-    if (res?.statistics?.shots?.on?.total || res?.fixtures?.played?.total > 0) {
-      ts = res; break;
-    }
-    // Essayer saison précédente si saison courante vide
-    const prev = await footballAPI('/teams/statistics', { team: teamId, league: lid, season: SEASON - 1 });
-    if (prev?.statistics?.shots?.on?.total || prev?.fixtures?.played?.total > 0) {
-      ts = prev; break;
-    }
-  }
-
-  if (!ts || !ts.fixtures?.played?.total) {
-    console.log(`[ADV] Team ${teamId} — aucune stat disponible après essais multiples`);
+  if (!lastFixtures || lastFixtures.length === 0) {
+    console.log(`[ADV] Team ${teamId} — aucun match récent trouvé`);
     cache.fixtureStats[k] = { data: null, timestamp: Date.now() };
     return null;
   }
 
-  // Logger la vraie structure pour déboguer
-  console.log(`[ADV-DEBUG] Team ${teamId} keys:`, Object.keys(ts));
-  console.log(`[ADV-DEBUG] shots:`, JSON.stringify(ts.shots));
-  console.log(`[ADV-DEBUG] statistics:`, JSON.stringify(ts.statistics?.shots || ts.statistics?.passes));
+  // Récupérer stats match par match séquentiellement pour éviter rate limit
+  let totalShotsOn = 0, totalShotsTotal = 0, totalPossession = 0;
+  let count = 0;
+  const shotsOnList = [];
 
-  const played = ts.fixtures?.played?.total || 1;
-  // La vraie structure API : ts.shots (pas ts.statistics.shots)
-  const shotsOnTotal = ts.shots?.on?.total || ts.statistics?.shots?.on?.total || 0;
-  const shotsTotalVal = ts.shots?.total?.total || ts.statistics?.shots?.total?.total || 0;
-  const possVal = ts.ballPossession
-    ? parseFloat(ts.ballPossession) || 50
-    : ts.statistics?.ballPossession
-      ? parseFloat(ts.statistics.ballPossession) || 50
-      : 50;
+  for (const f of lastFixtures.slice(0, 8)) {
+    const stats = await footballAPI('/fixtures/statistics', { fixture: f.fixture?.id });
+    const teamStat = stats.find(s => s.team?.id === teamId);
+    if (!teamStat) continue;
 
-  const avgShotsOn = +(shotsOnTotal / played).toFixed(1);
-  const avgShotsTotal = +(shotsTotalVal / played).toFixed(1);
+    const getStat = (type) => {
+      const s = (teamStat.statistics || []).find(x => x.type === type);
+      if (!s?.value && s?.value !== 0) return null;
+      if (typeof s.value === 'string' && s.value.includes('%')) return parseFloat(s.value) || 0;
+      return parseFloat(s.value) || 0;
+    };
 
-  const stdDev = avgShotsOn > 5 ? 1.8 : avgShotsOn > 3 ? 2.2 : 2.5;
+    const shotsOn    = getStat('Shots on Goal');
+    const shotsTotal = getStat('Total Shots');
+    const poss       = getStat('Ball Possession');
 
-  console.log(`[ADV] Team ${teamId} (league ${ts.league?.id}) — OK: ${avgShotsOn} cadrés/match, ${avgShotsTotal} totaux/match sur ${played} matchs`);
+    // Ne compter que si on a au moins les tirs totaux
+    if (shotsTotal === null) continue;
+
+    totalShotsOn    += shotsOn    ?? 0;
+    totalShotsTotal += shotsTotal ?? 0;
+    totalPossession += poss       ?? 50;
+    shotsOnList.push(shotsOn ?? 0);
+    count++;
+  }
+
+  if (count === 0) {
+    console.log(`[ADV] Team ${teamId} — stats tirs indisponibles sur ${lastFixtures.length} matchs`);
+    cache.fixtureStats[k] = { data: null, timestamp: Date.now() };
+    return null;
+  }
+
+  const avgShotsOn    = +(totalShotsOn    / count).toFixed(1);
+  const avgShotsTotal = +(totalShotsTotal / count).toFixed(1);
+  const avgPossession = Math.round(totalPossession / count);
+
+  const variance = shotsOnList.reduce((a, v) => a + Math.pow(v - avgShotsOn, 2), 0) / count;
+  const stdDev   = +Math.sqrt(variance).toFixed(2);
+
+  console.log(`[ADV] Team ${teamId} — OK: ${avgShotsOn} cadrés/match, ${avgShotsTotal} totaux/match sur ${count} matchs`);
 
   const data = {
     possession:       possVal,
