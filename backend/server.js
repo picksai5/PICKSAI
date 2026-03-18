@@ -136,12 +136,20 @@ async function getAdvancedStatsCached(teamId, leagueId) {
     return null;
   }
 
+  // Logger la vraie structure pour déboguer
+  console.log(`[ADV-DEBUG] Team ${teamId} keys:`, Object.keys(ts));
+  console.log(`[ADV-DEBUG] shots:`, JSON.stringify(ts.shots));
+  console.log(`[ADV-DEBUG] statistics:`, JSON.stringify(ts.statistics?.shots || ts.statistics?.passes));
+
   const played = ts.fixtures?.played?.total || 1;
-  const shotsOnTotal = ts.statistics?.shots?.on?.total || 0;
-  const shotsTotalVal = ts.statistics?.shots?.total?.total || 0;
-  const possVal = ts.statistics?.ballPossession
-    ? parseFloat(ts.statistics.ballPossession) || 50
-    : 50;
+  // La vraie structure API : ts.shots (pas ts.statistics.shots)
+  const shotsOnTotal = ts.shots?.on?.total || ts.statistics?.shots?.on?.total || 0;
+  const shotsTotalVal = ts.shots?.total?.total || ts.statistics?.shots?.total?.total || 0;
+  const possVal = ts.ballPossession
+    ? parseFloat(ts.ballPossession) || 50
+    : ts.statistics?.ballPossession
+      ? parseFloat(ts.statistics.ballPossession) || 50
+      : 50;
 
   const avgShotsOn = +(shotsOnTotal / played).toFixed(1);
   const avgShotsTotal = +(shotsTotalVal / played).toFixed(1);
