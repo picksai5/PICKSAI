@@ -540,18 +540,25 @@ function analyseMatchComplet(hStats, aStats, hStand, aStand, h2h, injuries, isEu
   else if (scoreMatriciel >= 52) alerte = 'ORANGE';
   else if (scoreMatriciel >= 38) alerte = 'ROUGE';
 
-  // Cote estimée selon score et type — indicative seulement
-  // L'utilisateur décide lui-même si la cote vaut le coup
+  // Cote estimée basée sur l'écart de rang réel — plus réaliste
   let coteEstimee = null;
+  const rankGap = Math.abs(rankDiff); // écart de classement
   if (pronosType === 'victoire_domicile') {
-    if      (scoreMatriciel >= 72) coteEstimee = 1.60;
-    else if (scoreMatriciel >= 52) coteEstimee = 1.80;
-    else if (scoreMatriciel >= 38) coteEstimee = 2.10;
+    if      (rankGap >= 14) coteEstimee = 1.20; // énorme favori
+    else if (rankGap >= 10) coteEstimee = 1.40;
+    else if (rankGap >= 7)  coteEstimee = 1.60;
+    else if (rankGap >= 5)  coteEstimee = 1.85;
+    else                    coteEstimee = 2.10;
   } else if (pronosType === 'victoire_exterieur') {
-    if      (scoreMatriciel >= 72) coteEstimee = 1.90;
-    else if (scoreMatriciel >= 52) coteEstimee = 2.20;
-    else if (scoreMatriciel >= 38) coteEstimee = 2.50;
+    if      (rankGap >= 14) coteEstimee = 1.50;
+    else if (rankGap >= 10) coteEstimee = 1.80;
+    else if (rankGap >= 7)  coteEstimee = 2.10;
+    else if (rankGap >= 5)  coteEstimee = 2.40;
+    else                    coteEstimee = 2.80;
   }
+
+  // Annuler l'alerte si cote estimée trop basse (< 1.35) — pas de valeur à parier
+  if (coteEstimee && coteEstimee < 1.35) alerte = null;
 
   return {
     scoreMatriciel,
@@ -602,9 +609,10 @@ ${playerList}
 RÈGLES STRICTES:
 1. 2 phrases MAX justifiant la victoire — cite des stats concrètes du contexte
 2. Joueur décisif: choisis l'ATTAQUANT ou AILIER avec le meilleur ratio
-3. ❌ JAMAIS blessé/suspendu (Mbappé blessé = EXCLU, utilise tes connaissances mars 2026)
+3. ❌ JAMAIS blessé/suspendu/parti du club (Lacazette a quitté Lyon, Mbappé au Real = EXCLUS)
 4. ❌ JAMAIS milieu défensif (Rodri, Casemiro etc)
-5. Si ratio API faible mais joueur connu prolifique → utilise tes connaissances réelles
+5. ❌ VÉRIFIE que le joueur joue ENCORE dans ce club en ${new Date().toLocaleDateString('fr-FR', {month:'long', year:'numeric'})} avant de le choisir
+6. Si ratio API faible mais joueur connu prolifique → utilise tes connaissances réelles
 
 JSON UNIQUEMENT:
 {"raison":"2 phrases pourquoi victoire avec stats","joueur_decisif":{"joueur":"Prénom Nom","type":"Joueur décisif","prob":72,"cote_estimee":1.75,"raison":"1 phrase avec stat concrète"}}`;
@@ -707,12 +715,14 @@ async function collectMatchData(fixture, leagueId, leagueName, standings) {
     });
 
     if (firstLeg) {
-      // Normaliser : hTeam = domicile du match retour
       const hWasHome = firstLeg.teams?.home?.id === hTeam.id;
       firstLegScore = {
-        hGoals: hWasHome ? (firstLeg.goals?.home || 0) : (firstLeg.goals?.away || 0),
-        aGoals: hWasHome ? (firstLeg.goals?.away || 0) : (firstLeg.goals?.home || 0),
+        hGoals: hWasHome ? (firstLeg.goals?.home ?? 0) : (firstLeg.goals?.away ?? 0),
+        aGoals: hWasHome ? (firstLeg.goals?.away ?? 0) : (firstLeg.goals?.home ?? 0),
       };
+      console.log(`[ALLER] ${hTeam.name} vs ${aTeam.name} — aller trouvé: ${firstLegScore.hGoals}-${firstLegScore.aGoals}`);
+    } else {
+      console.log(`[ALLER] ${hTeam.name} vs ${aTeam.name} — aucun match aller trouvé sur ${firstLegFixtures.length} fixtures`);
     }
   }
 
