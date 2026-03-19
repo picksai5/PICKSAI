@@ -557,8 +557,7 @@ function analyseMatchComplet(hStats, aStats, hStand, aStand, h2h, injuries, isEu
     else                    coteEstimee = 2.80;
   }
 
-  // Annuler l'alerte si cote estimée trop basse (< 1.35) — pas de valeur à parier
-  if (coteEstimee && coteEstimee < 1.35) alerte = null;
+  // Pas de filtre sur la cote — c'est l'utilisateur qui décide si la cote vaut le coup
 
   return {
     scoreMatriciel,
@@ -829,7 +828,40 @@ app.get('/api/scan', async (req, res) => {
     for (const fixture of allFixtures) {
       try {
         const leagueId = fixture.leagueId || fixture.league?.id;
-        const standings = await getStandingsCached(leagueId);
+        const isEuro = EURO_LEAGUES.includes(leagueId);
+
+        // Pour les matchs européens, récupérer les standings nationaux de chaque équipe
+        // Le classement CL/EL/UECL par groupes n'est pas comparable entre équipes
+        let standings = [];
+        if (isEuro) {
+          const hTeam = fixture.teams?.home;
+          const aTeam = fixture.teams?.away;
+          // Chercher la league nationale de chaque équipe via leur pays
+          const hCountry = hTeam?.country || fixture.teams?.home?.country;
+          const aCountry = aTeam?.country || fixture.teams?.away?.country;
+
+          // Trouver la league nationale correspondante dans nos LEAGUES
+          const countryToLeague = {
+            'France': 61, 'Spain': 140, 'England': 39, 'Italy': 135,
+            'Germany': 78, 'Netherlands': 88, 'Portugal': 94,
+          };
+          const hLeagueId = countryToLeague[hCountry];
+          const aLeagueId = countryToLeague[aCountry];
+
+          // Si une équipe n'est pas dans nos ligues connues → standings incomparables → skip
+          if (!hLeagueId || !aLeagueId) {
+            standings = []; // forcera un rejet dans collectMatchData (standings vides)
+          } else if (hLeagueId === aLeagueId) {
+            // Même pays → standings directement comparables
+            standings = await getStandingsCached(hLeagueId);
+          } else {
+            // Pays différents → standings non comparables → skip
+            standings = [];
+          }
+        } else {
+          standings = await getStandingsCached(leagueId);
+        }
+
         const matchData = await collectMatchData(fixture, leagueId, fixture.leagueName, standings);
 
         if (!matchData) {
