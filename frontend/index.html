@@ -1015,8 +1015,28 @@ async function doScan() {
   results.innerHTML = '';
   empty.style.display = 'none';
 
-  // Effacer l'ancien scan immédiatement pour ne pas afficher de données périmées
-  try { localStorage.removeItem('picksai_last_scan'); } catch {}
+  // Vérifier si un scan du jour existe déjà
+  let scanDuJour = null;
+  try {
+    const saved = JSON.parse(localStorage.getItem('picksai_last_scan') || '{}');
+    const today = new Date().toLocaleDateString('fr-FR');
+    if (saved.date === today && saved.picks && saved.picks.length > 0) {
+      scanDuJour = saved;
+    }
+  } catch {}
+
+  // Si scan du jour déjà fait → proposer juste vérif compos plutôt que tout recalculer
+  if (scanDuJour) {
+    const confirmRescan = confirm(`Un scan a déjà été fait aujourd'hui (${scanDuJour.picks.length} picks).\n\nCliquer OK pour rescanner (compos officielles).\nAnnuler pour voir les picks du matin.`);
+    if (!confirmRescan) {
+      btn.innerHTML = '⚡ SCAN COMPLET';
+      btn.disabled = false;
+      logBox.style.display = 'none';
+      renderScanResults(scanDuJour);
+      document.getElementById('check-compos-btn').style.display = 'inline-block';
+      return;
+    }
+  }
 
   const addLog = (msg, color) => {
     const t = new Date().toLocaleTimeString('fr-FR');
@@ -1145,18 +1165,18 @@ function renderScanResults(data, isRestored = false) {
     <div class="stat-box"><div class="stat-label">TOP SCORE</div><div class="stat-value" style="color:var(--gold)">${data.top_pick ? (data.top_pick.score_total || data.top_pick.score_matriciel || '—') : '—'}</div></div>
   </div>`;
 
-  // ── TOP PICK VERT ──
-  if (topVert) {
-    html += pickCard(topVert, true, '🟢 TOP PICK VERT', '#10b981');
+  // ── TOUS LES PICKS VERT (tous affichés) ──
+  verts.forEach((p, i) => {
+    html += pickCard(p, true, i === 0 ? '🟢 TOP PICK VERT' : '🟢 PICK VERT', '#10b981');
+  });
+
+  // ── TOP PICK ORANGE (1 seul) ──
+  if (oranges.length > 0) {
+    html += pickCard(oranges[0], true, '🟡 TOP PICK ORANGE', '#f59e0b');
   }
 
-  // ── TOP PICK ORANGE ──
-  if (topOrange) {
-    html += pickCard(topOrange, true, '🟡 TOP PICK ORANGE', '#f59e0b');
-  }
-
-  // ── AUTRES PICKS (pliables) ──
-  const autres = [...verts.slice(1), ...oranges.slice(1), ...rouges];
+  // ── TOP PICK ROUGE (1 seul, pliable) ──
+  const autres = [...rouges.slice(0, 1)];
   if (autres.length > 0) {
     html += `<div style="margin-top:12px">
       <div style="font-family:'Bebas Neue';font-size:13px;letter-spacing:2px;color:var(--muted);margin-bottom:8px;cursor:pointer" onclick="toggleAutres()">
