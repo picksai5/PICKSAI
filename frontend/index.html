@@ -245,37 +245,62 @@
         <div class="stat-box"><div class="stat-label">COTE MOYENNE</div><div class="stat-value" id="tirs-cote-moy" style="color:var(--accent)">—</div></div>
         <div class="stat-box"><div class="stat-label">PICKS JOUÉS</div><div class="stat-value" id="tirs-total" style="color:var(--accent)">0</div></div>
       </div>
-      <!-- Stats par catégorie tirs -->
+      <!-- Bankrolls par catégorie tirs -->
       <div style="margin-bottom:12px">
-        <div style="font-family:'Bebas Neue';font-size:14px;letter-spacing:2px;color:var(--muted);margin-bottom:8px">STATS PAR FIABILITÉ</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
-          <div style="background:var(--bg2);border:1px solid #10b98133;border-radius:10px;padding:10px">
-            <div style="font-family:'Bebas Neue';font-size:12px;color:#10b981;margin-bottom:6px">🟢 VERT</div>
-            <div class="stat-grid-2" style="gap:4px">
+        <div style="font-family:'Bebas Neue';font-size:14px;letter-spacing:2px;color:var(--muted);margin-bottom:8px">BANKROLL PAR FIABILITÉ</div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+
+          <div style="background:var(--bg2);border:1px solid #10b98133;border-radius:10px;padding:12px">
+            <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="toggleTirsCatCurve('vert')">
+              <div style="font-family:'Bebas Neue';font-size:13px;color:#10b981">🟢 VERT</div>
+              <div style="text-align:right">
+                <div style="font-family:'Bebas Neue';font-size:20px;color:#10b981" id="tirs-cat-vert-bankroll">—€</div>
+                <div style="font-size:10px" id="tirs-cat-vert-evol">—</div>
+              </div>
+            </div>
+            <div id="tirs-cat-vert-curve-wrap" style="display:none;margin-top:8px"><canvas id="tirs-cat-vert-curve" height="60" style="width:100%"></canvas></div>
+            <div class="stat-grid-2" style="margin-top:8px;gap:4px">
               <div class="stat-box" style="padding:6px"><div class="stat-label" style="font-size:9px">PICKS</div><div class="stat-value" style="font-size:14px" id="tirs-cat-vert-total">0</div></div>
               <div class="stat-box" style="padding:6px"><div class="stat-label" style="font-size:9px">WIN RATE</div><div class="stat-value" style="font-size:14px" id="tirs-cat-vert-wr">—</div></div>
               <div class="stat-box" style="padding:6px"><div class="stat-label" style="font-size:9px">ROI</div><div class="stat-value" style="font-size:14px" id="tirs-cat-vert-roi">—</div></div>
               <div class="stat-box" style="padding:6px"><div class="stat-label" style="font-size:9px">COTE MOY.</div><div class="stat-value" style="font-size:14px" id="tirs-cat-vert-cote">—</div></div>
             </div>
           </div>
-          <div style="background:var(--bg2);border:1px solid #f59e0b33;border-radius:10px;padding:10px">
-            <div style="font-family:'Bebas Neue';font-size:12px;color:#f59e0b;margin-bottom:6px">🟡 ORANGE</div>
-            <div class="stat-grid-2" style="gap:4px">
+
+          <div style="background:var(--bg2);border:1px solid #f59e0b33;border-radius:10px;padding:12px">
+            <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="toggleTirsCatCurve('orange')">
+              <div style="font-family:'Bebas Neue';font-size:13px;color:#f59e0b">🟡 ORANGE</div>
+              <div style="text-align:right">
+                <div style="font-family:'Bebas Neue';font-size:20px;color:#f59e0b" id="tirs-cat-orange-bankroll">—€</div>
+                <div style="font-size:10px" id="tirs-cat-orange-evol">—</div>
+              </div>
+            </div>
+            <div id="tirs-cat-orange-curve-wrap" style="display:none;margin-top:8px"><canvas id="tirs-cat-orange-curve" height="60" style="width:100%"></canvas></div>
+            <div class="stat-grid-2" style="margin-top:8px;gap:4px">
               <div class="stat-box" style="padding:6px"><div class="stat-label" style="font-size:9px">PICKS</div><div class="stat-value" style="font-size:14px" id="tirs-cat-orange-total">0</div></div>
               <div class="stat-box" style="padding:6px"><div class="stat-label" style="font-size:9px">WIN RATE</div><div class="stat-value" style="font-size:14px" id="tirs-cat-orange-wr">—</div></div>
               <div class="stat-box" style="padding:6px"><div class="stat-label" style="font-size:9px">ROI</div><div class="stat-value" style="font-size:14px" id="tirs-cat-orange-roi">—</div></div>
               <div class="stat-box" style="padding:6px"><div class="stat-label" style="font-size:9px">COTE MOY.</div><div class="stat-value" style="font-size:14px" id="tirs-cat-orange-cote">—</div></div>
             </div>
           </div>
-          <div style="background:var(--bg2);border:1px solid #ef444433;border-radius:10px;padding:10px">
-            <div style="font-family:'Bebas Neue';font-size:12px;color:#ef4444;margin-bottom:6px">🔴 ROUGE</div>
-            <div class="stat-grid-2" style="gap:4px">
+
+          <div style="background:var(--bg2);border:1px solid #ef444433;border-radius:10px;padding:12px">
+            <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="toggleTirsCatCurve('rouge')">
+              <div style="font-family:'Bebas Neue';font-size:13px;color:#ef4444">🔴 ROUGE</div>
+              <div style="text-align:right">
+                <div style="font-family:'Bebas Neue';font-size:20px;color:#ef4444" id="tirs-cat-rouge-bankroll">—€</div>
+                <div style="font-size:10px" id="tirs-cat-rouge-evol">—</div>
+              </div>
+            </div>
+            <div id="tirs-cat-rouge-curve-wrap" style="display:none;margin-top:8px"><canvas id="tirs-cat-rouge-curve" height="60" style="width:100%"></canvas></div>
+            <div class="stat-grid-2" style="margin-top:8px;gap:4px">
               <div class="stat-box" style="padding:6px"><div class="stat-label" style="font-size:9px">PICKS</div><div class="stat-value" style="font-size:14px" id="tirs-cat-rouge-total">0</div></div>
               <div class="stat-box" style="padding:6px"><div class="stat-label" style="font-size:9px">WIN RATE</div><div class="stat-value" style="font-size:14px" id="tirs-cat-rouge-wr">—</div></div>
               <div class="stat-box" style="padding:6px"><div class="stat-label" style="font-size:9px">ROI</div><div class="stat-value" style="font-size:14px" id="tirs-cat-rouge-roi">—</div></div>
               <div class="stat-box" style="padding:6px"><div class="stat-label" style="font-size:9px">COTE MOY.</div><div class="stat-value" style="font-size:14px" id="tirs-cat-rouge-cote">—</div></div>
             </div>
           </div>
+
         </div>
       </div>
     </div>
@@ -331,13 +356,23 @@
     <!-- DRAWDOWN STATUS -->
     <div id="drawdown-status" style="margin-bottom:12px"></div>
 
-    <!-- STATS PAR CATÉGORIE -->
+    <!-- BANKROLLS PAR CATÉGORIE -->
     <div style="margin-bottom:12px">
-      <div style="font-family:'Bebas Neue';font-size:16px;letter-spacing:3px;color:var(--muted);margin-bottom:10px">STATS PAR CATÉGORIE</div>
+      <div style="font-family:'Bebas Neue';font-size:16px;letter-spacing:3px;color:var(--muted);margin-bottom:10px">BANKROLL PAR FIABILITÉ</div>
+
       <!-- VERT -->
       <div style="background:var(--bg2);border:1px solid #10b98133;border-radius:12px;padding:14px;margin-bottom:8px">
-        <div style="font-family:'Bebas Neue';font-size:15px;letter-spacing:2px;color:#10b981;margin-bottom:10px">🟢 PICKS VERT — Score ≥ 80</div>
-        <div class="stat-grid-2">
+        <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="toggleCatCurve('vert')">
+          <div style="font-family:'Bebas Neue';font-size:15px;letter-spacing:2px;color:#10b981">🟢 PICKS VERT</div>
+          <div style="text-align:right">
+            <div style="font-family:'Bebas Neue';font-size:22px;color:#10b981" id="cat-vert-bankroll">—€</div>
+            <div style="font-size:11px" id="cat-vert-evol">—</div>
+          </div>
+        </div>
+        <div id="cat-vert-curve-wrap" style="display:none;margin-top:10px">
+          <canvas id="cat-vert-curve" height="70" style="width:100%"></canvas>
+        </div>
+        <div class="stat-grid-2" style="margin-top:10px">
           <div class="stat-box"><div class="stat-label">PICKS</div><div class="stat-value" id="cat-vert-total" style="color:#10b981">0</div></div>
           <div class="stat-box"><div class="stat-label">WIN RATE</div><div class="stat-value" id="cat-vert-wr">—</div></div>
           <div class="stat-box"><div class="stat-label">PROFIT</div><div class="stat-value" id="cat-vert-profit">0€</div></div>
@@ -345,10 +380,20 @@
           <div class="stat-box"><div class="stat-label">COTE MOY.</div><div class="stat-value" id="cat-vert-cote">—</div></div>
         </div>
       </div>
+
       <!-- ORANGE -->
       <div style="background:var(--bg2);border:1px solid #f59e0b33;border-radius:12px;padding:14px;margin-bottom:8px">
-        <div style="font-family:'Bebas Neue';font-size:15px;letter-spacing:2px;color:#f59e0b;margin-bottom:10px">🟡 PICKS ORANGE — Score 70-79</div>
-        <div class="stat-grid-2">
+        <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="toggleCatCurve('orange')">
+          <div style="font-family:'Bebas Neue';font-size:15px;letter-spacing:2px;color:#f59e0b">🟡 PICKS ORANGE</div>
+          <div style="text-align:right">
+            <div style="font-family:'Bebas Neue';font-size:22px;color:#f59e0b" id="cat-orange-bankroll">—€</div>
+            <div style="font-size:11px" id="cat-orange-evol">—</div>
+          </div>
+        </div>
+        <div id="cat-orange-curve-wrap" style="display:none;margin-top:10px">
+          <canvas id="cat-orange-curve" height="70" style="width:100%"></canvas>
+        </div>
+        <div class="stat-grid-2" style="margin-top:10px">
           <div class="stat-box"><div class="stat-label">PICKS</div><div class="stat-value" id="cat-orange-total" style="color:#f59e0b">0</div></div>
           <div class="stat-box"><div class="stat-label">WIN RATE</div><div class="stat-value" id="cat-orange-wr">—</div></div>
           <div class="stat-box"><div class="stat-label">PROFIT</div><div class="stat-value" id="cat-orange-profit">0€</div></div>
@@ -356,10 +401,20 @@
           <div class="stat-box"><div class="stat-label">COTE MOY.</div><div class="stat-value" id="cat-orange-cote">—</div></div>
         </div>
       </div>
+
       <!-- ROUGE -->
       <div style="background:var(--bg2);border:1px solid #ef444433;border-radius:12px;padding:14px;margin-bottom:8px">
-        <div style="font-family:'Bebas Neue';font-size:15px;letter-spacing:2px;color:#ef4444;margin-bottom:10px">🔴 PICKS ROUGE — Score 60-69</div>
-        <div class="stat-grid-2">
+        <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="toggleCatCurve('rouge')">
+          <div style="font-family:'Bebas Neue';font-size:15px;letter-spacing:2px;color:#ef4444">🔴 PICKS ROUGE</div>
+          <div style="text-align:right">
+            <div style="font-family:'Bebas Neue';font-size:22px;color:#ef4444" id="cat-rouge-bankroll">—€</div>
+            <div style="font-size:11px" id="cat-rouge-evol">—</div>
+          </div>
+        </div>
+        <div id="cat-rouge-curve-wrap" style="display:none;margin-top:10px">
+          <canvas id="cat-rouge-curve" height="70" style="width:100%"></canvas>
+        </div>
+        <div class="stat-grid-2" style="margin-top:10px">
           <div class="stat-box"><div class="stat-label">PICKS</div><div class="stat-value" id="cat-rouge-total" style="color:#ef4444">0</div></div>
           <div class="stat-box"><div class="stat-label">WIN RATE</div><div class="stat-value" id="cat-rouge-wr">—</div></div>
           <div class="stat-box"><div class="stat-label">PROFIT</div><div class="stat-value" id="cat-rouge-profit">0€</div></div>
@@ -773,7 +828,7 @@ function renderTirsBankroll() {
   if (coteMoyEl) coteMoyEl.textContent = coteMoy ? '×' + coteMoy : '—';
   if (totalEl) totalEl.textContent = tirsState.picks.length;
 
-  // Stats par catégorie tirs
+  // Bankroll + évolution + stats par catégorie tirs
   ['vert', 'orange', 'rouge'].forEach(cat => {
     const alerte = cat.toUpperCase();
     const catPicks = resolved.filter(p => (p.alerte || '').toUpperCase() === alerte);
@@ -785,6 +840,18 @@ function renderTirsBankroll() {
     const catRoi = catMise > 0 ? Math.round(catProfit / catMise * 100) : null;
     const catCote = catTotal > 0 ? (catPicks.reduce((a,p) => a+(p.cote||0), 0) / catTotal).toFixed(2) : null;
     const color = cat === 'vert' ? '#10b981' : cat === 'orange' ? '#f59e0b' : '#ef4444';
+
+    // Bankroll simulée = capital_base + gains de cette catégorie
+    const catBankroll = tirsState.capital_base + catProfit;
+    const catEvol = tirsState.capital_base > 0 ? ((catProfit / tirsState.capital_base) * 100).toFixed(1) : null;
+
+    const bankrollEl = document.getElementById(`tirs-cat-${cat}-bankroll`);
+    const evolEl2 = document.getElementById(`tirs-cat-${cat}-evol`);
+    if (bankrollEl) { bankrollEl.textContent = catBankroll + '€'; bankrollEl.style.color = catProfit >= 0 ? color : '#ef4444'; }
+    if (evolEl2 && catEvol !== null) {
+      evolEl2.textContent = (catEvol >= 0 ? '+' : '') + catEvol + '% évolution';
+      evolEl2.style.color = catEvol >= 0 ? color : '#ef4444';
+    }
 
     const totalEl2 = document.getElementById(`tirs-cat-${cat}-total`);
     const wrEl2 = document.getElementById(`tirs-cat-${cat}-wr`);
@@ -1462,6 +1529,133 @@ function confirmPick() {
 }
 
 // ── BANKROLL ──────────────────────────────────────────────
+
+// ── COURBES PAR CATÉGORIE (victoires) ─────────────────────
+function toggleCatCurve(cat) {
+  const wrap = document.getElementById(`cat-${cat}-curve-wrap`);
+  if (!wrap) return;
+  const visible = wrap.style.display !== 'none';
+  wrap.style.display = visible ? 'none' : 'block';
+  if (!visible) drawCatCurve(cat, state.picks, state.capital_base);
+}
+
+function drawCatCurve(cat, allPicks, capitalBase) {
+  const canvas = document.getElementById(`cat-${cat}-curve`);
+  if (!canvas) return;
+  const color = cat === 'vert' ? '#10b981' : cat === 'orange' ? '#f59e0b' : '#ef4444';
+  const picks = allPicks.filter(p => (p.alerte||'').toUpperCase() === cat.toUpperCase() && !p.pending).reverse();
+  if (picks.length < 2) return;
+
+  canvas.width = canvas.offsetWidth || 300;
+  canvas.height = 70;
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+
+  // Bankroll simulée par catégorie à partir du capital de base
+  const miseBase = state.mise_base || 25;
+  let b = capitalBase;
+  const values = [b];
+  picks.forEach(p => { b += (p.gain || 0); values.push(b); });
+
+  const min = Math.min(...values) - 5;
+  const max = Math.max(...values) + 5;
+  const range = max - min || 1;
+
+  ctx.clearRect(0, 0, W, H);
+  const grad = ctx.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0, color + '40');
+  grad.addColorStop(1, color + '05');
+
+  ctx.beginPath();
+  values.forEach((v, i) => {
+    const x = (i / (values.length - 1)) * W;
+    const y = H - ((v - min) / range) * (H - 8) - 4;
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  });
+  ctx.lineTo(W, H); ctx.lineTo(0, H); ctx.closePath();
+  ctx.fillStyle = grad; ctx.fill();
+
+  ctx.beginPath();
+  ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.lineJoin = 'round';
+  values.forEach((v, i) => {
+    const x = (i / (values.length - 1)) * W;
+    const y = H - ((v - min) / range) * (H - 8) - 4;
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+
+  picks.forEach((p, i) => {
+    const x = ((i + 1) / (values.length - 1)) * W;
+    const y = H - ((values[i + 1] - min) / range) * (H - 8) - 4;
+    ctx.beginPath();
+    ctx.arc(x, y, 3, 0, Math.PI * 2);
+    ctx.fillStyle = p.won ? color : '#ef4444';
+    ctx.fill();
+  });
+}
+
+// ── COURBES PAR CATÉGORIE (tirs) ──────────────────────────
+function toggleTirsCatCurve(cat) {
+  const wrap = document.getElementById(`tirs-cat-${cat}-curve-wrap`);
+  if (!wrap) return;
+  const visible = wrap.style.display !== 'none';
+  wrap.style.display = visible ? 'none' : 'block';
+  if (!visible) drawTirsCatCurve(cat);
+}
+
+function drawTirsCatCurve(cat) {
+  const canvas = document.getElementById(`tirs-cat-${cat}-curve`);
+  if (!canvas) return;
+  const color = cat === 'vert' ? '#10b981' : cat === 'orange' ? '#f59e0b' : '#ef4444';
+  const picks = tirsState.picks.filter(p => (p.alerte||'').toUpperCase() === cat.toUpperCase() && !p.pending).reverse();
+  if (picks.length < 2) return;
+
+  canvas.width = canvas.offsetWidth || 300;
+  canvas.height = 60;
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+
+  let b = tirsState.capital_base;
+  const values = [b];
+  picks.forEach(p => { b += (p.gain || 0); values.push(b); });
+
+  const min = Math.min(...values) - 5;
+  const max = Math.max(...values) + 5;
+  const range = max - min || 1;
+
+  ctx.clearRect(0, 0, W, H);
+  const grad = ctx.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0, color + '40');
+  grad.addColorStop(1, color + '05');
+
+  ctx.beginPath();
+  values.forEach((v, i) => {
+    const x = (i / (values.length - 1)) * W;
+    const y = H - ((v - min) / range) * (H - 6) - 3;
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  });
+  ctx.lineTo(W, H); ctx.lineTo(0, H); ctx.closePath();
+  ctx.fillStyle = grad; ctx.fill();
+
+  ctx.beginPath();
+  ctx.strokeStyle = color; ctx.lineWidth = 1.5; ctx.lineJoin = 'round';
+  values.forEach((v, i) => {
+    const x = (i / (values.length - 1)) * W;
+    const y = H - ((v - min) / range) * (H - 6) - 3;
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+
+  picks.forEach((p, i) => {
+    const x = ((i + 1) / (values.length - 1)) * W;
+    const y = H - ((values[i + 1] - min) / range) * (H - 6) - 3;
+    ctx.beginPath();
+    ctx.arc(x, y, 3, 0, Math.PI * 2);
+    ctx.fillStyle = p.won ? color : '#ef4444';
+    ctx.fill();
+  });
+}
+
 function renderBankroll() {
   const picks = state.picks;
   const totalGain = picks.reduce((a, p) => a + (p.gain || 0), 0);
@@ -1502,7 +1696,7 @@ function renderBankroll() {
     ddEl.innerHTML = '';
   }
 
-  // Évolution capital = (bankroll actuelle - capital de base) / capital de base * 100
+  // Évolution capital global
   const evolPct = state.capital_base > 0 ? ((state.bankroll - state.capital_base) / state.capital_base * 100).toFixed(1) : null;
   const evolEl = document.getElementById('evol-capital');
   if (evolEl && evolPct !== null) {
@@ -1510,7 +1704,7 @@ function renderBankroll() {
     evolEl.style.color = evolPct >= 0 ? 'var(--green)' : 'var(--red)';
   }
 
-  // Stats par catégorie
+  // Bankroll + évolution + stats par catégorie
   ['vert', 'orange', 'rouge'].forEach(cat => {
     const alerte = cat.toUpperCase();
     const catPicks = picks.filter(p => (p.alerte || '').toUpperCase() === alerte && !p.pending);
@@ -1521,6 +1715,19 @@ function renderBankroll() {
     const wr = total > 0 ? Math.round((won / total) * 100) : null;
     const roi = totalMiseCat > 0 ? Math.round((profit / totalMiseCat) * 100) : null;
     const coteMoyCat = catPicks.length > 0 ? (catPicks.reduce((a,p) => a + (p.cote||0), 0) / catPicks.length).toFixed(2) : null;
+
+    // Bankroll simulée par catégorie = capital_base + gains de cette catégorie
+    const catBankroll = state.capital_base + profit;
+    const catEvol = state.capital_base > 0 ? ((profit / state.capital_base) * 100).toFixed(1) : null;
+    const color = cat === 'vert' ? '#10b981' : cat === 'orange' ? '#f59e0b' : '#ef4444';
+
+    const bankrollEl = document.getElementById(`cat-${cat}-bankroll`);
+    const evolCatEl = document.getElementById(`cat-${cat}-evol`);
+    if (bankrollEl) { bankrollEl.textContent = catBankroll + '€'; bankrollEl.style.color = profit >= 0 ? color : '#ef4444'; }
+    if (evolCatEl && catEvol !== null) {
+      evolCatEl.textContent = (catEvol >= 0 ? '+' : '') + catEvol + '% évolution';
+      evolCatEl.style.color = catEvol >= 0 ? color : '#ef4444';
+    }
 
     document.getElementById(`cat-${cat}-total`).textContent = total;
     document.getElementById(`cat-${cat}-wr`).textContent = wr !== null ? `${wr}%` : '—';
