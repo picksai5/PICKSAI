@@ -615,15 +615,25 @@ function showTab(tab) {
 const TIRS_STATE_KEY = 'picksai_tirs_state_v1';
 let tirsState = { bankroll: 500, picks: [], capital_base: 500 };
 
-function loadTirsState() {
+async function loadTirsState() {
+  try {
+    // window.storage en priorité (persistant), localStorage en fallback
+    const r = await window.storage.get(TIRS_STATE_KEY);
+    if (r?.value) {
+      tirsState = { ...tirsState, ...JSON.parse(r.value) };
+      return;
+    }
+  } catch {}
   try {
     const s = localStorage.getItem(TIRS_STATE_KEY);
     if (s) tirsState = { ...tirsState, ...JSON.parse(s) };
   } catch {}
 }
 
-function saveTirsState() {
-  try { localStorage.setItem(TIRS_STATE_KEY, JSON.stringify(tirsState)); } catch {}
+async function saveTirsState() {
+  const s = JSON.stringify(tirsState);
+  try { await window.storage.set(TIRS_STATE_KEY, s); } catch {}
+  try { localStorage.setItem(TIRS_STATE_KEY, s); } catch {}
 }
 
 async function doScanTirs() {
@@ -696,6 +706,7 @@ async function doScanTirs() {
       });
       results.innerHTML = html;
       // Sauvegarder le scan tirs en localStorage
+      try { await window.storage.set('picksai_last_tirs_scan', JSON.stringify(data)); } catch {}
       try { localStorage.setItem('picksai_last_tirs_scan', JSON.stringify(data)); } catch {}
       const badge = document.getElementById('tirs-last-scan-badge');
       if (badge) badge.textContent = `✅ Scan du ${data.date} · ${new Date().toLocaleTimeString('fr-FR', {hour:'2-digit',minute:'2-digit'})}`;
@@ -831,7 +842,10 @@ function renderTirsBankroll() {
 
     // Bankroll simulée = capital_base + gains de cette catégorie
     const catBankroll = tirsState.capital_base + catProfit;
-    const catEvol = tirsState.capital_base > 0 ? ((catProfit / tirsState.capital_base) * 100).toFixed(1) : null;
+    // Évolution du capital = si on avait joué UNIQUEMENT cette catégorie
+    const catEvol = tirsState.capital_base > 0 && catPicks.length > 0
+      ? (((tirsState.capital_base + catProfit) / tirsState.capital_base - 1) * 100).toFixed(1)
+      : null;
 
     const bankrollEl = document.getElementById(`tirs-cat-${cat}-bankroll`);
     const evolEl2 = document.getElementById(`tirs-cat-${cat}-evol`);
@@ -958,9 +972,12 @@ function drawTirsCurve() {
   `;
 }
 
-function restoreTirsScan() {
+async function restoreTirsScan() {
   try {
-    const data = JSON.parse(localStorage.getItem('picksai_last_tirs_scan') || '{}');
+    let raw = null;
+    try { const r = await window.storage.get('picksai_last_tirs_scan'); raw = r?.value; } catch {}
+    if (!raw) raw = localStorage.getItem('picksai_last_tirs_scan');
+    const data = JSON.parse(raw || '{}');
     if (!data.picks || data.picks.length === 0) return;
     const results = document.getElementById('tirs-results');
     let html = '';
@@ -1706,7 +1723,10 @@ function renderBankroll() {
 
     // Bankroll simulée par catégorie = capital_base + gains de cette catégorie
     const catBankroll = state.capital_base + profit;
-    const catEvol = state.capital_base > 0 ? ((profit / state.capital_base) * 100).toFixed(1) : null;
+    // Évolution du capital = si on avait joué UNIQUEMENT cette catégorie
+    const catEvol = state.capital_base > 0 && catPicks.length > 0
+      ? (((state.capital_base + profit) / state.capital_base - 1) * 100).toFixed(1)
+      : null;
     const color = cat === 'vert' ? '#10b981' : cat === 'orange' ? '#f59e0b' : '#ef4444';
 
     const bankrollEl = document.getElementById(`cat-${cat}-bankroll`);
@@ -2252,7 +2272,7 @@ function renderBacktestResults(data) {
 
 // ── INIT ──────────────────────────────────────────────────
 loadState();
-loadTirsState();
+(async () => { await loadTirsState(); renderTirsTrack(); })();
 renderMatrix();
 
 // Restaurer le dernier scan tirs si dispo
