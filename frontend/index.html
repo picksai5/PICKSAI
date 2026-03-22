@@ -2272,18 +2272,25 @@ function renderBacktestResults(data) {
 
 // ── INIT ──────────────────────────────────────────────────
 loadState();
-(async () => { await loadTirsState(); renderTirsTrack(); })();
-renderMatrix();
+(async () => {
+  await loadTirsState();
+  renderTirsTrack();
 
-// Restaurer le dernier scan tirs si dispo
-const _lastTirsScan = localStorage.getItem('picksai_last_tirs_scan');
-if (_lastTirsScan) {
+  // Restaurer le dernier scan tirs depuis window.storage ou localStorage
   try {
-    const _tirsBadge = document.getElementById('tirs-last-scan-badge');
-    const _tirsData = JSON.parse(_lastTirsScan);
-    if (_tirsBadge) _tirsBadge.innerHTML = `🕐 Dernier scan : ${_tirsData.date} <span style="color:#60a5fa;cursor:pointer" onclick="restoreTirsScan()">— Voir les picks</span>`;
+    let raw = null;
+    try { const r = await window.storage.get('picksai_last_tirs_scan'); raw = r?.value; } catch {}
+    if (!raw) raw = localStorage.getItem('picksai_last_tirs_scan');
+    if (raw) {
+      const _tirsData = JSON.parse(raw);
+      const _tirsBadge = document.getElementById('tirs-last-scan-badge');
+      if (_tirsBadge && _tirsData.date) {
+        _tirsBadge.innerHTML = `🕐 Dernier scan : ${_tirsData.date} <span style="color:#60a5fa;cursor:pointer" onclick="restoreTirsScan()">— Voir les picks</span>`;
+      }
+    }
   } catch {}
-}
+})();
+renderMatrix();
 </script>
 </body>
 </html>
