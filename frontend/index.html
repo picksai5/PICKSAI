@@ -196,6 +196,7 @@
   <button class="tab" onclick="showTab('tirs')">🎯 TIRS</button>
   <button class="tab" onclick="showTab('bankroll')">💰 BANKROLL</button>
   <button class="tab" onclick="showTab('track')">📋 TRACK RECORD</button>
+  <button class="tab" onclick="showTab('combis')">🔗 COMBINÉS</button>
   <button class="tab" onclick="showTab('stats')">📊 STATS</button>
   <button class="tab" onclick="showTab('matrix')">🧬 MATRICE</button>
   <button class="tab" onclick="showTab('backtest')">🔬 BACKTEST</button>
@@ -463,6 +464,82 @@
     </div>
   </div>
 
+  <!-- COMBINÉS PAGE -->
+  <div class="page" id="page-combis">
+
+    <!-- Bankroll combinés -->
+    <div class="bankroll-hero" style="background:linear-gradient(135deg,#6366f111,var(--bg2));border:1px solid #6366f133;border-radius:14px;padding:16px;margin-bottom:12px">
+      <div class="bankroll-label">BANKROLL COMBINÉS</div>
+      <div style="font-family:'Bebas Neue';font-size:42px;line-height:1" id="combi-bankroll-amount">500€</div>
+      <div style="font-size:12px;font-weight:700" id="combi-bankroll-sub">0€ profit · 0 combinés joués</div>
+      <div class="sparkline"><canvas id="combi-sparkline" height="60"></canvas></div>
+    </div>
+    <div class="stat-grid-2" style="margin-bottom:12px">
+      <div class="stat-box"><div class="stat-label">WIN RATE</div><div class="stat-value" id="combi-wr">—</div></div>
+      <div class="stat-box"><div class="stat-label">ROI</div><div class="stat-value" id="combi-roi">—</div></div>
+      <div class="stat-box"><div class="stat-label">ÉVOLUTION</div><div class="stat-value" id="combi-evol" style="color:#6366f1">—</div></div>
+      <div class="stat-box"><div class="stat-label">COTE MOYENNE</div><div class="stat-value" id="combi-cote-moy" style="color:#6366f1">—</div></div>
+      <div class="stat-box"><div class="stat-label">COMBINÉS JOUÉS</div><div class="stat-value" id="combi-total" style="color:#6366f1">0</div></div>
+    </div>
+
+    <!-- Ajouter un combiné -->
+    <div style="background:var(--bg2);border:1px solid #6366f133;border-radius:12px;padding:14px;margin-bottom:14px">
+      <div style="font-family:'Bebas Neue';font-size:14px;letter-spacing:2px;color:#6366f1;margin-bottom:12px">➕ NOUVEAU COMBINÉ</div>
+      <div class="form-grid" style="margin-bottom:8px">
+        <div>
+          <div class="form-label">PICK 1</div>
+          <input class="form-input" type="text" id="combi-pick1" placeholder="Ex: Barça victoire">
+        </div>
+        <div>
+          <div class="form-label">PICK 2</div>
+          <input class="form-input" type="text" id="combi-pick2" placeholder="Ex: Aston Villa V/N">
+        </div>
+      </div>
+      <div class="form-grid" style="margin-bottom:8px">
+        <div>
+          <div class="form-label">COTE COMBINÉE</div>
+          <input class="form-input" type="number" step="0.01" id="combi-cote" placeholder="Ex: 1.75">
+        </div>
+        <div>
+          <div class="form-label">MISE (€)</div>
+          <input class="form-input" type="number" id="combi-mise" placeholder="Ex: 50">
+        </div>
+      </div>
+      <div class="form-grid" style="margin-bottom:12px">
+        <div>
+          <div class="form-label">TYPE</div>
+          <select class="form-input" id="combi-type">
+            <option value="V+V">🟢 VERT + 🟢 VERT</option>
+            <option value="V+DC" selected>🟢 VERT + 🟡 ORANGE double chance</option>
+            <option value="V+O">🟢 VERT + 🟡 ORANGE victoire</option>
+            <option value="O+O">🟡 ORANGE + 🟡 ORANGE</option>
+            <option value="custom">Autre</option>
+          </select>
+        </div>
+        <div>
+          <div class="form-label">FIABILITÉ ESTIMÉE</div>
+          <select class="form-input" id="combi-fiab">
+            <option value="VERT">🟢 VERT (≥ 65%)</option>
+            <option value="ORANGE" selected>🟡 ORANGE (50-65%)</option>
+            <option value="ROUGE">🔴 ROUGE (< 50%)</option>
+          </select>
+        </div>
+      </div>
+      <button class="btn btn-primary" style="background:linear-gradient(135deg,#6366f1,#4f46e5);border-color:#6366f1" onclick="addCombi()">🔗 AJOUTER AU TRACK</button>
+    </div>
+
+    <!-- Historique combinés -->
+    <div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <div style="font-family:'Bebas Neue';font-size:16px;letter-spacing:3px;color:var(--muted)">HISTORIQUE COMBINÉS</div>
+        <div id="combi-track-stat" style="font-size:11px;color:var(--muted)"></div>
+      </div>
+      <div id="combi-track-list">
+        <div class="empty"><div class="empty-icon">🔗</div><div class="empty-title">AUCUN COMBINÉ</div><div class="empty-text">Ajoute ton premier combiné ci-dessus.</div></div>
+      </div>
+    </div>
+  </div>
+
   <!-- STATS PAGE -->
   <div class="page" id="page-stats">
     <div class="stat-grid-2" style="margin-bottom:12px">
@@ -607,6 +684,7 @@ function showTab(tab) {
   if (tab === 'matrix') renderMatrix();
   if (tab === 'stats') renderStats();
   if (tab === 'track') renderTrack();
+  if (tab === 'combis') renderCombis();
   if (tab === 'bankroll') renderBankroll();
   if (tab === 'tirs') renderTirsTrack();
 }
@@ -1097,17 +1175,23 @@ async function doScan() {
     }
   } catch {}
 
-  // Si scan du jour déjà fait → proposer juste vérif compos plutôt que tout recalculer
+  // Si scan du jour déjà fait → vérifier compos sur picks existants, pas rescan complet
   if (scanDuJour) {
-    const confirmRescan = confirm(`Un scan a déjà été fait aujourd'hui (${scanDuJour.picks.length} picks).\n\nCliquer OK pour rescanner (compos officielles).\nAnnuler pour voir les picks du matin.`);
-    if (!confirmRescan) {
-      btn.innerHTML = '⚡ SCAN COMPLET';
-      btn.disabled = false;
-      logBox.style.display = 'none';
-      renderScanResults(scanDuJour);
-      document.getElementById('check-compos-btn').style.display = 'inline-block';
-      return;
-    }
+    btn.innerHTML = '⚡ SCAN COMPLET';
+    btn.disabled = false;
+    logBox.style.display = 'none';
+    // Toujours afficher les picks du matin
+    renderScanResults(scanDuJour);
+    document.getElementById('check-compos-btn').style.display = 'inline-block';
+    // Lancer automatiquement la vérification des compos
+    addLog = (msg, color) => {
+      logBox.style.display = 'block';
+      const t = new Date().toLocaleTimeString('fr-FR');
+      logBox.innerHTML += `<div class="log-line"><span class="log-time">${t}</span><span style="color:${color||'#2a4a6a'}">${msg}</span></div>`;
+    };
+    addLog('🔍 Picks du matin conservés — vérification des compos officielles...', '#60a5fa');
+    setTimeout(() => checkCompos(), 500);
+    return;
   }
 
   const addLog = (msg, color) => {
@@ -1798,6 +1882,174 @@ function saveParams() {
   updateUI();
   document.getElementById('input-bankroll').value = '';
   document.getElementById('input-mise').value = '';
+}
+
+// ── COMBINÉS ──────────────────────────────────────────────
+const COMBI_STATE_KEY = 'picksai_combis_v1';
+let combiState = { combis: [], capital_base: 500, bankroll: 500 };
+
+async function loadCombiState() {
+  try { const r = await window.storage.get(COMBI_STATE_KEY); if (r?.value) { combiState = { ...combiState, ...JSON.parse(r.value) }; return; } } catch {}
+  try { const s = localStorage.getItem(COMBI_STATE_KEY); if (s) combiState = { ...combiState, ...JSON.parse(s) }; } catch {}
+}
+
+async function saveCombiState() {
+  const s = JSON.stringify(combiState);
+  try { await window.storage.set(COMBI_STATE_KEY, s); } catch {}
+  try { localStorage.setItem(COMBI_STATE_KEY, s); } catch {}
+}
+
+function addCombi() {
+  const pick1 = document.getElementById('combi-pick1').value.trim();
+  const pick2 = document.getElementById('combi-pick2').value.trim();
+  const cote  = parseFloat(document.getElementById('combi-cote').value);
+  const mise  = parseFloat(document.getElementById('combi-mise').value);
+  const type  = document.getElementById('combi-type').value;
+  const fiab  = document.getElementById('combi-fiab').value;
+
+  if (!pick1 || !pick2 || !cote || !mise) return alert('Remplis tous les champs');
+
+  combiState.combis.unshift({
+    id: Date.now(),
+    date: new Date().toISOString(),
+    pick1, pick2, cote, mise, type, fiab,
+    gain: null, won: null, pending: true,
+  });
+
+  document.getElementById('combi-pick1').value = '';
+  document.getElementById('combi-pick2').value = '';
+  document.getElementById('combi-cote').value = '';
+  document.getElementById('combi-mise').value = '';
+
+  saveCombiState();
+  renderCombis();
+}
+
+function resolveCombi(id, won) {
+  const c = combiState.combis.find(c => c.id === id);
+  if (!c) return;
+  c.won = won;
+  c.pending = false;
+  c.gain = won ? Math.round(c.mise * (c.cote - 1)) : -c.mise;
+  combiState.bankroll += c.gain;
+  saveCombiState();
+  renderCombis();
+}
+
+function deleteCombi(id) {
+  combiState.combis = combiState.combis.filter(c => c.id !== id);
+  saveCombiState();
+  renderCombis();
+}
+
+function renderCombis() {
+  const resolved = combiState.combis.filter(c => !c.pending);
+  const won      = resolved.filter(c => c.won).length;
+  const profit   = resolved.reduce((a, c) => a + (c.gain || 0), 0);
+  const totalMise = resolved.reduce((a, c) => a + c.mise, 0);
+  const wr       = resolved.length > 0 ? Math.round(won / resolved.length * 100) : null;
+  const roi      = totalMise > 0 ? Math.round(profit / totalMise * 100) : null;
+  const coteMoy  = resolved.length > 0 ? (resolved.reduce((a,c) => a + c.cote, 0) / resolved.length).toFixed(2) : null;
+  const bankroll = combiState.capital_base + profit;
+  const evol     = combiState.capital_base > 0 && resolved.length > 0 ? ((profit / combiState.capital_base) * 100).toFixed(1) : null;
+
+  const amountEl = document.getElementById('combi-bankroll-amount');
+  const subEl    = document.getElementById('combi-bankroll-sub');
+  if (amountEl) { amountEl.textContent = bankroll + '€'; amountEl.style.color = bankroll >= combiState.capital_base ? '#6366f1' : '#ef4444'; }
+  if (subEl) subEl.textContent = `${profit >= 0 ? '+' : ''}${profit}€ profit · ${resolved.length} combinés`;
+
+  const set = (id, val, color) => { const el = document.getElementById(id); if (el) { el.textContent = val; if (color) el.style.color = color; } };
+  set('combi-wr', wr !== null ? wr + '%' : '—', wr === null ? 'var(--muted)' : wr >= 60 ? '#10b981' : wr >= 45 ? '#f59e0b' : '#ef4444');
+  set('combi-roi', roi !== null ? (roi >= 0 ? '+' : '') + roi + '%' : '—', roi === null ? 'var(--muted)' : roi >= 0 ? '#10b981' : '#ef4444');
+  set('combi-evol', evol !== null ? (evol >= 0 ? '+' : '') + evol + '%' : '—', evol === null ? '#6366f1' : evol >= 0 ? '#10b981' : '#ef4444');
+  set('combi-cote-moy', coteMoy ? '×' + coteMoy : '—');
+  set('combi-total', combiState.combis.length);
+
+  // Stat header
+  const statEl = document.getElementById('combi-track-stat');
+  if (statEl && resolved.length > 0) {
+    statEl.innerHTML = `WR <strong style="color:${wr >= 60 ? '#10b981' : '#f59e0b'}">${wr}%</strong> · Cote moy. <strong style="color:#6366f1">×${coteMoy}</strong>`;
+  }
+
+  // Sparkline
+  drawCombiSparkline();
+
+  // Liste
+  const list = document.getElementById('combi-track-list');
+  if (!list) return;
+
+  if (combiState.combis.length === 0) {
+    list.innerHTML = '<div class="empty"><div class="empty-icon">🔗</div><div class="empty-title">AUCUN COMBINÉ</div></div>';
+    return;
+  }
+
+  const typeLabel = { 'V+V': '🟢+🟢', 'V+DC': '🟢+🟡 V/N', 'V+O': '🟢+🟡', 'O+O': '🟡+🟡', 'custom': '🔗' };
+  const fiabColor = { 'VERT': '#10b981', 'ORANGE': '#f59e0b', 'ROUGE': '#ef4444' };
+
+  list.innerHTML = combiState.combis.map(c => {
+    const isPending = c.pending;
+    const ac = fiabColor[c.fiab] || '#6366f1';
+    const statusIcon = isPending ? '⏳' : c.won ? '✅' : '❌';
+    const gainDisplay = isPending
+      ? `<div style="font-family:'Bebas Neue';font-size:13px;color:#f59e0b">⏳ EN ATTENTE</div>`
+      : `<div style="font-family:'Bebas Neue';font-size:18px;color:${(c.gain||0)>=0?'#10b981':'#ef4444'}">${(c.gain||0)>=0?'+':''}${c.gain||0}€</div>`;
+
+    return `<div class="track-item" style="border-color:${isPending?'#f59e0b44':c.won?'#10b98133':'#ef444422'}">
+      <div class="track-header">
+        <div style="flex:1">
+          <div class="track-player">
+            <span>${statusIcon}</span>
+            <span class="track-name" style="font-size:12px">${c.pick1}</span>
+            <span style="font-size:10px;color:var(--muted)">+</span>
+            <span class="track-name" style="font-size:12px">${c.pick2}</span>
+          </div>
+          <div class="track-match" style="margin-top:4px">
+            <span style="font-size:10px;padding:2px 6px;border-radius:3px;background:${ac}22;color:${ac};border:1px solid ${ac}44">${typeLabel[c.type]||'🔗'}</span>
+            <span style="font-size:10px;color:var(--muted);margin-left:6px">${new Date(c.date).toLocaleDateString('fr-FR')}</span>
+          </div>
+          ${isPending ? `<div style="display:flex;gap:6px;margin-top:8px">
+            <button onclick="resolveCombi(${c.id},true)" style="flex:1;padding:5px;background:#10b98122;border:1px solid #10b98155;color:#10b981;border-radius:6px;cursor:pointer;font-size:11px;font-family:'Bebas Neue'">✅ GAGNÉ</button>
+            <button onclick="resolveCombi(${c.id},false)" style="flex:1;padding:5px;background:#ef444422;border:1px solid #ef444455;color:#ef4444;border-radius:6px;cursor:pointer;font-size:11px;font-family:'Bebas Neue'">❌ PERDU</button>
+          </div>` : ''}
+        </div>
+        <div style="text-align:right;flex-shrink:0;margin-left:14px">
+          ${gainDisplay}
+          <div style="font-size:11px;color:var(--muted)">Mise: ${c.mise}€ · <span style="color:#6366f1;font-weight:500">×${c.cote}</span></div>
+          <button onclick="deleteCombi(${c.id})" style="margin-top:6px;padding:3px 8px;background:transparent;border:1px solid #ef444444;color:#ef4444;border-radius:4px;cursor:pointer;font-size:10px">🗑</button>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function drawCombiSparkline() {
+  const canvas = document.getElementById('combi-sparkline');
+  if (!canvas) return;
+  const resolved = [...combiState.combis].filter(c => !c.pending).reverse();
+  if (resolved.length < 2) return;
+  canvas.width = canvas.offsetWidth || 300;
+  canvas.height = 60;
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  let b = combiState.capital_base;
+  const values = [b];
+  resolved.forEach(c => { b += (c.gain || 0); values.push(b); });
+  const min = Math.min(...values) - 5, max = Math.max(...values) + 5, range = max - min || 1;
+  ctx.clearRect(0, 0, W, H);
+  ctx.strokeStyle = '#6366f1'; ctx.lineWidth = 2; ctx.lineJoin = 'round';
+  ctx.beginPath();
+  values.forEach((v, i) => {
+    const x = (i / (values.length - 1)) * W;
+    const y = H - ((v - min) / range) * (H - 8) - 4;
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+  resolved.forEach((c, i) => {
+    const x = ((i + 1) / (values.length - 1)) * W;
+    const y = H - ((values[i + 1] - min) / range) * (H - 8) - 4;
+    ctx.beginPath(); ctx.arc(x, y, 3, 0, Math.PI * 2);
+    ctx.fillStyle = c.won ? '#10b981' : '#ef4444'; ctx.fill();
+  });
 }
 
 // ── TRACK RECORD ─────────────────────────────────────────
