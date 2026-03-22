@@ -893,8 +893,8 @@ app.get('/api/scan', async (req, res) => {
 
     allPicks.sort((a, b) => (b.score_sort || 0) - (a.score_sort || 0));
 
-    // Tous les VERT + 1 seul ORANGE + 1 seul ROUGE
-    const vertsAll   = allPicks.filter(p => p.alerte === 'VERT').sort((a,b) => b.score_sort - a.score_sort);
+    // 2 VERT max + 1 ORANGE + 1 ROUGE
+    const vertsAll   = allPicks.filter(p => p.alerte === 'VERT').sort((a,b) => b.score_sort - a.score_sort).slice(0, 2);
     const topOrange  = allPicks.filter(p => p.alerte === 'ORANGE').sort((a,b) => b.score_sort - a.score_sort).slice(0, 1);
     const topRouge   = allPicks.filter(p => p.alerte === 'ROUGE').sort((a,b) => b.score_sort - a.score_sort).slice(0, 1);
     const picks = [...vertsAll, ...topOrange, ...topRouge];
