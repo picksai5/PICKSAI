@@ -63,6 +63,18 @@ const LEAGUES = [
 ];
 const EURO_LEAGUES = [2, 3, 848];
 
+// Ligues où les marchés tirs cadrés sont disponibles (championnats majeurs + coupes euros)
+const TIRS_LEAGUES = [
+  { id: 61,  name: 'Ligue 1' },
+  { id: 140, name: 'La Liga' },
+  { id: 39,  name: 'Premier League' },
+  { id: 135, name: 'Serie A' },
+  { id: 78,  name: 'Bundesliga' },
+  { id: 2,   name: 'Champions League' },
+  { id: 3,   name: 'Europa League' },
+  { id: 848, name: 'Conference League' },
+];
+
 // ── CACHE ─────────────────────────────────────────────────
 const cache = { standings: {}, teamStats: {}, players: {}, natLeagues: {}, fixtureStats: {}, predictions: {}, lastDate: null };
 const CACHE_TTL = 6 * 60 * 60 * 1000;
@@ -810,10 +822,10 @@ app.get('/api/scan', async (req, res) => {
     const allFixtures = [];
     for (const league of LEAGUES) {
       const data = await footballAPI('/fixtures', { date: today, league: league.id, season: SEASON });
-      // Exclure les matchs reportés (PST), annulés (CANC), abandonnés (ABD), suspendus (SUSP)
+      // Exclure matchs reportés, annulés, abandonnés, suspendus
       const validFixtures = data.filter(f => {
         const status = f.fixture?.status?.short;
-        return !['PST', 'CANC', 'ABD', 'SUSP', 'AWD', 'WO'].includes(status);
+        return !['PST','CANC','ABD','SUSP','AWD','WO'].includes(status);
       });
       if (validFixtures.length > 0) allFixtures.push(...validFixtures.map(f => ({ ...f, leagueName: league.name, leagueId: league.id })));
     }
@@ -881,10 +893,11 @@ app.get('/api/scan', async (req, res) => {
 
     allPicks.sort((a, b) => (b.score_sort || 0) - (a.score_sort || 0));
 
-    const topVert   = allPicks.find(p => p.alerte === 'VERT')   || null;
-    const topOrange = allPicks.find(p => p.alerte === 'ORANGE') || null;
-    const topRouge  = allPicks.find(p => p.alerte === 'ROUGE')  || null;
-    const picks = [topVert, topOrange, topRouge].filter(Boolean);
+    // Tous les VERT + 1 seul ORANGE + 1 seul ROUGE
+    const vertsAll   = allPicks.filter(p => p.alerte === 'VERT').sort((a,b) => b.score_sort - a.score_sort);
+    const topOrange  = allPicks.filter(p => p.alerte === 'ORANGE').sort((a,b) => b.score_sort - a.score_sort).slice(0, 1);
+    const topRouge   = allPicks.filter(p => p.alerte === 'ROUGE').sort((a,b) => b.score_sort - a.score_sort).slice(0, 1);
+    const picks = [...vertsAll, ...topOrange, ...topRouge];
 
     res.json({
       date: new Date().toLocaleDateString('fr-FR'),
@@ -957,7 +970,7 @@ app.get('/api/scan-tirs', async (req, res) => {
     await preloadCache();
 
     const allFixtures = [];
-    for (const league of LEAGUES) {
+    for (const league of TIRS_LEAGUES) {
       const data = await footballAPI('/fixtures', { date: today, league: league.id, season: SEASON });
       const valid = data.filter(f => !['PST','CANC','ABD','SUSP','AWD','WO'].includes(f.fixture?.status?.short));
       if (valid.length > 0) allFixtures.push(...valid.map(f => ({ ...f, leagueName: league.name, leagueId: league.id })));
@@ -1124,10 +1137,11 @@ app.get('/api/scan-tirs', async (req, res) => {
 
     // Trier par fiabilité décroissante, garder top 3
     picks.sort((a, b) => b.fiabilite - a.fiabilite);
-    const topVert   = picks.find(p => p.alerte === 'VERT')   || null;
-    const topOrange = picks.find(p => p.alerte === 'ORANGE') || null;
-    const topRouge  = picks.find(p => p.alerte === 'ROUGE')  || null;
-    const top3 = [topVert, topOrange, topRouge].filter(Boolean);
+    // Tous les VERT + 1 seul ORANGE + 1 seul ROUGE
+    const tirsVerts   = picks.filter(p => p.alerte === 'VERT').sort((a,b) => b.fiabilite - a.fiabilite);
+    const tirsOrange  = picks.filter(p => p.alerte === 'ORANGE').sort((a,b) => b.fiabilite - a.fiabilite).slice(0, 1);
+    const tirsRouge   = picks.filter(p => p.alerte === 'ROUGE').sort((a,b) => b.fiabilite - a.fiabilite).slice(0, 1);
+    const top3 = [...tirsVerts, ...tirsOrange, ...tirsRouge];
 
     res.json({
       date: new Date().toLocaleDateString('fr-FR'),
