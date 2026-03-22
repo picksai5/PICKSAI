@@ -64,6 +64,7 @@ const LEAGUES = [
 const EURO_LEAGUES = [2, 3, 848];
 
 // Ligues où les marchés tirs cadrés sont disponibles (championnats majeurs + coupes euros)
+// Ligues analysées pour les tirs — l'utilisateur adapte selon son bookmaker
 const TIRS_LEAGUES = [
   { id: 61,  name: 'Ligue 1' },
   { id: 140, name: 'La Liga' },
@@ -73,6 +74,8 @@ const TIRS_LEAGUES = [
   { id: 2,   name: 'Champions League' },
   { id: 3,   name: 'Europa League' },
   { id: 848, name: 'Conference League' },
+  { id: 88,  name: 'Eredivisie' },
+  { id: 94,  name: 'Liga Portugal' },
 ];
 
 // ── CACHE ─────────────────────────────────────────────────
@@ -1138,7 +1141,7 @@ app.get('/api/scan-tirs', async (req, res) => {
     // Trier par fiabilité décroissante, garder top 3
     picks.sort((a, b) => b.fiabilite - a.fiabilite);
     // Tous les VERT + 1 seul ORANGE + 1 seul ROUGE
-    const tirsVerts   = picks.filter(p => p.alerte === 'VERT').sort((a,b) => b.fiabilite - a.fiabilite);
+    const tirsVerts   = picks.filter(p => p.alerte === 'VERT').sort((a,b) => b.fiabilite - a.fiabilite).slice(0, 2);
     const tirsOrange  = picks.filter(p => p.alerte === 'ORANGE').sort((a,b) => b.fiabilite - a.fiabilite).slice(0, 1);
     const tirsRouge   = picks.filter(p => p.alerte === 'ROUGE').sort((a,b) => b.fiabilite - a.fiabilite).slice(0, 1);
     const top3 = [...tirsVerts, ...tirsOrange, ...tirsRouge];
