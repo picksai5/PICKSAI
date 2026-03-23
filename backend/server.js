@@ -1199,18 +1199,34 @@ async function tennisAPI(endpoint, params = {}) {
   }
 }
 
-// Normalise une fixture tennis pour uniformiser les champs joueurs
-// L'API retourne homePlayer/awayPlayer OU player_1/player_2 selon l'endpoint
+// Détecte si un nom de joueur est une paire de double (contient '/')
+function isDoubles(name) { return typeof name === 'string' && name.includes('/'); }
+
+// Normalise une fixture tennis — uniformise les champs et filtre les doubles
 function normalizeTennisFixture(f) {
+  // L'API retourne player1Id/player2Id comme entiers + objets player1/player2 séparés
+  // OU homePlayer/awayPlayer OU player_1/player_2
   const p1raw = f.player1 || f.homePlayer || f.player_1 || (f.participants && f.participants[0]) || null;
   const p2raw = f.player2 || f.awayPlayer || f.player_2 || (f.participants && f.participants[1]) || null;
+
+  // Construire les objets joueurs — fallback sur player1Id/player2Id directs si pas d'objet
+  const p1 = p1raw
+    ? { id: p1raw.id || p1raw.playerId || f.player1Id, name: p1raw.name || p1raw.fullName || p1raw.player_name }
+    : (f.player1Id ? { id: f.player1Id, name: 'Joueur 1' } : null);
+  const p2 = p2raw
+    ? { id: p2raw.id || p2raw.playerId || f.player2Id, name: p2raw.name || p2raw.fullName || p2raw.player_name }
+    : (f.player2Id ? { id: f.player2Id, name: 'Joueur 2' } : null);
+
+  const isDouble = isDoubles(p1?.name) || isDoubles(p2?.name);
+
   return {
     ...f,
-    player1: p1raw ? { id: p1raw.id || p1raw.playerId, name: p1raw.name || p1raw.fullName || p1raw.player_name } : null,
-    player2: p2raw ? { id: p2raw.id || p2raw.playerId, name: p2raw.name || p2raw.fullName || p2raw.player_name } : null,
-    surface:        f.surface || f.courtSurface || f.court_surface || 'Unknown',
+    player1: p1,
+    player2: p2,
+    isDouble,
+    surface:        f.surface || f.courtSurface || f.court_surface || null,
     tournamentName: f.tournamentName || (f.tournament && f.tournament.name) || (f.league && f.league.name) || 'ATP',
-    date:           f.date || f.startDate || f.start_date || null,
+    date:           f.date || f.startDate || f.start_date || f.scheduledAt || null,
   };
 }
 
@@ -1230,10 +1246,14 @@ async function getTennisFixturesToday() {
     rawFixtures = (data && (data.data || data.fixtures)) || [];
   }
 
-  const fixtures = rawFixtures.map(normalizeTennisFixture);
-  console.log(`[TENNIS] getTennisFixturesToday → ${fixtures.length} matchs normalisés`);
+  const all = rawFixtures.map(normalizeTennisFixture);
+  const fixtures = all.filter(f => !f.isDouble);
+  const doubles  = all.length - fixtures.length;
+  console.log(`[TENNIS] getTennisFixturesToday → ${all.length} total (${doubles} doubles exclus) → ${fixtures.length} simples`);
   if (fixtures.length > 0) {
-    console.log('[TENNIS] Exemple fixture normalisé:', JSON.stringify(fixtures[0]).slice(0, 300));
+    console.log('[TENNIS] Exemple fixture simple:', JSON.stringify(fixtures[0]).slice(0, 400));
+  } else if (all.length > 0) {
+    console.log('[TENNIS] Tous des doubles — exemple brut:', JSON.stringify(rawFixtures[0]).slice(0, 400));
   }
 
   tennisCache[cacheKey] = { data: fixtures, timestamp: Date.now() };
@@ -1266,6 +1286,15 @@ async function getTennisH2H(player1Id, player2Id) {
   return fixtures;
 }
 
+// Extrait l'id du gagnant depuis un objet fixture tennis
+// L'API peut retourner : winnerId, winner_id, winner.id, winner (int), etc.
+function getTennisWinnerId(f) {
+  const raw = f.winnerId ?? f.winner_id ?? f.winner ?? null;
+  if (raw === null || raw === undefined) return null;
+  if (typeof raw === 'object') return String(raw.id ?? raw.playerId ?? '');
+  return String(raw);
+}
+
 // ── ANALYSE TENNIS ─────────────────────────────────────────
 function analyseTennisMatch(fixture, h2hFixtures, p1Recent, p2Recent) {
   const player1 = fixture.player1;
@@ -1274,12 +1303,16 @@ function analyseTennisMatch(fixture, h2hFixtures, p1Recent, p2Recent) {
 
   // ── FORME RÉCENTE (5 derniers matchs) ─────────────────
   const getForm = (recent, playerId) => {
-    const last5 = (recent || [])
-      .filter(f => f.winnerId !== undefined)
-      .slice(0, 5);
-    const wins   = last5.filter(f => String(f.winnerId) === String(playerId)).length;
+    const all = (recent || []).filter(f => getTennisWinnerId(f) !== null);
+    const last5 = all.slice(0, 5);
+    const pidStr = String(playerId);
+    const wins   = last5.filter(f => getTennisWinnerId(f) === pidStr).length;
     const losses = last5.length - wins;
-    const formStr = last5.map(f => String(f.winnerId) === String(playerId) ? 'W' : 'L').join('');
+    const formStr = last5.map(f => getTennisWinnerId(f) === pidStr ? 'W' : 'L').join('');
+    if (last5.length === 0 && recent && recent.length > 0) {
+      // Debug : log le premier élément brut pour comprendre la structure
+      console.log('[TENNIS] getForm debug - exemple fixture récent brut:', JSON.stringify(recent[0]).slice(0, 200));
+    }
     return { wins, losses, total: last5.length, formStr };
   };
 
@@ -1287,16 +1320,18 @@ function analyseTennisMatch(fixture, h2hFixtures, p1Recent, p2Recent) {
   const form2 = getForm(p2Recent, player2?.id);
 
   // ── H2H GLOBAL ─────────────────────────────────────────
-  const h2hTotal = (h2hFixtures || []).filter(f => f.winnerId !== undefined);
-  const h2hWins1 = h2hTotal.filter(f => String(f.winnerId) === String(player1?.id)).length;
-  const h2hWins2 = h2hTotal.filter(f => String(f.winnerId) === String(player2?.id)).length;
+  const h2hTotal = (h2hFixtures || []).filter(f => getTennisWinnerId(f) !== null);
+  const p1str = String(player1?.id);
+  const p2str = String(player2?.id);
+  const h2hWins1 = h2hTotal.filter(f => getTennisWinnerId(f) === p1str).length;
+  const h2hWins2 = h2hTotal.filter(f => getTennisWinnerId(f) === p2str).length;
 
   // ── H2H SUR LA SURFACE ─────────────────────────────────
   const h2hSurface = h2hTotal.filter(f =>
-    (f.surface || '').toLowerCase() === surface.toLowerCase()
+    (f.surface || f.court_surface || '').toLowerCase() === surface.toLowerCase()
   );
-  const h2hSurfWins1 = h2hSurface.filter(f => String(f.winnerId) === String(player1?.id)).length;
-  const h2hSurfWins2 = h2hSurface.filter(f => String(f.winnerId) === String(player2?.id)).length;
+  const h2hSurfWins1 = h2hSurface.filter(f => getTennisWinnerId(f) === p1str).length;
+  const h2hSurfWins2 = h2hSurface.filter(f => getTennisWinnerId(f) === p2str).length;
 
   // ── SCORE MATRICIEL ────────────────────────────────────
   let score1 = 0;
@@ -1343,8 +1378,9 @@ function analyseTennisMatch(fixture, h2hFixtures, p1Recent, p2Recent) {
 
   // Seuil minimum de données
   const dataQuality = form1.total + form2.total + h2hTotal.length;
+  console.log('[TENNIS] analyse ' + (player1?.name||'?') + ' vs ' + (player2?.name||'?') + ' — form1:' + form1.total + ' form2:' + form2.total + ' h2h:' + h2hTotal.length + ' diff:' + diff);
   if (dataQuality < 3) {
-    return { alerte: null, reason: 'Données insuffisantes' };
+    return { alerte: null, reason: `Données insuffisantes (form1:${form1.total} form2:${form2.total} h2h:${h2hTotal.length})` };
   }
 
   // Trop équilibré
