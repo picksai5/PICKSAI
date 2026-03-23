@@ -1167,7 +1167,352 @@ app.get('/api/scan-tirs', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-app.get('/api/health', (req, res) => res.json({ status: 'ok', name: 'PicksAI', version: '4.1', season: SEASON }));
+// ══════════════════════════════════════════════════════════
+// ── MODULE TENNIS ─────────────────────────────────────────
+// ══════════════════════════════════════════════════════════
+const TENNIS_API_KEY  = process.env.TENNIS_API_KEY;
+const TENNIS_API_HOST = 'tennis-api-atp-wta-itf.p.rapidapi.com';
+const TENNIS_API_BASE = 'https://tennis-api-atp-wta-itf.p.rapidapi.com/tennis/v2';
+
+// Cache tennis séparé
+const tennisCache = {};
+const TENNIS_CACHE_TTL = 3 * 60 * 60 * 1000; // 3h
+
+function isTennisCacheValid(e) { return e && Date.now() - e.timestamp < TENNIS_CACHE_TTL; }
+
+async function tennisAPI(endpoint, params = {}) {
+  await sleep(300);
+  try {
+    const url = new URL(`${TENNIS_API_BASE}${endpoint}`);
+    Object.entries(params).forEach(([k, v]) => url.searchParams.append(k, v));
+    const res = await axios.get(url.toString(), {
+      headers: {
+        'x-rapidapi-key': TENNIS_API_KEY,
+        'x-rapidapi-host': TENNIS_API_HOST,
+        'Content-Type': 'application/json',
+      },
+    });
+    return res.data || null;
+  } catch (e) {
+    console.error('[TENNIS] API error:', endpoint, e.message);
+    return null;
+  }
+}
+
+// Récupère les matchs ATP du jour
+async function getTennisFixturesToday() {
+  const today = getTodayStr();
+  const cacheKey = `fixtures_atp_${today}`;
+  if (isTennisCacheValid(tennisCache[cacheKey])) return tennisCache[cacheKey].data;
+  const data = await tennisAPI('/atp/fixtures/date/' + today);
+  const fixtures = data?.data || [];
+  tennisCache[cacheKey] = { data: fixtures, timestamp: Date.now() };
+  return fixtures;
+}
+
+// Récupère les derniers matchs d'un joueur (forme récente)
+async function getPlayerRecentFixtures(playerId) {
+  const cacheKey = `player_${playerId}`;
+  if (isTennisCacheValid(tennisCache[cacheKey])) return tennisCache[cacheKey].data;
+  const data = await tennisAPI(`/atp/player/${playerId}/fixtures`);
+  const fixtures = data?.data || [];
+  tennisCache[cacheKey] = { data: fixtures, timestamp: Date.now() };
+  return fixtures;
+}
+
+// Récupère le H2H entre deux joueurs
+async function getTennisH2H(player1Id, player2Id) {
+  const cacheKey = `h2h_${player1Id}_${player2Id}`;
+  if (isTennisCacheValid(tennisCache[cacheKey])) return tennisCache[cacheKey].data;
+  const data = await tennisAPI(`/atp/fixtures/h2h/${player1Id}/${player2Id}`);
+  const fixtures = data?.data || [];
+  tennisCache[cacheKey] = { data: fixtures, timestamp: Date.now() };
+  return fixtures;
+}
+
+// ── ANALYSE TENNIS ─────────────────────────────────────────
+function analyseTennisMatch(fixture, h2hFixtures, p1Recent, p2Recent) {
+  const player1 = fixture.player1;
+  const player2 = fixture.player2;
+  const surface = fixture.surface || 'Unknown';
+
+  // ── FORME RÉCENTE (5 derniers matchs) ─────────────────
+  const getForm = (recent, playerId) => {
+    const last5 = (recent || [])
+      .filter(f => f.winnerId !== undefined)
+      .slice(0, 5);
+    const wins   = last5.filter(f => String(f.winnerId) === String(playerId)).length;
+    const losses = last5.length - wins;
+    const formStr = last5.map(f => String(f.winnerId) === String(playerId) ? 'W' : 'L').join('');
+    return { wins, losses, total: last5.length, formStr };
+  };
+
+  const form1 = getForm(p1Recent, player1?.id);
+  const form2 = getForm(p2Recent, player2?.id);
+
+  // ── H2H GLOBAL ─────────────────────────────────────────
+  const h2hTotal = (h2hFixtures || []).filter(f => f.winnerId !== undefined);
+  const h2hWins1 = h2hTotal.filter(f => String(f.winnerId) === String(player1?.id)).length;
+  const h2hWins2 = h2hTotal.filter(f => String(f.winnerId) === String(player2?.id)).length;
+
+  // ── H2H SUR LA SURFACE ─────────────────────────────────
+  const h2hSurface = h2hTotal.filter(f =>
+    (f.surface || '').toLowerCase() === surface.toLowerCase()
+  );
+  const h2hSurfWins1 = h2hSurface.filter(f => String(f.winnerId) === String(player1?.id)).length;
+  const h2hSurfWins2 = h2hSurface.filter(f => String(f.winnerId) === String(player2?.id)).length;
+
+  // ── SCORE MATRICIEL ────────────────────────────────────
+  let score1 = 0;
+  let score2 = 0;
+  const factors = [];
+
+  // F1 — FORME RÉCENTE (max 30pts)
+  if (form1.total >= 3) {
+    if      (form1.wins >= 5) { score1 += 30; factors.push('F1'); }
+    else if (form1.wins >= 4) { score1 += 22; factors.push('F1'); }
+    else if (form1.wins >= 3) { score1 += 14; factors.push('F1'); }
+    else if (form1.losses >= 4) { score1 -= 10; }
+    else if (form1.losses >= 3) { score1 -= 5; }
+  }
+  if (form2.total >= 3) {
+    if      (form2.wins >= 5) { score2 += 30; factors.push('F1'); }
+    else if (form2.wins >= 4) { score2 += 22; factors.push('F1'); }
+    else if (form2.wins >= 3) { score2 += 14; factors.push('F1'); }
+    else if (form2.losses >= 4) { score2 -= 10; }
+    else if (form2.losses >= 3) { score2 -= 5; }
+  }
+
+  // F2 — H2H GLOBAL (max 25pts)
+  if (h2hTotal.length >= 2) {
+    if      (h2hWins1 >= 4 && h2hWins1 > h2hWins2 * 2) { score1 += 25; factors.push('F2'); }
+    else if (h2hWins1 > h2hWins2 + 2) { score1 += 16; factors.push('F2'); }
+    else if (h2hWins1 > h2hWins2)     { score1 += 8; }
+    if      (h2hWins2 >= 4 && h2hWins2 > h2hWins1 * 2) { score2 += 25; factors.push('F2'); }
+    else if (h2hWins2 > h2hWins1 + 2) { score2 += 16; factors.push('F2'); }
+    else if (h2hWins2 > h2hWins1)     { score2 += 8; }
+  }
+
+  // F3 — H2H SUR LA SURFACE (max 20pts)
+  if (h2hSurface.length >= 2) {
+    if      (h2hSurfWins1 > h2hSurfWins2 + 1) { score1 += 20; factors.push('F3'); }
+    else if (h2hSurfWins1 > h2hSurfWins2)      { score1 += 10; }
+    if      (h2hSurfWins2 > h2hSurfWins1 + 1)  { score2 += 20; factors.push('F3'); }
+    else if (h2hSurfWins2 > h2hSurfWins1)       { score2 += 10; }
+  }
+
+  // ── RÉSULTAT ───────────────────────────────────────────
+  const diff = score1 - score2;
+  const absDiff = Math.abs(diff);
+
+  // Seuil minimum de données
+  const dataQuality = form1.total + form2.total + h2hTotal.length;
+  if (dataQuality < 3) {
+    return { alerte: null, reason: 'Données insuffisantes' };
+  }
+
+  // Trop équilibré
+  if (absDiff < 15) {
+    return {
+      alerte: null,
+      scoreMatriciel: 0,
+      favori: null,
+      adversaire: null,
+      factors: [],
+      form1, form2, h2hWins1, h2hWins2, h2hSurfWins1, h2hSurfWins2,
+      h2hTotal: h2hTotal.length, h2hSurface: h2hSurface.length, surface,
+      reason: 'Match trop équilibré',
+    };
+  }
+
+  const favoriIsP1 = diff > 0;
+  const scoreMatriciel = Math.min(100, Math.round(absDiff * 1.1));
+
+  let alerte = null;
+  if      (scoreMatriciel >= 72) alerte = 'VERT';
+  else if (scoreMatriciel >= 52) alerte = 'ORANGE';
+  else if (scoreMatriciel >= 30) alerte = 'ROUGE';
+
+  return {
+    alerte,
+    scoreMatriciel,
+    favoriIsP1,
+    favori:     favoriIsP1 ? player1 : player2,
+    adversaire: favoriIsP1 ? player2 : player1,
+    factors: [...new Set(factors)],
+    form1, form2,
+    h2hWins1, h2hWins2,
+    h2hSurfWins1, h2hSurfWins2,
+    h2hTotal: h2hTotal.length,
+    h2hSurface: h2hSurface.length,
+    surface,
+  };
+}
+
+// ── CLAUDE TENNIS ──────────────────────────────────────────
+async function genererAnalyseTennis(matchInfo) {
+  const { favori, adversaire, form1, form2, h2hWins1, h2hWins2,
+          h2hSurfWins1, h2hSurfWins2, surface, scoreMatriciel,
+          fixture, favoriIsP1 } = matchInfo;
+
+  const favoriForm  = favoriIsP1 ? form1 : form2;
+  const adversForm  = favoriIsP1 ? form2 : form1;
+  const favoriH2H   = favoriIsP1 ? h2hWins1 : h2hWins2;
+  const adversH2H   = favoriIsP1 ? h2hWins2 : h2hWins1;
+  const favoriSurf  = favoriIsP1 ? h2hSurfWins1 : h2hSurfWins2;
+  const adversSurf  = favoriIsP1 ? h2hSurfWins2 : h2hSurfWins1;
+
+  const today = new Date().toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+
+  const prompt = `Expert tennis. Analyse ce match et justifie le pronostic avec des données concrètes.
+
+MATCH: ${favori?.name} vs ${adversaire?.name}
+TOURNOI: ${fixture.tournamentName || 'ATP'} | Surface: ${surface}
+PRONOSTIC: Victoire ${favori?.name} (score fiabilité: ${scoreMatriciel}/100)
+
+DONNÉES:
+- Forme ${favori?.name} (5 derniers): ${favoriForm.formStr || 'N/A'} (${favoriForm.wins}V/${favoriForm.losses}D)
+- Forme ${adversaire?.name} (5 derniers): ${adversForm.formStr || 'N/A'} (${adversForm.wins}V/${adversForm.losses}D)
+- H2H global: ${favori?.name} ${favoriH2H} - ${adversH2H} ${adversaire?.name}
+- H2H sur ${surface}: ${favori?.name} ${favoriSurf} - ${adversSurf} ${adversaire?.name}
+
+RÈGLES:
+1. 2 phrases MAX justifiant la victoire — cite les stats ci-dessus
+2. Vérifie que ${favori?.name} joue bien en ${today} avant de valider
+3. Sois factuel et concis
+
+JSON UNIQUEMENT:
+{"raison":"2 phrases pourquoi victoire avec stats concrètes","confiance":"${scoreMatriciel >= 72 ? 'ÉLEVÉE' : scoreMatriciel >= 52 ? 'MOYENNE' : 'FAIBLE'}"}`;
+
+  try {
+    const response = await anthropic.messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 300,
+      messages: [{ role: 'user', content: prompt }],
+    });
+    const text = response.content[0].text;
+    const m = text.match(/\{[\s\S]*\}/);
+    if (m) return JSON.parse(m[0]);
+    return null;
+  } catch (e) {
+    console.error('[TENNIS] Claude error:', e.message);
+    return null;
+  }
+}
+
+// ── ROUTE SCAN TENNIS ──────────────────────────────────────
+app.get('/api/scan-tennis', async (req, res) => {
+  try {
+    if (!TENNIS_API_KEY) {
+      return res.status(500).json({ error: 'TENNIS_API_KEY manquante dans .env' });
+    }
+
+    // 1. Récupérer les matchs ATP du jour
+    const fixtures = await getTennisFixturesToday();
+    console.log(`[TENNIS] ${fixtures.length} matchs trouvés pour aujourd'hui`);
+
+    if (fixtures.length === 0) {
+      return res.json({
+        picks: [],
+        rejected: [],
+        total_analyses: 0,
+        date: new Date().toLocaleDateString('fr-FR'),
+      });
+    }
+
+    const picks = [];
+    const rejected = [];
+
+    for (const fixture of fixtures) {
+      try {
+        const p1 = fixture.player1;
+        const p2 = fixture.player2;
+        if (!p1?.id || !p2?.id) continue;
+
+        console.log(`[TENNIS] Analyse: ${p1.name} vs ${p2.name}`);
+
+        // Récupérer H2H et forme en parallèle
+        const [h2hFixtures, p1Recent, p2Recent] = await Promise.all([
+          getTennisH2H(p1.id, p2.id),
+          getPlayerRecentFixtures(p1.id),
+          getPlayerRecentFixtures(p2.id),
+        ]);
+
+        const analyse = analyseTennisMatch(fixture, h2hFixtures, p1Recent, p2Recent);
+
+        if (!analyse.alerte) {
+          rejected.push({
+            match: `${p1.name} vs ${p2.name}`,
+            raison: analyse.reason || 'Match trop équilibré ou données insuffisantes',
+          });
+          continue;
+        }
+
+        // Générer l'analyse Claude
+        const claudeAnalyse = await genererAnalyseTennis({
+          ...analyse,
+          fixture,
+        });
+
+        const heure = fixture.date
+          ? new Date(fixture.date).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
+          : '?';
+
+        picks.push({
+          match: `${p1.name} vs ${p2.name}`,
+          competition: fixture.tournamentName || 'ATP',
+          heure,
+          surface: analyse.surface,
+          favori: analyse.favori?.name,
+          adversaire: analyse.adversaire?.name,
+          scoreMatriciel: analyse.scoreMatriciel,
+          alerte: analyse.alerte,
+          factors: analyse.factors,
+          // Forme
+          favori_forme: analyse.favoriIsP1 ? analyse.form1.formStr : analyse.form2.formStr,
+          adversaire_forme: analyse.favoriIsP1 ? analyse.form2.formStr : analyse.form1.formStr,
+          favori_bilan: analyse.favoriIsP1
+            ? `${analyse.form1.wins}V/${analyse.form1.losses}D`
+            : `${analyse.form2.wins}V/${analyse.form2.losses}D`,
+          adversaire_bilan: analyse.favoriIsP1
+            ? `${analyse.form2.wins}V/${analyse.form2.losses}D`
+            : `${analyse.form1.wins}V/${analyse.form1.losses}D`,
+          // H2H
+          h2h_global: `${analyse.favoriIsP1 ? analyse.h2hWins1 : analyse.h2hWins2}-${analyse.favoriIsP1 ? analyse.h2hWins2 : analyse.h2hWins1}`,
+          h2h_surface: `${analyse.favoriIsP1 ? analyse.h2hSurfWins1 : analyse.h2hSurfWins2}-${analyse.favoriIsP1 ? analyse.h2hSurfWins2 : analyse.h2hSurfWins1}`,
+          h2h_total_matchs: analyse.h2hTotal,
+          // Analyse Claude
+          raison: claudeAnalyse?.raison || `${analyse.favori?.name} favori selon la matrice`,
+        });
+
+      } catch (e) {
+        console.error('[TENNIS] Erreur match:', e.message);
+      }
+    }
+
+    // Trier et sélectionner
+    picks.sort((a, b) => b.scoreMatriciel - a.scoreMatriciel);
+    const verts  = picks.filter(p => p.alerte === 'VERT').slice(0, 2);
+    const orange = picks.filter(p => p.alerte === 'ORANGE').slice(0, 1);
+    const rouge  = picks.filter(p => p.alerte === 'ROUGE').slice(0, 1);
+    const top = [...verts, ...orange, ...rouge];
+
+    res.json({
+      date: new Date().toLocaleDateString('fr-FR'),
+      total_analyses: fixtures.length,
+      picks: top,
+      rejected,
+    });
+
+  } catch (e) {
+    console.error('[TENNIS] Erreur scan:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── FIN MODULE TENNIS ──────────────────────────────────────
+
+app.get('/api/health', (req, res) => res.json({ status: 'ok', name: 'PicksAI', version: '4.2', season: SEASON }));
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, '../frontend/index.html')));
 
 const PORT = process.env.PORT || 3000;
