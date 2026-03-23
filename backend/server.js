@@ -1223,23 +1223,23 @@ function normalizeTennisFixture(f) {
 }
 
 // Récupère les matchs ATP Singles du jour
+// event_type_key 265 = Atp Singles
 async function getTennisFixturesToday() {
   const today = getTodayStr();
   const cacheKey = `fixtures_atp_${today}`;
   if (isTennisCacheValid(tennisCache[cacheKey])) return tennisCache[cacheKey].data;
 
-  // get_events retourne tous les matchs d'une date pour un type
-  const raw = await tennisAPI('get_events', { date_start: today, date_stop: today, event_type: 'ATP' });
+  // get_fixtures avec event_type_key=265 (ATP Singles uniquement)
+  const raw = await tennisAPI('get_fixtures', { date_start: today, date_stop: today, event_type_key: 265 });
   const all = Array.isArray(raw) ? raw : [];
 
-  // Filtrer ATP Singles uniquement (exclure doubles, qualifs, etc.)
+  // Exclure qualifications et doubles par sécurité
   const fixtures = all
-    .filter(f => (f.event_type_type || '').toLowerCase().includes('singles'))
+    .filter(f => (f.event_qualification || 'False') === 'False')
     .map(normalizeTennisFixture);
 
-  console.log(`[TENNIS] getTennisFixturesToday → ${all.length} total ATP → ${fixtures.length} singles`);
+  console.log(`[TENNIS] getTennisFixturesToday → ${all.length} ATP Singles → ${fixtures.length} matchs`);
   if (fixtures.length > 0) console.log('[TENNIS] Exemple:', JSON.stringify(fixtures[0]).slice(0, 300));
-  else if (all.length > 0) console.log('[TENNIS] Exemple brut:', JSON.stringify(all[0]).slice(0, 300));
 
   tennisCache[cacheKey] = { data: fixtures, timestamp: Date.now() };
   return fixtures;
@@ -1249,9 +1249,9 @@ async function getTennisFixturesToday() {
 async function getPlayerRecentFixtures(playerId) {
   const cacheKey = `player_${playerId}`;
   if (isTennisCacheValid(tennisCache[cacheKey])) return tennisCache[cacheKey].data;
-  // api-tennis.com : get_H2H avec first_team_key = second_team_key retourne les matchs du joueur
-  const raw = await tennisAPI('get_H2H', { first_team_key: playerId, second_team_key: playerId });
-  const results = (raw?.firstTeamResults || raw?.secondTeamResults || []);
+  const raw = await tennisAPI('get_H2H', { first_player_key: playerId, second_player_key: playerId });
+  // get_H2H retourne firstPlayerResults (pas firstTeamResults)
+  const results = raw?.firstPlayerResults || raw?.secondPlayerResults || [];
   const singles = results.filter(f => (f.event_type_type || '').toLowerCase().includes('singles'));
   const fixtures = singles.map(normalizeTennisFixture);
   tennisCache[cacheKey] = { data: fixtures, timestamp: Date.now() };
@@ -1262,7 +1262,7 @@ async function getPlayerRecentFixtures(playerId) {
 async function getTennisH2H(player1Id, player2Id) {
   const cacheKey = `h2h_${player1Id}_${player2Id}`;
   if (isTennisCacheValid(tennisCache[cacheKey])) return tennisCache[cacheKey].data;
-  const raw = await tennisAPI('get_H2H', { first_team_key: player1Id, second_team_key: player2Id });
+  const raw = await tennisAPI('get_H2H', { first_player_key: player1Id, second_player_key: player2Id });
   const h2hRaw = raw?.H2H || [];
   const fixtures = h2hRaw
     .filter(f => (f.event_type_type || '').toLowerCase().includes('singles'))
@@ -1573,8 +1573,8 @@ app.get('/api/debug-tennis-raw', async (req, res) => {
   try {
     const today = getTodayStr();
     // Récupérer les singles du jour
-    const raw = await tennisAPI('get_events', { date_start: today, date_stop: today, event_type: 'ATP' });
-    const singles = (Array.isArray(raw) ? raw : []).filter(f => (f.event_type_type||'').toLowerCase().includes('singles'));
+    const raw = await tennisAPI('get_fixtures', { date_start: today, date_stop: today, event_type_key: 265 });
+    const singles = (Array.isArray(raw) ? raw : []).filter(f => (f.event_qualification||'False') === 'False');
     if (singles.length === 0) return res.json({ error: 'Aucun single trouvé', raw_sample: (Array.isArray(raw)?raw:[]).slice(0,2) });
 
     const first = singles[0];
@@ -1620,14 +1620,14 @@ app.get('/api/debug-tennis', async (req, res) => {
       const first = singles[0];
       const p1id = first.first_player_key;
       const p2id = first.second_player_key;
-      const h2hRaw = await tennisAPI('get_H2H', { first_team_key: p1id, second_team_key: p2id });
+      const h2hRaw = await tennisAPI('get_H2H', { first_player_key: p1id, second_player_key: p2id });
       h2hTest = {
         player1: first.event_first_player,
         player2: first.event_second_player,
         h2h_count: (h2hRaw?.H2H || []).length,
         h2h_exemple: (h2hRaw?.H2H || [])[0] || null,
-        forme_p1_count: (h2hRaw?.firstTeamResults || h2hRaw?.secondTeamResults || []).length,
-        forme_p1_exemple: (h2hRaw?.firstTeamResults || h2hRaw?.secondTeamResults || [])[0] || null,
+        forme_p1_count: (h2hRaw?.firstPlayerResults || h2hRaw?.secondPlayerResults || []).length,
+        forme_p1_exemple: (h2hRaw?.firstPlayerResults || h2hRaw?.secondPlayerResults || [])[0] || null,
       };
     }
 
