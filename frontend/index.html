@@ -200,6 +200,7 @@
   <button class="tab" onclick="showTab('stats')">📊 STATS</button>
   <button class="tab" onclick="showTab('matrix')">🧬 MATRICE</button>
   <button class="tab" onclick="showTab('backtest')">🔬 BACKTEST</button>
+  <button class="tab" onclick="showTab('tennis')">🎾 TENNIS</button>
 </div>
 
 <!-- CONTENT -->
@@ -577,6 +578,23 @@
       <div class="empty-text">Analyse la saison 2024 complète<br>et calcule le ROI réel de la matrice</div>
     </div>
   </div>
+
+  <!-- TENNIS PAGE -->
+  <div class="page" id="page-tennis">
+    <div class="scan-center">
+      <button class="scan-btn" id="tennis-btn" onclick="doScanTennis()" style="background:linear-gradient(135deg,#0ea5e9,#0369a1);border-color:#0ea5e9">🎾 SCAN TENNIS ATP</button>
+      <div class="scan-sub">ANALYSE VAINQUEUR · H2H GLOBAL & SURFACE · FORME RÉCENTE</div>
+      <div id="tennis-last-scan-badge" style="margin-top:8px;font-size:11px;color:var(--muted)"></div>
+    </div>
+    <div class="log-box" id="tennis-log" style="display:none"></div>
+    <div id="tennis-results"></div>
+    <div class="empty" id="tennis-empty">
+      <div class="empty-icon">🎾</div>
+      <div class="empty-title">TENNIS PRÊT</div>
+      <div class="empty-text">Lance un scan pour analyser les matchs ATP du jour<br>via la <span style="color:#0ea5e9">Matrice Tennis F1→F3</span></div>
+    </div>
+  </div>
+
 
 </div>
 
@@ -2543,6 +2561,134 @@ loadState();
   } catch {}
 })();
 renderMatrix();
+
+// ══════════════════════════════════════════════════════
+// ── MODULE TENNIS ──────────────────────────────────────
+// ══════════════════════════════════════════════════════
+
+async function doScanTennis() {
+  const btn = document.getElementById('tennis-btn');
+  const logEl = document.getElementById('tennis-log');
+  const resultsEl = document.getElementById('tennis-results');
+  const emptyEl = document.getElementById('tennis-empty');
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spin">⏳</span> SCAN EN COURS...';
+  logEl.style.display = 'block';
+  logEl.innerHTML = '';
+  resultsEl.innerHTML = '';
+  emptyEl.style.display = 'none';
+
+  function log(msg, color = '#60a5fa') {
+    const now = new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    logEl.innerHTML += '<div class="log-line"><span class="log-time">' + now + '</span><span style="color:' + color + '">' + msg + '</span></div>';
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  try {
+    log('🎾 Récupération des matchs ATP du jour...');
+    const res = await fetch('/api/scan-tennis');
+    if (!res.ok) throw new Error('Erreur API: ' + res.status);
+    const data = await res.json();
+
+    log('✅ ' + data.total_analyses + ' matchs analysés — ' + data.picks.length + ' picks générés', '#10b981');
+
+    if (!data.picks || data.picks.length === 0) {
+      emptyEl.style.display = 'block';
+      emptyEl.querySelector('.empty-title').textContent = 'AUCUN PICK TENNIS';
+      emptyEl.querySelector('.empty-text').textContent = `Pas de matchs ATP avec signal suffisant aujourd'hui.`;
+      btn.disabled = false;
+      btn.innerHTML = '🎾 RELANCER LE SCAN';
+      return;
+    }
+
+    // Badge dernier scan
+    document.getElementById('tennis-last-scan-badge').textContent = '🕐 Dernier scan : ' + data.date;
+
+    // Afficher les picks
+    let html = '';
+
+    data.picks.forEach((pick, i) => {
+      const alerteColor = pick.alerte === 'VERT' ? '#10b981' : pick.alerte === 'ORANGE' ? '#f59e0b' : '#ef4444';
+      const alerteEmoji = pick.alerte === 'VERT' ? '🟢' : pick.alerte === 'ORANGE' ? '🟡' : '🔴';
+      const surfaceEmoji = { 'Clay': '🔴', 'Hard': '🔵', 'Grass': '🟢', 'Carpet': '🟤' }[pick.surface] || '🎾';
+
+      html += '<div class="pick-card" style="border:1px solid ' + alerteColor + '33;margin-bottom:12px">';
+      html += '<div class="pick-header">';
+      html += '<div>';
+      html += '<div class="pick-comp">' + pick.competition + ' · ' + surfaceEmoji + ' ' + pick.surface + ' · ' + pick.heure + '</div>';
+      html += '<div class="pick-teams" style="color:#fff">' + pick.favori + ' <span style="color:#1e3a5f">vs</span> ' + pick.adversaire + '</div>';
+      html += '</div>';
+      html += '<div class="pick-score" style="text-align:right">';
+      html += '<div class="pick-alerte" style="color:' + alerteColor + '">' + alerteEmoji + ' ' + pick.alerte + '</div>';
+      html += '<div class="pick-score-val" style="color:' + alerteColor + ';font-family:Bebas Neue;font-size:28px">' + pick.scoreMatriciel + '</div>';
+      html += '</div>';
+      html += '</div>';
+
+      // Facteurs
+      if (pick.factors && pick.factors.length > 0) {
+        html += '<div class="factors">';
+        pick.factors.forEach(f => {
+          html += '<span class="factor-badge" style="background:' + alerteColor + '22;color:' + alerteColor + '">' + f + '</span>';
+        });
+        html += '</div>';
+      }
+
+      // Stats
+      html += '<div class="player-grid">';
+      html += '<div class="player-box">';
+      html += '<div class="player-box-label" style="color:' + alerteColor + '">FAVORI</div>';
+      html += '<div class="player-name">' + pick.favori + '</div>';
+      html += '<div class="player-team">Forme: ' + (pick.favori_forme || '—') + ' (' + (pick.favori_bilan || '—') + ')</div>';
+      html += '</div>';
+      html += '<div class="player-box">';
+      html += '<div class="player-box-label" style="color:var(--muted)">ADVERSAIRE</div>';
+      html += '<div class="player-name">' + pick.adversaire + '</div>';
+      html += '<div class="player-team">Forme: ' + (pick.adversaire_forme || '—') + ' (' + (pick.adversaire_bilan || '—') + ')</div>';
+      html += '</div>';
+      html += '</div>';
+
+      // H2H
+      if (pick.h2h_global) {
+        html += '<div style="display:flex;gap:12px;margin-bottom:10px">';
+        html += '<div class="stat-box" style="flex:1;padding:8px"><div class="stat-label">H2H GLOBAL</div><div style="font-family:Bebas Neue;font-size:18px">' + pick.h2h_global + '</div></div>';
+        html += '<div class="stat-box" style="flex:1;padding:8px"><div class="stat-label">H2H ' + pick.surface.toUpperCase() + '</div><div style="font-family:Bebas Neue;font-size:18px">' + (pick.h2h_surface || '—') + '</div></div>';
+        html += '<div class="stat-box" style="flex:1;padding:8px"><div class="stat-label">MATCHS H2H</div><div style="font-family:Bebas Neue;font-size:18px">' + (pick.h2h_total_matchs || 0) + '</div></div>';
+        html += '</div>';
+      }
+
+      // Analyse Claude
+      if (pick.raison) {
+        html += '<div class="top-pick-reason" style="margin-bottom:0">' + pick.raison + '</div>';
+      }
+
+      html += '</div>';
+    });
+
+    // Matchs rejetés
+    if (data.rejected && data.rejected.length > 0) {
+      html += '<div style="margin-top:14px">';
+      html += '<div style="font-family:Bebas Neue;font-size:13px;color:var(--muted);letter-spacing:2px;margin-bottom:6px">MATCHS EXCLUS (' + data.rejected.length + ')</div>';
+      data.rejected.forEach(r => {
+        html += '<div style="font-size:11px;color:#1a2a40;padding:3px 0">';
+        html += r.match + ' — <span style="color:#2a3a50">' + r.raison + '</span>';
+        html += '</div>';
+      });
+      html += '</div>';
+    }
+
+    resultsEl.innerHTML = html;
+
+  } catch (e) {
+    log('❌ Erreur: ' + e.message, '#ef4444');
+    emptyEl.style.display = 'block';
+  }
+
+  btn.disabled = false;
+  btn.innerHTML = '🎾 RELANCER LE SCAN';
+}
+
+
 </script>
 </body>
 </html>
