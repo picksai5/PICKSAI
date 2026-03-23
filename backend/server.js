@@ -1581,22 +1581,28 @@ app.get('/api/debug-tennis-raw', async (req, res) => {
     const p1id = first.first_player_key;
     const p2id = first.second_player_key;
 
-    // Tester toutes les variantes de paramètres possibles
-    const [r1, r2, r3, r4] = await Promise.all([
-      tennisAPI('get_H2H', { first_team_key: p1id, second_team_key: p2id }),
-      tennisAPI('get_H2H', { firstTeamId: p1id, secondTeamId: p2id }),
-      tennisAPI('get_H2H', { first_team_key: p1id, second_team_key: p1id }),
-      tennisAPI('get_players_fixtures', { player_key: p1id }),
-    ]);
+    // Test H2H avec les bons paramètres (doc officielle)
+    const h2hRaw = await tennisAPI('get_H2H', { first_player_key: p1id, second_player_key: p2id });
+    const formeRaw = await tennisAPI('get_H2H', { first_player_key: p1id, second_player_key: p1id });
 
     res.json({
       match: first.event_first_player + ' vs ' + first.event_second_player,
       p1id, p2id,
-      test_first_team_key_h2h:     { keys: r1 ? Object.keys(r1) : null, H2H_count: (r1?.H2H||[]).length, firstTeam_count: (r1?.firstTeamResults||[]).length },
-      test_firstTeamId_h2h:        { keys: r2 ? Object.keys(r2) : null, H2H_count: (r2?.H2H||[]).length },
-      test_same_player_h2h:        { keys: r3 ? Object.keys(r3) : null, firstTeam_count: (r3?.firstTeamResults||[]).length, sample: (r3?.firstTeamResults||[])[0] },
-      test_players_fixtures:       { result: r4 ? (Array.isArray(r4) ? r4.slice(0,1) : r4) : null },
-      fixture_brut: first,
+      h2h: {
+        keys: h2hRaw ? Object.keys(h2hRaw) : null,
+        H2H_count: (h2hRaw?.H2H||[]).length,
+        firstPlayerResults_count: (h2hRaw?.firstPlayerResults||[]).length,
+        sample_h2h: (h2hRaw?.H2H||[])[0] || null,
+        sample_forme: (h2hRaw?.firstPlayerResults||[])[0] || null,
+        raw_truncated: JSON.stringify(h2hRaw).slice(0, 300),
+      },
+      forme_same_player: {
+        keys: formeRaw ? Object.keys(formeRaw) : null,
+        firstPlayerResults_count: (formeRaw?.firstPlayerResults||[]).length,
+        sample: (formeRaw?.firstPlayerResults||[])[0] || null,
+        raw_truncated: JSON.stringify(formeRaw).slice(0, 300),
+      },
+      fixture_brut_keys: Object.keys(first),
     });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
@@ -1608,36 +1614,32 @@ app.get('/api/debug-tennis', async (req, res) => {
   try {
     const today = getTodayStr();
     
-    // Test 1 : appel API brut
-    const raw = await tennisAPI('get_events', { date_start: today, date_stop: today, event_type: 'ATP' });
+    const raw = await tennisAPI('get_fixtures', { date_start: today, date_stop: today, event_type_key: 265 });
     const all = Array.isArray(raw) ? raw : [];
-    const singles = all.filter(f => (f.event_type_type || '').toLowerCase().includes('singles'));
-    
-    // Test 2 : si des singles trouvés, tester H2H du premier joueur
+    const singles = all.filter(f => (f.event_qualification||'False') === 'False');
+
     let h2hTest = null;
-    let formeTest = null;
     if (singles.length > 0) {
       const first = singles[0];
       const p1id = first.first_player_key;
       const p2id = first.second_player_key;
       const h2hRaw = await tennisAPI('get_H2H', { first_player_key: p1id, second_player_key: p2id });
+      const formeRaw = await tennisAPI('get_H2H', { first_player_key: p1id, second_player_key: p1id });
       h2hTest = {
         player1: first.event_first_player,
         player2: first.event_second_player,
         h2h_count: (h2hRaw?.H2H || []).length,
-        h2h_exemple: (h2hRaw?.H2H || [])[0] || null,
-        forme_p1_count: (h2hRaw?.firstPlayerResults || h2hRaw?.secondPlayerResults || []).length,
-        forme_p1_exemple: (h2hRaw?.firstPlayerResults || h2hRaw?.secondPlayerResults || [])[0] || null,
+        forme_count: (formeRaw?.firstPlayerResults || []).length,
+        h2h_sample: (h2hRaw?.H2H || [])[0] || null,
+        forme_sample: (formeRaw?.firstPlayerResults || [])[0] || null,
       };
     }
 
     res.json({
       today,
       api_key_present: !!TENNIS_API_KEY,
-      total_atp: all.length,
       total_singles: singles.length,
-      exemple_brut: all[0] || null,
-      exemple_single: singles[0] || null,
+      exemple: singles[0] ? { name: singles[0].event_first_player + ' vs ' + singles[0].event_second_player, keys: Object.keys(singles[0]) } : null,
       h2h_test: h2hTest,
     });
   } catch (e) {
