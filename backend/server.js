@@ -1249,9 +1249,9 @@ async function getTennisFixturesToday() {
 async function getPlayerRecentFixtures(playerId) {
   const cacheKey = `player_${playerId}`;
   if (isTennisCacheValid(tennisCache[cacheKey])) return tennisCache[cacheKey].data;
-  const raw = await tennisAPI('get_H2H', { firstTeamId: playerId, secondTeamId: playerId });
-  // get_H2H avec le même joueur retourne firstTeamResults = ses derniers matchs
-  const results = raw?.firstTeamResults || raw?.secondTeamResults || [];
+  // api-tennis.com : get_H2H avec first_team_key = second_team_key retourne les matchs du joueur
+  const raw = await tennisAPI('get_H2H', { first_team_key: playerId, second_team_key: playerId });
+  const results = (raw?.firstTeamResults || raw?.secondTeamResults || []);
   const singles = results.filter(f => (f.event_type_type || '').toLowerCase().includes('singles'));
   const fixtures = singles.map(normalizeTennisFixture);
   tennisCache[cacheKey] = { data: fixtures, timestamp: Date.now() };
@@ -1262,7 +1262,7 @@ async function getPlayerRecentFixtures(playerId) {
 async function getTennisH2H(player1Id, player2Id) {
   const cacheKey = `h2h_${player1Id}_${player2Id}`;
   if (isTennisCacheValid(tennisCache[cacheKey])) return tennisCache[cacheKey].data;
-  const raw = await tennisAPI('get_H2H', { firstTeamId: player1Id, secondTeamId: player2Id });
+  const raw = await tennisAPI('get_H2H', { first_team_key: player1Id, second_team_key: player2Id });
   const h2hRaw = raw?.H2H || [];
   const fixtures = h2hRaw
     .filter(f => (f.event_type_type || '').toLowerCase().includes('singles'))
@@ -1586,14 +1586,14 @@ app.get('/api/debug-tennis', async (req, res) => {
       const first = singles[0];
       const p1id = first.first_player_key;
       const p2id = first.second_player_key;
-      const h2hRaw = await tennisAPI('get_H2H', { firstTeamId: p1id, secondTeamId: p2id });
+      const h2hRaw = await tennisAPI('get_H2H', { first_team_key: p1id, second_team_key: p2id });
       h2hTest = {
         player1: first.event_first_player,
         player2: first.event_second_player,
         h2h_count: (h2hRaw?.H2H || []).length,
         h2h_exemple: (h2hRaw?.H2H || [])[0] || null,
-        forme_p1_count: (h2hRaw?.firstTeamResults || []).length,
-        forme_p1_exemple: (h2hRaw?.firstTeamResults || [])[0] || null,
+        forme_p1_count: (h2hRaw?.firstTeamResults || h2hRaw?.secondTeamResults || []).length,
+        forme_p1_exemple: (h2hRaw?.firstTeamResults || h2hRaw?.secondTeamResults || [])[0] || null,
       };
     }
 
