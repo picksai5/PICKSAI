@@ -1567,6 +1567,40 @@ app.get('/api/scan-tennis', async (req, res) => {
   }
 });
 
+
+// ── DEBUG RAW ──────────────────────────────────────────────
+app.get('/api/debug-tennis-raw', async (req, res) => {
+  try {
+    const today = getTodayStr();
+    // Récupérer les singles du jour
+    const raw = await tennisAPI('get_events', { date_start: today, date_stop: today, event_type: 'ATP' });
+    const singles = (Array.isArray(raw) ? raw : []).filter(f => (f.event_type_type||'').toLowerCase().includes('singles'));
+    if (singles.length === 0) return res.json({ error: 'Aucun single trouvé', raw_sample: (Array.isArray(raw)?raw:[]).slice(0,2) });
+
+    const first = singles[0];
+    const p1id = first.first_player_key;
+    const p2id = first.second_player_key;
+
+    // Tester toutes les variantes de paramètres possibles
+    const [r1, r2, r3, r4] = await Promise.all([
+      tennisAPI('get_H2H', { first_team_key: p1id, second_team_key: p2id }),
+      tennisAPI('get_H2H', { firstTeamId: p1id, secondTeamId: p2id }),
+      tennisAPI('get_H2H', { first_team_key: p1id, second_team_key: p1id }),
+      tennisAPI('get_players_fixtures', { player_key: p1id }),
+    ]);
+
+    res.json({
+      match: first.event_first_player + ' vs ' + first.event_second_player,
+      p1id, p2id,
+      test_first_team_key_h2h:     { keys: r1 ? Object.keys(r1) : null, H2H_count: (r1?.H2H||[]).length, firstTeam_count: (r1?.firstTeamResults||[]).length },
+      test_firstTeamId_h2h:        { keys: r2 ? Object.keys(r2) : null, H2H_count: (r2?.H2H||[]).length },
+      test_same_player_h2h:        { keys: r3 ? Object.keys(r3) : null, firstTeam_count: (r3?.firstTeamResults||[]).length, sample: (r3?.firstTeamResults||[])[0] },
+      test_players_fixtures:       { result: r4 ? (Array.isArray(r4) ? r4.slice(0,1) : r4) : null },
+      fixture_brut: first,
+    });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── FIN MODULE TENNIS ──────────────────────────────────────
 
 // ── DEBUG TENNIS ───────────────────────────────────────────
