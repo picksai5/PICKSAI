@@ -1199,13 +1199,43 @@ async function tennisAPI(endpoint, params = {}) {
   }
 }
 
+// Normalise une fixture tennis pour uniformiser les champs joueurs
+// L'API retourne homePlayer/awayPlayer OU player_1/player_2 selon l'endpoint
+function normalizeTennisFixture(f) {
+  const p1raw = f.player1 || f.homePlayer || f.player_1 || (f.participants && f.participants[0]) || null;
+  const p2raw = f.player2 || f.awayPlayer || f.player_2 || (f.participants && f.participants[1]) || null;
+  return {
+    ...f,
+    player1: p1raw ? { id: p1raw.id || p1raw.playerId, name: p1raw.name || p1raw.fullName || p1raw.player_name } : null,
+    player2: p2raw ? { id: p2raw.id || p2raw.playerId, name: p2raw.name || p2raw.fullName || p2raw.player_name } : null,
+    surface:        f.surface || f.courtSurface || f.court_surface || 'Unknown',
+    tournamentName: f.tournamentName || (f.tournament && f.tournament.name) || (f.league && f.league.name) || 'ATP',
+    date:           f.date || f.startDate || f.start_date || null,
+  };
+}
+
 // Récupère les matchs ATP du jour
 async function getTennisFixturesToday() {
   const today = getTodayStr();
   const cacheKey = `fixtures_atp_${today}`;
   if (isTennisCacheValid(tennisCache[cacheKey])) return tennisCache[cacheKey].data;
-  const data = await tennisAPI('/atp/fixtures/date/' + today);
-  const fixtures = data?.data || [];
+
+  // Essai 1 : endpoint avec param date=
+  let data = await tennisAPI('/atp/fixtures', { date: today });
+  let rawFixtures = (data && (data.data || data.fixtures)) || [];
+
+  // Essai 2 : endpoint path date si le premier retourne vide
+  if (rawFixtures.length === 0) {
+    data = await tennisAPI('/atp/fixtures/date/' + today);
+    rawFixtures = (data && (data.data || data.fixtures)) || [];
+  }
+
+  const fixtures = rawFixtures.map(normalizeTennisFixture);
+  console.log(`[TENNIS] getTennisFixturesToday → ${fixtures.length} matchs normalisés`);
+  if (fixtures.length > 0) {
+    console.log('[TENNIS] Exemple fixture normalisé:', JSON.stringify(fixtures[0]).slice(0, 300));
+  }
+
   tennisCache[cacheKey] = { data: fixtures, timestamp: Date.now() };
   return fixtures;
 }
@@ -1214,8 +1244,14 @@ async function getTennisFixturesToday() {
 async function getPlayerRecentFixtures(playerId) {
   const cacheKey = `player_${playerId}`;
   if (isTennisCacheValid(tennisCache[cacheKey])) return tennisCache[cacheKey].data;
-  const data = await tennisAPI(`/atp/player/${playerId}/fixtures`);
-  const fixtures = data?.data || [];
+  // Essai 1 : endpoint standard /atp/fixtures/player/{id}
+  let data = await tennisAPI(`/atp/fixtures/player/${playerId}`);
+  let fixtures = (data && (data.data || data.fixtures)) || [];
+  // Essai 2 : ancien endpoint fallback
+  if (fixtures.length === 0) {
+    data = await tennisAPI(`/atp/player/${playerId}/fixtures`);
+    fixtures = (data && (data.data || data.fixtures)) || [];
+  }
   tennisCache[cacheKey] = { data: fixtures, timestamp: Date.now() };
   return fixtures;
 }
