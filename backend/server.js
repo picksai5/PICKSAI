@@ -1569,6 +1569,49 @@ app.get('/api/scan-tennis', async (req, res) => {
 
 // ── FIN MODULE TENNIS ──────────────────────────────────────
 
+// ── DEBUG TENNIS ───────────────────────────────────────────
+app.get('/api/debug-tennis', async (req, res) => {
+  try {
+    const today = getTodayStr();
+    
+    // Test 1 : appel API brut
+    const raw = await tennisAPI('get_events', { date_start: today, date_stop: today, event_type: 'ATP' });
+    const all = Array.isArray(raw) ? raw : [];
+    const singles = all.filter(f => (f.event_type_type || '').toLowerCase().includes('singles'));
+    
+    // Test 2 : si des singles trouvés, tester H2H du premier joueur
+    let h2hTest = null;
+    let formeTest = null;
+    if (singles.length > 0) {
+      const first = singles[0];
+      const p1id = first.first_player_key;
+      const p2id = first.second_player_key;
+      const h2hRaw = await tennisAPI('get_H2H', { firstTeamId: p1id, secondTeamId: p2id });
+      h2hTest = {
+        player1: first.event_first_player,
+        player2: first.event_second_player,
+        h2h_count: (h2hRaw?.H2H || []).length,
+        h2h_exemple: (h2hRaw?.H2H || [])[0] || null,
+        forme_p1_count: (h2hRaw?.firstTeamResults || []).length,
+        forme_p1_exemple: (h2hRaw?.firstTeamResults || [])[0] || null,
+      };
+    }
+
+    res.json({
+      today,
+      api_key_present: !!TENNIS_API_KEY,
+      total_atp: all.length,
+      total_singles: singles.length,
+      exemple_brut: all[0] || null,
+      exemple_single: singles[0] || null,
+      h2h_test: h2hTest,
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+
 app.get('/api/health', (req, res) => res.json({ status: 'ok', name: 'PicksAI', version: '4.2', season: SEASON }));
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, '../frontend/index.html')));
 
