@@ -60,10 +60,16 @@ const LEAGUES = [
   { id: 848, name: 'Conference League' },
   { id: 88,  name: 'Eredivisie' },
   { id: 94,  name: 'Liga Portugal' },
+  // Qualifications Coupe du Monde
+  { id: 32,  name: 'Qualifs CdM UEFA' },
+  { id: 35,  name: 'Qualifs CdM CONMEBOL' },
+  { id: 36,  name: 'Qualifs CdM CAF' },
+  { id: 30,  name: 'Qualifs CdM AFC' },
+  { id: 31,  name: 'Qualifs CdM CONCACAF' },
+  { id: 33,  name: 'Qualifs CdM OFC' },
 ];
 const EURO_LEAGUES = [2, 3, 848];
 
-// Ligues où les marchés tirs cadrés sont disponibles (championnats majeurs + coupes euros)
 // Ligues analysées pour les tirs — l'utilisateur adapte selon son bookmaker
 const TIRS_LEAGUES = [
   { id: 61,  name: 'Ligue 1' },
@@ -76,6 +82,12 @@ const TIRS_LEAGUES = [
   { id: 848, name: 'Conference League' },
   { id: 88,  name: 'Eredivisie' },
   { id: 94,  name: 'Liga Portugal' },
+  { id: 32,  name: 'Qualifs CdM UEFA' },
+  { id: 35,  name: 'Qualifs CdM CONMEBOL' },
+  { id: 36,  name: 'Qualifs CdM CAF' },
+  { id: 30,  name: 'Qualifs CdM AFC' },
+  { id: 31,  name: 'Qualifs CdM CONCACAF' },
+  { id: 33,  name: 'Qualifs CdM OFC' },
 ];
 
 // ── CACHE ─────────────────────────────────────────────────
