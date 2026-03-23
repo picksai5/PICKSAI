@@ -1250,9 +1250,17 @@ async function getPlayerRecentFixtures(playerId) {
   const cacheKey = `player_${playerId}`;
   if (isTennisCacheValid(tennisCache[cacheKey])) return tennisCache[cacheKey].data;
   const raw = await tennisAPI('get_H2H', { first_player_key: playerId, second_player_key: playerId });
-  // get_H2H retourne firstPlayerResults (pas firstTeamResults)
-  const results = raw?.firstPlayerResults || raw?.secondPlayerResults || [];
-  const singles = results.filter(f => (f.event_type_type || '').toLowerCase().includes('singles'));
+  // Fusionner firstPlayerResults + secondPlayerResults (joueur peut être des deux côtés)
+  const r1 = raw?.firstPlayerResults || [];
+  const r2 = raw?.secondPlayerResults || [];
+  const allResults = [...r1, ...r2];
+  // Dédupliquer par event_key + trier par date desc
+  const seen = new Set();
+  const deduped = allResults.filter(f => {
+    if (seen.has(f.event_key)) return false;
+    seen.add(f.event_key); return true;
+  }).sort((a, b) => new Date(b.event_date) - new Date(a.event_date));
+  const singles = deduped.filter(f => (f.event_type_type || '').toLowerCase().includes('singles'));
   const fixtures = singles.map(normalizeTennisFixture);
   tennisCache[cacheKey] = { data: fixtures, timestamp: Date.now() };
   return fixtures;
