@@ -2881,8 +2881,9 @@ function renderTennisTrackList() {
   }
 
   let html = '';
-  [...filtered].reverse().forEach((pick, revIdx) => {
-    const idx = filtered.length - 1 - revIdx;
+  // Affichage inversé mais index réel dans track[] pour setTennisResult/delete
+  [...filtered].reverse().forEach((pick) => {
+    const realIdx = track.indexOf(pick);
     const ac = pick.alerte === 'VERT' ? '#10b981' : pick.alerte === 'ORANGE' ? '#f59e0b' : '#ef4444';
     const pickMise = pick.mise || mise;
     const gain = pick.resultat === 'WIN' ? +(pickMise * (pick.cote - 1)).toFixed(2) : pick.resultat === 'LOSS' ? -pickMise : null;
@@ -2900,13 +2901,13 @@ function renderTennisTrackList() {
         </div>
         <div style="text-align:right">
           <div class="track-gain" style="color:${pick.resultat==='WIN'?'#10b981':pick.resultat==='LOSS'?'#ef4444':'var(--muted)'}">${gainStr}</div>
-          <div class="track-mise">Cote: ${pick.cote || '—'}</div>
+          <div class="track-mise">Cote: ${pick.cote || '—'} · Mise: ${pickMise}€</div>
           <div style="margin-top:6px;display:flex;gap:4px;justify-content:flex-end">
             ${pick.resultat === null || pick.resultat === undefined ? `
-              <button onclick="setTennisResult(${idx},'WIN')" style="padding:5px 10px;border-radius:5px;border:1px solid #10b98155;background:#10b98122;color:#10b981;font-size:11px;cursor:pointer;font-family:'Bebas Neue'">WIN</button>
-              <button onclick="setTennisResult(${idx},'LOSS')" style="padding:5px 10px;border-radius:5px;border:1px solid #ef444455;background:#ef444422;color:#ef4444;font-size:11px;cursor:pointer;font-family:'Bebas Neue'">LOSS</button>
+              <button onclick="setTennisResult(${realIdx},'WIN')" style="padding:5px 10px;border-radius:5px;border:1px solid #10b98155;background:#10b98122;color:#10b981;font-size:11px;cursor:pointer;font-family:'Bebas Neue'">WIN</button>
+              <button onclick="setTennisResult(${realIdx},'LOSS')" style="padding:5px 10px;border-radius:5px;border:1px solid #ef444455;background:#ef444422;color:#ef4444;font-size:11px;cursor:pointer;font-family:'Bebas Neue'">LOSS</button>
             ` : `<span style="font-size:11px;color:${pick.resultat==='WIN'?'#10b981':'#ef4444'}">${pick.resultat==='WIN'?'✅ WIN':'❌ LOSS'}</span>`}
-            <button onclick="deleteTennisTrack(${idx})" style="padding:5px 8px;border-radius:5px;border:1px solid #1e3a5f;background:transparent;color:#1e3a5f;font-size:11px;cursor:pointer">✕</button>
+            <button onclick="deleteTennisTrack(${realIdx})" style="padding:5px 8px;border-radius:5px;border:1px solid #1e3a5f;background:transparent;color:#1e3a5f;font-size:11px;cursor:pointer">✕</button>
           </div>
         </div>
       </div>
