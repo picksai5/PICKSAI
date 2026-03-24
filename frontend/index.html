@@ -2845,7 +2845,7 @@ function toggleTennisCatCurve(cat) {
 function renderTennisTrackList() {
   const track = getTennisTrack();
   const capital = getTennisCapital();
-  const mise = capital * 0.05;
+  const miseDef = capital * 0.05;
 
   // Filtrer
   const filtered = tennisTrackFilter === 'all' ? track : track.filter(p => p.alerte === tennisTrackFilter.toUpperCase());
@@ -2880,46 +2880,72 @@ function renderTennisTrackList() {
     return;
   }
 
-  let html = '';
-  // Affichage inversé mais index réel dans track[] pour setTennisResult/delete
-  [...filtered].reverse().forEach((pick) => {
+  const html = [...filtered].reverse().map(pick => {
     const realIdx = track.indexOf(pick);
     const ac = pick.alerte === 'VERT' ? '#10b981' : pick.alerte === 'ORANGE' ? '#f59e0b' : '#ef4444';
-    const pickMise = pick.mise || mise;
-    const gain = pick.resultat === 'WIN' ? +(pickMise * (pick.cote - 1)).toFixed(2) : pick.resultat === 'LOSS' ? -pickMise : null;
-    const gainStr = gain !== null ? (gain >= 0 ? '+' + gain : gain) + '€' : '—';
-    html += `<div class="track-item" style="border-color:${ac}44">
+    const pickMise = pick.mise || miseDef;
+    const isPending = pick.resultat === null || pick.resultat === undefined;
+    const isWin = pick.resultat === 'WIN';
+    const gain = isWin ? +(pickMise * (pick.cote - 1)).toFixed(2) : isPending ? null : -pickMise;
+    const borderColor = isPending ? '#f59e0b44' : isWin ? '#10b98133' : '#ef444422';
+    const statusIcon = isPending ? '⏳' : isWin ? '✅' : '❌';
+    const gainDisplay = isPending
+      ? `<div style="font-family:'Bebas Neue';font-size:14px;color:#f59e0b;letter-spacing:1px">⏳ EN ATTENTE</div>`
+      : `<div class="track-gain" style="color:${gain >= 0 ? 'var(--green)' : 'var(--red)'}">${gain >= 0 ? '+' : ''}${gain}€</div>`;
+
+    return `
+    <div class="track-item" style="border-color:${borderColor}">
       <div class="track-header">
-        <div>
+        <div style="flex:1">
           <div class="track-player">
-            <span class="track-name" style="color:${ac}">${pick.favori || pick.match}</span>
-            <span class="track-type">${pick.alerte}</span>
+            <span>${statusIcon}</span>
+            <span class="track-name">Victoire ${pick.favori || '—'}</span>
+            <span style="font-size:10px;padding:2px 6px;border-radius:3px;background:${ac}22;color:${ac};border:1px solid ${ac}44">${pick.alerte}</span>
           </div>
-          <div class="track-match">${pick.match} · ${pick.competition || 'ATP'} · ${pick.surface || '—'}</div>
-          <div class="track-match" style="font-size:10px;color:var(--muted)">Rang: #${pick.favori_rang||'?'} vs #${pick.adversaire_rang||'?'} · ${pick.heure || ''}</div>
-          <div class="track-date">${pick.date || ''}</div>
+          <div class="track-match">${pick.match} · ${pick.competition || 'ATP'}</div>
+          <div style="font-size:10px;color:var(--muted);margin-top:2px">🎾 ${pick.surface || '—'} · #${pick.favori_rang||'?'} vs #${pick.adversaire_rang||'?'} · Score ${pick.scoreMatriciel || '—'}</div>
+          ${isPending ? `
+          <div style="display:flex;gap:6px;margin-top:8px">
+            <button onclick="setTennisResult(${realIdx},'WIN')" style="flex:1;padding:6px;background:#10b98122;border:1px solid #10b98155;color:#10b981;border-radius:6px;cursor:pointer;font-size:11px;font-family:'Bebas Neue'">✅ GAGNÉ</button>
+            <button onclick="setTennisResult(${realIdx},'LOSS')" style="flex:1;padding:6px;background:#ef444422;border:1px solid #ef444455;color:#ef4444;border-radius:6px;cursor:pointer;font-size:11px;font-family:'Bebas Neue'">❌ PERDU</button>
+          </div>` : ''}
         </div>
-        <div style="text-align:right">
-          <div class="track-gain" style="color:${pick.resultat==='WIN'?'#10b981':pick.resultat==='LOSS'?'#ef4444':'var(--muted)'}">${gainStr}</div>
-          <div class="track-mise">Cote: ${pick.cote || '—'} · Mise: ${pickMise}€</div>
-          <div style="margin-top:6px;display:flex;gap:4px;justify-content:flex-end">
-            ${pick.resultat === null || pick.resultat === undefined ? `
-              <button onclick="setTennisResult(${realIdx},'WIN')" style="padding:5px 10px;border-radius:5px;border:1px solid #10b98155;background:#10b98122;color:#10b981;font-size:11px;cursor:pointer;font-family:'Bebas Neue'">WIN</button>
-              <button onclick="setTennisResult(${realIdx},'LOSS')" style="padding:5px 10px;border-radius:5px;border:1px solid #ef444455;background:#ef444422;color:#ef4444;font-size:11px;cursor:pointer;font-family:'Bebas Neue'">LOSS</button>
-            ` : `<span style="font-size:11px;color:${pick.resultat==='WIN'?'#10b981':'#ef4444'}">${pick.resultat==='WIN'?'✅ WIN':'❌ LOSS'}</span>`}
-            <button onclick="deleteTennisTrack(${realIdx})" style="padding:5px 8px;border-radius:5px;border:1px solid #1e3a5f;background:transparent;color:#1e3a5f;font-size:11px;cursor:pointer">✕</button>
+        <div style="text-align:right;flex-shrink:0;margin-left:14px">
+          ${gainDisplay}
+          <div class="track-mise">Mise: ${pickMise}€ · <span style="color:#0ea5e9;font-weight:500">×${pick.cote || '—'}</span></div>
+          <div class="track-date">${pick.date || ''}</div>
+          <div style="display:flex;gap:6px;margin-top:6px;justify-content:flex-end">
+            ${!isPending ? `<button onclick="resetTennisResult(${realIdx})" style="padding:3px 8px;background:transparent;border:1px solid #3b82f644;color:#3b82f6;border-radius:4px;cursor:pointer;font-size:10px" onmouseover="this.style.background='#3b82f622'" onmouseout="this.style.background='transparent'">✏️ Modifier</button>` : ''}
+            <button onclick="deleteTennisTrack(${realIdx})" style="padding:3px 8px;background:transparent;border:1px solid #ef444444;color:#ef4444;border-radius:4px;cursor:pointer;font-size:10px" onmouseover="this.style.background='#ef444422'" onmouseout="this.style.background='transparent'">🗑</button>
           </div>
         </div>
       </div>
     </div>`;
-  });
+  }).join('');
+
   listEl.innerHTML = html;
 }
 
 function setTennisResult(idx, res) {
   const track = getTennisTrack();
-  if (track[idx]) { track[idx].resultat = res; saveTennisTrack(track); renderTennisBankroll(); renderTennisTrackList(); }
+  if (track[idx]) {
+    track[idx].resultat = res;
+    saveTennisTrack(track);
+    renderTennisBankroll();
+    renderTennisTrackList();
+  }
 }
+
+function resetTennisResult(idx) {
+  const track = getTennisTrack();
+  if (track[idx]) {
+    track[idx].resultat = null;
+    saveTennisTrack(track);
+    renderTennisBankroll();
+    renderTennisTrackList();
+  }
+}
+
 function deleteTennisTrack(idx) {
   const track = getTennisTrack();
   track.splice(idx, 1);
