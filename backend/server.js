@@ -1168,9 +1168,11 @@ app.get('/api/scan-tirs', async (req, res) => {
 });
 
 // ══════════════════════════════════════════════════════════
-// ── MODULE TENNIS ─────────────────────────────────────────
+
 // ══════════════════════════════════════════════════════════
-const TENNIS_API_KEY  = process.env.TENNIS_API_KEY; // clé api-tennis.com (pas RapidAPI)
+// ── MODULE TENNIS v2 ──────────────────────────────────────
+// ══════════════════════════════════════════════════════════
+const TENNIS_API_KEY  = process.env.TENNIS_API_KEY;
 const TENNIS_API_BASE = 'https://api.api-tennis.com/tennis/';
 
 // Cache tennis séparé
@@ -1186,7 +1188,6 @@ async function tennisAPI(method, extraParams = {}) {
     const res = await axios.get(TENNIS_API_BASE, {
       params: { method, APIkey: TENNIS_API_KEY, ...extraParams },
     });
-    // Réponse: { success: 1, result: [...] }
     if (res.data?.success !== 1) {
       console.warn('[TENNIS] API non-success:', method, res.data?.result || '');
       return null;
@@ -1198,42 +1199,69 @@ async function tennisAPI(method, extraParams = {}) {
   }
 }
 
-// ── HELPERS API-TENNIS.COM ────────────────────────────────
-// Structure retournée : { event_key, event_date, event_time,
-//   event_first_player, first_player_key,
-//   event_second_player, second_player_key,
-//   event_winner ("First Player"|"Second Player"|null),
-//   event_type_type ("Atp Singles"|"Atp Doubles"|...),
-//   tournament_name, event_status, ... }
+// ── INFÉRENCE DE SURFACE DEPUIS LE NOM DU TOURNOI ─────────
+function inferSurface(tournamentName) {
+  const t = (tournamentName || '').toLowerCase();
 
+  // Gazon
+  if (/wimbledon|queens|halle|'s-hertogenbosch|eastbourne|nottingham|newport|stuttgart grass/i.test(t)) return 'Grass';
+
+  // Terre battue
+  if (/roland.garros|paris clay|monte.carlo|montecarlo|madrid|barcelona|estoril|istanbul|bucharest|lyon clay|hamburg clay|rome|foro.italico|münchen|munich clay|geneva|geneva clay|gstaad|kitzbuhel|bastad|umag|cordoba|buenos.aires|rio|sao.paulo|marrakech|casablanca/i.test(t)) return 'Clay';
+
+  // Dur (indoor ou outdoor explicite)
+  if (/australian.open|us.open|miami|indian.wells|montreal|canada|cincinnati|shanghai|beijing|vienna|paris.masters|bercy|tokyo|singapore|rotterdam|marseille|sofia|st.petersburg|doha|dubai|abu.dhabi|astana|nur-sultan|brisbane|auckland|sydney|memphis|dallas|acapulco|phoenix|washington|winston.salem|new.york|atlanta|los.angeles|metz|toulouse|antwerp|moscow|stockholm|basel|london|o2|nitto/i.test(t)) return 'Hard';
+
+  return 'Unknown';
+}
+
+// ── NIVEAU DU TOURNOI ──────────────────────────────────────
+function getTournamentLevel(tournamentName) {
+  const t = (tournamentName || '').toLowerCase();
+  if (/australian.open|roland.garros|wimbledon|us.open/i.test(t)) return 'GrandSlam';
+  if (/miami|indian.wells|monte.carlo|montecarlo|madrid|rome|foro.italico|canada|montreal|toronto|cincinnati|shanghai|paris.masters|bercy/i.test(t)) return 'Masters1000';
+  if (/rotterdam|marseille|acapulco|dubai|doha|barcelona|munich|hamburg|washington|halle|queens|eastbourne|vienna|antwerp|stockholm|basel|metz|toulouse|sofia/i.test(t)) return 'ATP500';
+  return 'ATP250';
+}
+
+// ── HELPERS API-TENNIS.COM ────────────────────────────────
 function normalizeTennisFixture(f) {
+  const rawSurface = f.event_surface || f.court_surface || null;
+  // Inférer la surface si absente ou inconnue
+  const surface = (rawSurface && rawSurface.toLowerCase() !== 'unknown' && rawSurface !== '')
+    ? rawSurface
+    : inferSurface(f.tournament_name);
+
   return {
-    id: f.event_key,
-    player1: { id: f.first_player_key,  name: f.event_first_player  },
-    player2: { id: f.second_player_key, name: f.event_second_player },
+    id:             f.event_key,
+    player1:        { id: f.first_player_key,  name: f.event_first_player  },
+    player2:        { id: f.second_player_key, name: f.event_second_player },
     date:           f.event_date ? f.event_date + (f.event_time ? 'T' + f.event_time : '') : null,
-    surface:        f.event_surface || null,   // pas toujours présent
+    surface,
     tournamentName: f.tournament_name || 'ATP',
     status:         f.event_status || '',
     eventType:      f.event_type_type || '',
     winnerId:       f.event_winner === 'First Player'  ? f.first_player_key
                   : f.event_winner === 'Second Player' ? f.second_player_key
                   : null,
+    // Classement ATP si présent dans la fixture
+    rank1:          f.first_player_rank  ? parseInt(f.first_player_rank)  : null,
+    rank2:          f.second_player_rank ? parseInt(f.second_player_rank) : null,
+    // Seed si présent
+    seed1:          f.first_player_seed  ? parseInt(f.first_player_seed)  : null,
+    seed2:          f.second_player_seed ? parseInt(f.second_player_seed) : null,
   };
 }
 
 // Récupère les matchs ATP Singles du jour
-// event_type_key 265 = Atp Singles
 async function getTennisFixturesToday() {
   const today = getTodayStr();
   const cacheKey = `fixtures_atp_${today}`;
   if (isTennisCacheValid(tennisCache[cacheKey])) return tennisCache[cacheKey].data;
 
-  // get_fixtures avec event_type_key=265 (ATP Singles uniquement)
   const raw = await tennisAPI('get_fixtures', { date_start: today, date_stop: today, event_type_key: 265 });
   const all = Array.isArray(raw) ? raw : [];
 
-  // Exclure qualifications et doubles par sécurité
   const fixtures = all
     .filter(f => (f.event_qualification || 'False') === 'False')
     .map(normalizeTennisFixture);
@@ -1245,23 +1273,25 @@ async function getTennisFixturesToday() {
   return fixtures;
 }
 
-// Récupère les derniers matchs d'un joueur (forme récente) — singles uniquement
+// Récupère les derniers matchs d'un joueur (forme récente)
 async function getPlayerRecentFixtures(playerId) {
   const cacheKey = `player_${playerId}`;
   if (isTennisCacheValid(tennisCache[cacheKey])) return tennisCache[cacheKey].data;
+
   const raw = await tennisAPI('get_H2H', { first_player_key: playerId, second_player_key: playerId });
-  // Fusionner firstPlayerResults + secondPlayerResults (joueur peut être des deux côtés)
-  const r1 = raw?.firstPlayerResults || [];
+  const r1 = raw?.firstPlayerResults  || [];
   const r2 = raw?.secondPlayerResults || [];
   const allResults = [...r1, ...r2];
-  // Dédupliquer par event_key + trier par date desc
+
   const seen = new Set();
   const deduped = allResults.filter(f => {
     if (seen.has(f.event_key)) return false;
     seen.add(f.event_key); return true;
   }).sort((a, b) => new Date(b.event_date) - new Date(a.event_date));
-  const singles = deduped.filter(f => (f.event_type_type || '').toLowerCase().includes('singles'));
+
+  const singles  = deduped.filter(f => (f.event_type_type || '').toLowerCase().includes('singles'));
   const fixtures = singles.map(normalizeTennisFixture);
+
   tennisCache[cacheKey] = { data: fixtures, timestamp: Date.now() };
   return fixtures;
 }
@@ -1270,17 +1300,75 @@ async function getPlayerRecentFixtures(playerId) {
 async function getTennisH2H(player1Id, player2Id) {
   const cacheKey = `h2h_${player1Id}_${player2Id}`;
   if (isTennisCacheValid(tennisCache[cacheKey])) return tennisCache[cacheKey].data;
+
   const raw = await tennisAPI('get_H2H', { first_player_key: player1Id, second_player_key: player2Id });
-  const h2hRaw = raw?.H2H || [];
+  const h2hRaw  = raw?.H2H || [];
   const fixtures = h2hRaw
     .filter(f => (f.event_type_type || '').toLowerCase().includes('singles'))
     .map(normalizeTennisFixture);
+
   tennisCache[cacheKey] = { data: fixtures, timestamp: Date.now() };
   return fixtures;
 }
 
+// Récupère le classement ATP via get_standings
+async function getTennisStandings() {
+  const cacheKey = 'atp_standings';
+  if (isTennisCacheValid(tennisCache[cacheKey])) return tennisCache[cacheKey].data;
+
+  // get_standings retourne le classement ATP en cours
+  const raw = await tennisAPI('get_standings', { standing_type: 'atp' });
+  const standings = Array.isArray(raw) ? raw : [];
+
+  // Construire une map { playerKey: rank }
+  const rankMap = {};
+  standings.forEach((entry, idx) => {
+    const key = String(entry.player_key || entry.id || '');
+    const rank = parseInt(entry.standing_place || entry.rank || idx + 1);
+    if (key) rankMap[key] = rank;
+  });
+
+  console.log(`[TENNIS] Standings ATP chargés: ${standings.length} joueurs`);
+  tennisCache[cacheKey] = { data: rankMap, timestamp: Date.now() };
+  return rankMap;
+}
+
+// Récupère les stats par surface d'un joueur via get_players
+async function getPlayerSurfaceStats(playerId) {
+  const cacheKey = `player_stats_${playerId}`;
+  if (isTennisCacheValid(tennisCache[cacheKey])) return tennisCache[cacheKey].data;
+
+  const raw = await tennisAPI('get_players', { player_key: playerId });
+  const player = Array.isArray(raw) ? raw[0] : raw;
+
+  if (!player) {
+    tennisCache[cacheKey] = { data: null, timestamp: Date.now() };
+    return null;
+  }
+
+  // Structure attendue (peut varier selon l'API) :
+  // player.player_hard_win / player.player_hard_total
+  // player.player_clay_win / player.player_clay_total
+  // player.player_grass_win / player.player_grass_total
+  const parseWinRate = (wins, total) => {
+    const w = parseInt(wins || 0);
+    const t = parseInt(total || 0);
+    return t > 0 ? { wins: w, total: t, rate: +(w / t).toFixed(3) } : null;
+  };
+
+  const stats = {
+    hard:  parseWinRate(player.player_hard_win,  player.player_hard_total),
+    clay:  parseWinRate(player.player_clay_win,  player.player_clay_total),
+    grass: parseWinRate(player.player_grass_win, player.player_grass_total),
+    rank:  player.player_rank ? parseInt(player.player_rank) : null,
+  };
+
+  console.log(`[TENNIS] Stats joueur ${playerId}: rank=${stats.rank} hard=${JSON.stringify(stats.hard)} clay=${JSON.stringify(stats.clay)}`);
+  tennisCache[cacheKey] = { data: stats, timestamp: Date.now() };
+  return stats;
+}
+
 // Extrait l'id du gagnant depuis un objet fixture tennis
-// L'API peut retourner : winnerId, winner_id, winner.id, winner (int), etc.
 function getTennisWinnerId(f) {
   const raw = f.winnerId ?? f.winner_id ?? f.winner ?? null;
   if (raw === null || raw === undefined) return null;
@@ -1288,41 +1376,83 @@ function getTennisWinnerId(f) {
   return String(raw);
 }
 
-// ── ANALYSE TENNIS ─────────────────────────────────────────
-function analyseTennisMatch(fixture, h2hFixtures, p1Recent, p2Recent) {
+// ── ANALYSE TENNIS v2 ──────────────────────────────────────
+// Facteurs : rang ATP, forme pondérée, H2H, surface, niveau tournoi
+function analyseTennisMatch(fixture, h2hFixtures, p1Recent, p2Recent, atpRankMap, p1SurfStats, p2SurfStats) {
   const player1 = fixture.player1;
   const player2 = fixture.player2;
   const surface = fixture.surface || 'Unknown';
+  const tournamentLevel = getTournamentLevel(fixture.tournamentName);
 
-  // ── FORME RÉCENTE (5 derniers matchs) ─────────────────
-  const getForm = (recent, playerId) => {
+  // ── CLASSEMENT ATP ─────────────────────────────────────
+  // Priorité : stats API get_players > fixture seeds > standings map > null
+  const p1StatsRank = p1SurfStats?.rank || null;
+  const p2StatsRank = p2SurfStats?.rank || null;
+  const p1FixRank   = fixture.rank1 || null;
+  const p2FixRank   = fixture.rank2 || null;
+
+  // Seed → rang approximatif si aucun rang direct (seed 1 ≈ top 10, seed 2 ≈ top 20, etc.)
+  const seedToApproxRank = (seed) => seed ? seed * 8 : null;
+  const p1Seed = fixture.seed1 ? seedToApproxRank(fixture.seed1) : null;
+  const p2Seed = fixture.seed2 ? seedToApproxRank(fixture.seed2) : null;
+
+  const p1IdStr = String(player1?.id || '');
+  const p2IdStr = String(player2?.id || '');
+  const p1MapRank = atpRankMap ? atpRankMap[p1IdStr] : null;
+  const p2MapRank = atpRankMap ? atpRankMap[p2IdStr] : null;
+
+  // Choisir le meilleur rang disponible (le plus fiable en premier)
+  const rank1 = p1StatsRank || p1FixRank || p1MapRank || p1Seed || null;
+  const rank2 = p2StatsRank || p2FixRank || p2MapRank || p2Seed || null;
+
+  // ── FORME PONDÉRÉE ─────────────────────────────────────
+  // 3 derniers matchs comptent double, 5 précédents comptent simple
+  const getWeightedForm = (recent, playerId) => {
     const all = (recent || []).filter(f => getTennisWinnerId(f) !== null);
-    const last5 = all.slice(0, 5);
     const pidStr = String(playerId);
-    const wins   = last5.filter(f => getTennisWinnerId(f) === pidStr).length;
-    const losses = last5.length - wins;
+
+    // 8 derniers matchs au total (3 derniers × 2 + 5 précédents × 1)
+    const last3  = all.slice(0, 3);
+    const prev5  = all.slice(3, 8);
+
+    const w3wins  = last3.filter(f => getTennisWinnerId(f) === pidStr).length;
+    const w3loss  = last3.length - w3wins;
+    const w5wins  = prev5.filter(f => getTennisWinnerId(f) === pidStr).length;
+    const w5loss  = prev5.length - w5wins;
+
+    // Score pondéré : dernier 3 matchs × 2, 5 suivants × 1
+    const wScore  = (w3wins * 2) - (w3loss * 2) + w5wins - w5loss;
+
+    // String visuel sur 5 derniers (pour affichage)
+    const last5   = all.slice(0, 5);
     const formStr = last5.map(f => getTennisWinnerId(f) === pidStr ? 'W' : 'L').join('');
-    if (last5.length === 0 && recent && recent.length > 0) {
-      // Debug : log le premier élément brut pour comprendre la structure
-      console.log('[TENNIS] getForm debug - exemple fixture récent brut:', JSON.stringify(recent[0]).slice(0, 200));
-    }
-    return { wins, losses, total: last5.length, formStr };
+    const wins    = last5.filter(f => getTennisWinnerId(f) === pidStr).length;
+    const losses  = last5.length - wins;
+
+    return {
+      wins, losses, total: last5.length, formStr,
+      wScore,       // score pondéré (utilisé dans matrice)
+      last3Total:   last3.length,
+      last3Wins:    w3wins,
+    };
   };
 
-  const form1 = getForm(p1Recent, player1?.id);
-  const form2 = getForm(p2Recent, player2?.id);
+  const form1 = getWeightedForm(p1Recent, player1?.id);
+  const form2 = getWeightedForm(p2Recent, player2?.id);
 
   // ── H2H GLOBAL ─────────────────────────────────────────
-  const h2hTotal = (h2hFixtures || []).filter(f => getTennisWinnerId(f) !== null);
-  const p1str = String(player1?.id);
-  const p2str = String(player2?.id);
-  const h2hWins1 = h2hTotal.filter(f => getTennisWinnerId(f) === p1str).length;
-  const h2hWins2 = h2hTotal.filter(f => getTennisWinnerId(f) === p2str).length;
+  const h2hAll   = (h2hFixtures || []).filter(f => getTennisWinnerId(f) !== null);
+  const p1str    = String(player1?.id);
+  const p2str    = String(player2?.id);
+  const h2hWins1 = h2hAll.filter(f => getTennisWinnerId(f) === p1str).length;
+  const h2hWins2 = h2hAll.filter(f => getTennisWinnerId(f) === p2str).length;
 
   // ── H2H SUR LA SURFACE ─────────────────────────────────
-  const h2hSurface = h2hTotal.filter(f =>
-    (f.surface || f.court_surface || '').toLowerCase() === surface.toLowerCase()
-  );
+  const surfLow   = surface.toLowerCase();
+  const h2hSurface = h2hAll.filter(f => {
+    const fs = (f.surface || '').toLowerCase();
+    return fs && fs !== 'unknown' && fs === surfLow;
+  });
   const h2hSurfWins1 = h2hSurface.filter(f => getTennisWinnerId(f) === p1str).length;
   const h2hSurfWins2 = h2hSurface.filter(f => getTennisWinnerId(f) === p2str).length;
 
@@ -1331,72 +1461,147 @@ function analyseTennisMatch(fixture, h2hFixtures, p1Recent, p2Recent) {
   let score2 = 0;
   const factors = [];
 
-  // F1 — FORME RÉCENTE (max 30pts)
-  if (form1.total >= 3) {
-    if      (form1.wins >= 5) { score1 += 30; factors.push('F1'); }
-    else if (form1.wins >= 4) { score1 += 22; factors.push('F1'); }
-    else if (form1.wins >= 3) { score1 += 14; factors.push('F1'); }
-    else if (form1.losses >= 4) { score1 -= 10; }
-    else if (form1.losses >= 3) { score1 -= 5; }
-  }
-  if (form2.total >= 3) {
-    if      (form2.wins >= 5) { score2 += 30; factors.push('F1'); }
-    else if (form2.wins >= 4) { score2 += 22; factors.push('F1'); }
-    else if (form2.wins >= 3) { score2 += 14; factors.push('F1'); }
-    else if (form2.losses >= 4) { score2 -= 10; }
-    else if (form2.losses >= 3) { score2 -= 5; }
+  // ── F1 — CLASSEMENT ATP (max 40pts) — facteur le plus prédictif ──
+  const rankGap = (rank1 && rank2) ? rank2 - rank1 : null; // positif = P1 mieux classé
+
+  if (rankGap !== null) {
+    factors.push('F1_RANG');
+    if      (rankGap >= 100) { score1 += 40; }
+    else if (rankGap >= 50)  { score1 += 32; }
+    else if (rankGap >= 30)  { score1 += 24; }
+    else if (rankGap >= 15)  { score1 += 16; }
+    else if (rankGap >= 8)   { score1 += 9;  }
+    else if (rankGap >= 3)   { score1 += 4;  }
+    else if (rankGap <= -100){ score2 += 40; }
+    else if (rankGap <= -50) { score2 += 32; }
+    else if (rankGap <= -30) { score2 += 24; }
+    else if (rankGap <= -15) { score2 += 16; }
+    else if (rankGap <= -8)  { score2 += 9;  }
+    else if (rankGap <= -3)  { score2 += 4;  }
+  } else {
+    // Pas de rang disponible — utiliser les seeds si présents
+    if (fixture.seed1 && !fixture.seed2) { score1 += 12; factors.push('F1_SEED'); }
+    if (fixture.seed2 && !fixture.seed1) { score2 += 12; factors.push('F1_SEED'); }
   }
 
-  // F2 — H2H GLOBAL (max 25pts)
-  if (h2hTotal.length >= 2) {
-    if      (h2hWins1 >= 4 && h2hWins1 > h2hWins2 * 2) { score1 += 25; factors.push('F2'); }
-    else if (h2hWins1 > h2hWins2 + 2) { score1 += 16; factors.push('F2'); }
-    else if (h2hWins1 > h2hWins2)     { score1 += 8; }
-    if      (h2hWins2 >= 4 && h2hWins2 > h2hWins1 * 2) { score2 += 25; factors.push('F2'); }
-    else if (h2hWins2 > h2hWins1 + 2) { score2 += 16; factors.push('F2'); }
-    else if (h2hWins2 > h2hWins1)     { score2 += 8; }
+  // ── F2 — FORME PONDÉRÉE (3 derniers × 2 + 5 précédents, max 30pts) ──
+  if (form1.total >= 2 || form1.last3Total >= 1) {
+    const ws = form1.wScore;
+    if      (ws >= 8)  { score1 += 30; factors.push('F2_FORME'); }
+    else if (ws >= 5)  { score1 += 22; factors.push('F2_FORME'); }
+    else if (ws >= 3)  { score1 += 14; factors.push('F2_FORME'); }
+    else if (ws >= 1)  { score1 += 7;  }
+    else if (ws <= -5) { score1 -= 12; }
+    else if (ws <= -3) { score1 -= 7;  }
+    else if (ws <= -1) { score1 -= 3;  }
+  }
+  if (form2.total >= 2 || form2.last3Total >= 1) {
+    const ws = form2.wScore;
+    if      (ws >= 8)  { score2 += 30; factors.push('F2_FORME'); }
+    else if (ws >= 5)  { score2 += 22; factors.push('F2_FORME'); }
+    else if (ws >= 3)  { score2 += 14; factors.push('F2_FORME'); }
+    else if (ws >= 1)  { score2 += 7;  }
+    else if (ws <= -5) { score2 -= 12; }
+    else if (ws <= -3) { score2 -= 7;  }
+    else if (ws <= -1) { score2 -= 3;  }
   }
 
-  // F3 — H2H SUR LA SURFACE (max 20pts)
-  if (h2hSurface.length >= 2) {
-    if      (h2hSurfWins1 > h2hSurfWins2 + 1) { score1 += 20; factors.push('F3'); }
-    else if (h2hSurfWins1 > h2hSurfWins2)      { score1 += 10; }
-    if      (h2hSurfWins2 > h2hSurfWins1 + 1)  { score2 += 20; factors.push('F3'); }
-    else if (h2hSurfWins2 > h2hSurfWins1)       { score2 += 10; }
+  // ── F3 — STATS PAR SURFACE (get_players, max 20pts) ──
+  const getSurfKey = (surf) => {
+    const s = (surf || '').toLowerCase();
+    if (s.includes('hard'))  return 'hard';
+    if (s.includes('clay'))  return 'clay';
+    if (s.includes('grass')) return 'grass';
+    return null;
+  };
+  const surfKey = getSurfKey(surface);
+
+  if (surfKey && p1SurfStats?.[surfKey] && p2SurfStats?.[surfKey]) {
+    const r1 = p1SurfStats[surfKey].rate;
+    const r2 = p2SurfStats[surfKey].rate;
+    const surfDiff = r1 - r2;
+    if      (surfDiff >= 0.20) { score1 += 20; factors.push('F3_SURF'); }
+    else if (surfDiff >= 0.12) { score1 += 14; factors.push('F3_SURF'); }
+    else if (surfDiff >= 0.06) { score1 += 8;  }
+    else if (surfDiff <= -0.20){ score2 += 20; factors.push('F3_SURF'); }
+    else if (surfDiff <= -0.12){ score2 += 14; factors.push('F3_SURF'); }
+    else if (surfDiff <= -0.06){ score2 += 8;  }
+  } else if (surfKey && p1SurfStats?.[surfKey]) {
+    // Seulement P1 a les stats surface
+    if (p1SurfStats[surfKey].rate >= 0.60) { score1 += 8; }
+  } else if (surfKey && p2SurfStats?.[surfKey]) {
+    if (p2SurfStats[surfKey].rate >= 0.60) { score2 += 8; }
+  }
+
+  // ── F4 — H2H GLOBAL (max 20pts) ──
+  if (h2hAll.length >= 2) {
+    factors.push('F4_H2H');
+    if      (h2hWins1 >= 4 && h2hWins1 > h2hWins2 * 2) { score1 += 20; }
+    else if (h2hWins1 > h2hWins2 + 2)                   { score1 += 13; }
+    else if (h2hWins1 > h2hWins2)                        { score1 += 6;  }
+    if      (h2hWins2 >= 4 && h2hWins2 > h2hWins1 * 2) { score2 += 20; }
+    else if (h2hWins2 > h2hWins1 + 2)                   { score2 += 13; }
+    else if (h2hWins2 > h2hWins1)                        { score2 += 6;  }
+  }
+
+  // ── F5 — H2H SUR LA SURFACE (max 15pts) ──
+  if (h2hSurface.length >= 1) {
+    if      (h2hSurfWins1 > h2hSurfWins2 + 1) { score1 += 15; factors.push('F5_H2H_SURF'); }
+    else if (h2hSurfWins1 > h2hSurfWins2)      { score1 += 8;  }
+    if      (h2hSurfWins2 > h2hSurfWins1 + 1) { score2 += 15; factors.push('F5_H2H_SURF'); }
+    else if (h2hSurfWins2 > h2hSurfWins1)      { score2 += 8;  }
+  }
+
+  // ── F6 — NIVEAU DU TOURNOI (pondération favori) ──
+  // En Grand Chelem et Masters 1000, les grands favoris (rang ATP) s'imposent davantage
+  const tournamentBonus = tournamentLevel === 'GrandSlam' ? 1.20
+    : tournamentLevel === 'Masters1000' ? 1.12
+    : tournamentLevel === 'ATP500' ? 1.06
+    : 1.0;
+
+  // Appliquer le bonus si on a le rang
+  if (rankGap !== null && Math.abs(rankGap) >= 15 && tournamentLevel !== 'ATP250') {
+    if (rankGap > 0) { score1 = Math.round(score1 * tournamentBonus); factors.push('F6_NIVEAU'); }
+    else             { score2 = Math.round(score2 * tournamentBonus); factors.push('F6_NIVEAU'); }
   }
 
   // ── RÉSULTAT ───────────────────────────────────────────
-  const diff = score1 - score2;
+  const diff    = score1 - score2;
   const absDiff = Math.abs(diff);
 
-  // Seuil minimum de données
-  const dataQuality = form1.total + form2.total + h2hTotal.length;
-  console.log('[TENNIS] analyse ' + (player1?.name||'?') + ' vs ' + (player2?.name||'?') + ' — form1:' + form1.total + ' form2:' + form2.total + ' h2h:' + h2hTotal.length + ' diff:' + diff);
-  if (dataQuality < 3) {
-    return { alerte: null, reason: `Données insuffisantes (form1:${form1.total} form2:${form2.total} h2h:${h2hTotal.length})` };
+  // Qualité des données disponibles
+  const hasRank = rank1 !== null || rank2 !== null;
+  const hasForm = form1.total >= 2 || form2.total >= 2;
+  const hasH2H  = h2hAll.length >= 1;
+  const dataQuality = (hasRank ? 3 : 0) + (hasForm ? 2 : 0) + (hasH2H ? 1 : 0) + form1.total + form2.total + h2hAll.length;
+
+  console.log(`[TENNIS] ${player1?.name} (r${rank1||'?'}) vs ${player2?.name} (r${rank2||'?'}) — surf:${surface} lvl:${tournamentLevel} | s1:${score1} s2:${score2} diff:${diff} | form1:${form1.formStr}(w${form1.wScore}) form2:${form2.formStr}(w${form2.wScore}) h2h:${h2hAll.length}`);
+
+  // Seuil minimal de données — rang seul suffit si écart important
+  if (dataQuality < 2 && !hasRank) {
+    return { alerte: null, reason: `Données insuffisantes (form1:${form1.total} form2:${form2.total} h2h:${h2hAll.length} rang:${hasRank})` };
   }
 
-  // Trop équilibré
-  if (absDiff < 15) {
+  // Seuil "trop équilibré" — abaissé à 10 (anciennement 15) pour générer plus de picks
+  if (absDiff < 10) {
     return {
-      alerte: null,
-      scoreMatriciel: 0,
-      favori: null,
-      adversaire: null,
-      factors: [],
+      alerte: null, scoreMatriciel: 0, favori: null, adversaire: null, factors: [],
       form1, form2, h2hWins1, h2hWins2, h2hSurfWins1, h2hSurfWins2,
-      h2hTotal: h2hTotal.length, h2hSurface: h2hSurface.length, surface,
+      h2hTotal: h2hAll.length, h2hSurface: h2hSurface.length, surface,
+      rank1, rank2,
       reason: 'Match trop équilibré',
     };
   }
 
-  const favoriIsP1 = diff > 0;
-  const scoreMatriciel = Math.min(100, Math.round(absDiff * 1.1));
+  const favoriIsP1   = diff > 0;
+  const scoreMatriciel = Math.min(100, Math.round(absDiff * 1.0));
 
+  // ── SEUILS CALIBRÉS VERT/ORANGE/ROUGE ──
+  // Abaissés pour générer 2-4 picks/jour minimum
   let alerte = null;
-  if      (scoreMatriciel >= 72) alerte = 'VERT';
-  else if (scoreMatriciel >= 52) alerte = 'ORANGE';
-  else if (scoreMatriciel >= 30) alerte = 'ROUGE';
+  if      (scoreMatriciel >= 60) alerte = 'VERT';
+  else if (scoreMatriciel >= 38) alerte = 'ORANGE';
+  else if (scoreMatriciel >= 20) alerte = 'ROUGE';
 
   return {
     alerte,
@@ -1408,9 +1613,12 @@ function analyseTennisMatch(fixture, h2hFixtures, p1Recent, p2Recent) {
     form1, form2,
     h2hWins1, h2hWins2,
     h2hSurfWins1, h2hSurfWins2,
-    h2hTotal: h2hTotal.length,
-    h2hSurface: h2hSurface.length,
+    h2hTotal:    h2hAll.length,
+    h2hSurface:  h2hSurface.length,
     surface,
+    tournamentLevel,
+    rank1, rank2,
+    rankGap,
   };
 }
 
@@ -1418,7 +1626,7 @@ function analyseTennisMatch(fixture, h2hFixtures, p1Recent, p2Recent) {
 async function genererAnalyseTennis(matchInfo) {
   const { favori, adversaire, form1, form2, h2hWins1, h2hWins2,
           h2hSurfWins1, h2hSurfWins2, surface, scoreMatriciel,
-          fixture, favoriIsP1 } = matchInfo;
+          fixture, favoriIsP1, rank1, rank2, tournamentLevel } = matchInfo;
 
   const favoriForm  = favoriIsP1 ? form1 : form2;
   const adversForm  = favoriIsP1 ? form2 : form1;
@@ -1426,28 +1634,31 @@ async function genererAnalyseTennis(matchInfo) {
   const adversH2H   = favoriIsP1 ? h2hWins2 : h2hWins1;
   const favoriSurf  = favoriIsP1 ? h2hSurfWins1 : h2hSurfWins2;
   const adversSurf  = favoriIsP1 ? h2hSurfWins2 : h2hSurfWins1;
+  const favoriRank  = favoriIsP1 ? rank1 : rank2;
+  const adversRank  = favoriIsP1 ? rank2 : rank1;
 
   const today = new Date().toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
 
-  const prompt = `Expert tennis. Analyse ce match et justifie le pronostic avec des données concrètes.
+  const prompt = `Expert tennis. Analyse ce match ATP et justifie le pronostic avec des données concrètes.
 
 MATCH: ${favori?.name} vs ${adversaire?.name}
-TOURNOI: ${fixture.tournamentName || 'ATP'} | Surface: ${surface}
+TOURNOI: ${fixture.tournamentName || 'ATP'} (${tournamentLevel}) | Surface: ${surface}
 PRONOSTIC: Victoire ${favori?.name} (score fiabilité: ${scoreMatriciel}/100)
 
-DONNÉES:
-- Forme ${favori?.name} (5 derniers): ${favoriForm.formStr || 'N/A'} (${favoriForm.wins}V/${favoriForm.losses}D)
-- Forme ${adversaire?.name} (5 derniers): ${adversForm.formStr || 'N/A'} (${adversForm.wins}V/${adversForm.losses}D)
+DONNÉES CLÉS:
+- Rang ATP ${favori?.name}: ${favoriRank ? '#' + favoriRank : 'N/A'} | Rang ATP ${adversaire?.name}: ${adversRank ? '#' + adversRank : 'N/A'}
+- Forme pondérée ${favori?.name} (5 derniers): ${favoriForm.formStr || 'N/A'} (${favoriForm.wins}V/${favoriForm.losses}D, score pondéré:${favoriForm.wScore})
+- Forme pondérée ${adversaire?.name}: ${adversForm.formStr || 'N/A'} (${adversForm.wins}V/${adversForm.losses}D, score pondéré:${adversForm.wScore})
 - H2H global: ${favori?.name} ${favoriH2H} - ${adversH2H} ${adversaire?.name}
 - H2H sur ${surface}: ${favori?.name} ${favoriSurf} - ${adversSurf} ${adversaire?.name}
 
 RÈGLES:
-1. 2 phrases MAX justifiant la victoire — cite les stats ci-dessus
-2. Vérifie que ${favori?.name} joue bien en ${today} avant de valider
-3. Sois factuel et concis
+1. 2 phrases MAX justifiant la victoire — cite les stats ci-dessus (rang ATP, forme, H2H)
+2. Vérifie que ${favori?.name} joue bien ce tournoi en ${today}
+3. Mentionne la surface si pertinente (avantage clair sur cette surface)
 
 JSON UNIQUEMENT:
-{"raison":"2 phrases pourquoi victoire avec stats concrètes","confiance":"${scoreMatriciel >= 72 ? 'ÉLEVÉE' : scoreMatriciel >= 52 ? 'MOYENNE' : 'FAIBLE'}"}`;
+{"raison":"2 phrases pourquoi victoire avec stats concrètes","confiance":"${scoreMatriciel >= 60 ? 'ÉLEVÉE' : scoreMatriciel >= 38 ? 'MOYENNE' : 'FAIBLE'}"}`;
 
   try {
     const response = await anthropic.messages.create({
@@ -1478,12 +1689,13 @@ app.get('/api/scan-tennis', async (req, res) => {
 
     if (fixtures.length === 0) {
       return res.json({
-        picks: [],
-        rejected: [],
-        total_analyses: 0,
+        picks: [], rejected: [], total_analyses: 0,
         date: new Date().toLocaleDateString('fr-FR'),
       });
     }
+
+    // 2. Charger le classement ATP en parallèle (une seule fois)
+    const atpRankMap = await getTennisStandings();
 
     const picks = [];
     const rejected = [];
@@ -1496,14 +1708,19 @@ app.get('/api/scan-tennis', async (req, res) => {
 
         console.log(`[TENNIS] Analyse: ${p1.name} vs ${p2.name}`);
 
-        // Récupérer H2H et forme en parallèle
-        const [h2hFixtures, p1Recent, p2Recent] = await Promise.all([
+        // Récupérer H2H, forme et stats surface en parallèle
+        const [h2hFixtures, p1Recent, p2Recent, p1SurfStats, p2SurfStats] = await Promise.all([
           getTennisH2H(p1.id, p2.id),
           getPlayerRecentFixtures(p1.id),
           getPlayerRecentFixtures(p2.id),
+          getPlayerSurfaceStats(p1.id),
+          getPlayerSurfaceStats(p2.id),
         ]);
 
-        const analyse = analyseTennisMatch(fixture, h2hFixtures, p1Recent, p2Recent);
+        const analyse = analyseTennisMatch(
+          fixture, h2hFixtures, p1Recent, p2Recent,
+          atpRankMap, p1SurfStats, p2SurfStats
+        );
 
         if (!analyse.alerte) {
           rejected.push({
@@ -1524,27 +1741,31 @@ app.get('/api/scan-tennis', async (req, res) => {
           : '?';
 
         picks.push({
-          match: `${p1.name} vs ${p2.name}`,
-          competition: fixture.tournamentName || 'ATP',
+          match:          `${p1.name} vs ${p2.name}`,
+          competition:    fixture.tournamentName || 'ATP',
           heure,
-          surface: analyse.surface,
-          favori: analyse.favori?.name,
-          adversaire: analyse.adversaire?.name,
+          surface:        analyse.surface,
+          tournamentLevel: analyse.tournamentLevel,
+          favori:         analyse.favori?.name,
+          adversaire:     analyse.adversaire?.name,
+          // Rangs ATP
+          favori_rang:    analyse.favoriIsP1 ? analyse.rank1 : analyse.rank2,
+          adversaire_rang: analyse.favoriIsP1 ? analyse.rank2 : analyse.rank1,
           scoreMatriciel: analyse.scoreMatriciel,
-          alerte: analyse.alerte,
-          factors: analyse.factors,
+          alerte:         analyse.alerte,
+          factors:        analyse.factors,
           // Forme
-          favori_forme: analyse.favoriIsP1 ? analyse.form1.formStr : analyse.form2.formStr,
+          favori_forme:   analyse.favoriIsP1 ? analyse.form1.formStr : analyse.form2.formStr,
           adversaire_forme: analyse.favoriIsP1 ? analyse.form2.formStr : analyse.form1.formStr,
-          favori_bilan: analyse.favoriIsP1
+          favori_bilan:   analyse.favoriIsP1
             ? `${analyse.form1.wins}V/${analyse.form1.losses}D`
             : `${analyse.form2.wins}V/${analyse.form2.losses}D`,
           adversaire_bilan: analyse.favoriIsP1
             ? `${analyse.form2.wins}V/${analyse.form2.losses}D`
             : `${analyse.form1.wins}V/${analyse.form1.losses}D`,
           // H2H
-          h2h_global: `${analyse.favoriIsP1 ? analyse.h2hWins1 : analyse.h2hWins2}-${analyse.favoriIsP1 ? analyse.h2hWins2 : analyse.h2hWins1}`,
-          h2h_surface: `${analyse.favoriIsP1 ? analyse.h2hSurfWins1 : analyse.h2hSurfWins2}-${analyse.favoriIsP1 ? analyse.h2hSurfWins2 : analyse.h2hSurfWins1}`,
+          h2h_global:      `${analyse.favoriIsP1 ? analyse.h2hWins1 : analyse.h2hWins2}-${analyse.favoriIsP1 ? analyse.h2hWins2 : analyse.h2hWins1}`,
+          h2h_surface:     `${analyse.favoriIsP1 ? analyse.h2hSurfWins1 : analyse.h2hSurfWins2}-${analyse.favoriIsP1 ? analyse.h2hSurfWins2 : analyse.h2hSurfWins1}`,
           h2h_total_matchs: analyse.h2hTotal,
           // Analyse Claude
           raison: claudeAnalyse?.raison || `${analyse.favori?.name} favori selon la matrice`,
@@ -1555,17 +1776,17 @@ app.get('/api/scan-tennis', async (req, res) => {
       }
     }
 
-    // Trier et sélectionner
+    // Trier et sélectionner (2 VERT + 1 ORANGE + 1 ROUGE max)
     picks.sort((a, b) => b.scoreMatriciel - a.scoreMatriciel);
     const verts  = picks.filter(p => p.alerte === 'VERT').slice(0, 2);
     const orange = picks.filter(p => p.alerte === 'ORANGE').slice(0, 1);
     const rouge  = picks.filter(p => p.alerte === 'ROUGE').slice(0, 1);
-    const top = [...verts, ...orange, ...rouge];
+    const top    = [...verts, ...orange, ...rouge];
 
     res.json({
-      date: new Date().toLocaleDateString('fr-FR'),
-      total_analyses: fixtures.length,
-      picks: top,
+      date:            new Date().toLocaleDateString('fr-FR'),
+      total_analyses:  fixtures.length,
+      picks:           top,
       rejected,
     });
 
@@ -1575,86 +1796,7 @@ app.get('/api/scan-tennis', async (req, res) => {
   }
 });
 
-
-// ── DEBUG RAW ──────────────────────────────────────────────
-app.get('/api/debug-tennis-raw', async (req, res) => {
-  try {
-    const today = getTodayStr();
-    // Récupérer les singles du jour
-    const raw = await tennisAPI('get_fixtures', { date_start: today, date_stop: today, event_type_key: 265 });
-    const singles = (Array.isArray(raw) ? raw : []).filter(f => (f.event_qualification||'False') === 'False');
-    if (singles.length === 0) return res.json({ error: 'Aucun single trouvé', raw_sample: (Array.isArray(raw)?raw:[]).slice(0,2) });
-
-    const first = singles[0];
-    const p1id = first.first_player_key;
-    const p2id = first.second_player_key;
-
-    // Test H2H avec les bons paramètres (doc officielle)
-    const h2hRaw = await tennisAPI('get_H2H', { first_player_key: p1id, second_player_key: p2id });
-    const formeRaw = await tennisAPI('get_H2H', { first_player_key: p1id, second_player_key: p1id });
-
-    res.json({
-      match: first.event_first_player + ' vs ' + first.event_second_player,
-      p1id, p2id,
-      h2h: {
-        keys: h2hRaw ? Object.keys(h2hRaw) : null,
-        H2H_count: (h2hRaw?.H2H||[]).length,
-        firstPlayerResults_count: (h2hRaw?.firstPlayerResults||[]).length,
-        sample_h2h: (h2hRaw?.H2H||[])[0] || null,
-        sample_forme: (h2hRaw?.firstPlayerResults||[])[0] || null,
-        raw_truncated: JSON.stringify(h2hRaw).slice(0, 300),
-      },
-      forme_same_player: {
-        keys: formeRaw ? Object.keys(formeRaw) : null,
-        firstPlayerResults_count: (formeRaw?.firstPlayerResults||[]).length,
-        sample: (formeRaw?.firstPlayerResults||[])[0] || null,
-        raw_truncated: JSON.stringify(formeRaw).slice(0, 300),
-      },
-      fixture_brut_keys: Object.keys(first),
-    });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-// ── FIN MODULE TENNIS ──────────────────────────────────────
-
-// ── DEBUG TENNIS ───────────────────────────────────────────
-app.get('/api/debug-tennis', async (req, res) => {
-  try {
-    const today = getTodayStr();
-    
-    const raw = await tennisAPI('get_fixtures', { date_start: today, date_stop: today, event_type_key: 265 });
-    const all = Array.isArray(raw) ? raw : [];
-    const singles = all.filter(f => (f.event_qualification||'False') === 'False');
-
-    let h2hTest = null;
-    if (singles.length > 0) {
-      const first = singles[0];
-      const p1id = first.first_player_key;
-      const p2id = first.second_player_key;
-      const h2hRaw = await tennisAPI('get_H2H', { first_player_key: p1id, second_player_key: p2id });
-      const formeRaw = await tennisAPI('get_H2H', { first_player_key: p1id, second_player_key: p1id });
-      h2hTest = {
-        player1: first.event_first_player,
-        player2: first.event_second_player,
-        h2h_count: (h2hRaw?.H2H || []).length,
-        forme_count: (formeRaw?.firstPlayerResults || []).length,
-        h2h_sample: (h2hRaw?.H2H || [])[0] || null,
-        forme_sample: (formeRaw?.firstPlayerResults || [])[0] || null,
-      };
-    }
-
-    res.json({
-      today,
-      api_key_present: !!TENNIS_API_KEY,
-      total_singles: singles.length,
-      exemple: singles[0] ? { name: singles[0].event_first_player + ' vs ' + singles[0].event_second_player, keys: Object.keys(singles[0]) } : null,
-      h2h_test: h2hTest,
-    });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
+// ── FIN MODULE TENNIS v2 ───────────────────────────────────
 
 app.get('/api/health', (req, res) => res.json({ status: 'ok', name: 'PicksAI', version: '4.2', season: SEASON }));
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, '../frontend/index.html')));
