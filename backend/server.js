@@ -1318,6 +1318,17 @@ async function getTennisStandings() {
 
   // get_standings retourne le classement ATP en cours
   const raw = await tennisAPI('get_standings', { standing_type: 'atp' });
+
+  // ── DEBUG STRUCTURE BRUTE ──
+  console.log('[DEBUG_STANDINGS] raw type:', typeof raw, '| isArray:', Array.isArray(raw));
+  console.log('[DEBUG_STANDINGS] raw (truncated):', JSON.stringify(raw).slice(0, 500));
+  if (Array.isArray(raw) && raw.length > 0) {
+    console.log('[DEBUG_STANDINGS] Premier entry keys:', Object.keys(raw[0]));
+    console.log('[DEBUG_STANDINGS] Premier entry complet:', JSON.stringify(raw[0]));
+  } else if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    console.log('[DEBUG_STANDINGS] Clés objet:', Object.keys(raw));
+  }
+
   const standings = Array.isArray(raw) ? raw : [];
 
   // Construire une map { playerKey: rank }
@@ -1328,7 +1339,11 @@ async function getTennisStandings() {
     if (key) rankMap[key] = rank;
   });
 
-  console.log(`[TENNIS] Standings ATP chargés: ${standings.length} joueurs`);
+  console.log(`[TENNIS] Standings ATP chargés: ${standings.length} joueurs | rankMap size: ${Object.keys(rankMap).length}`);
+  if (Object.keys(rankMap).length > 0) {
+    const firstKey = Object.keys(rankMap)[0];
+    console.log('[DEBUG_STANDINGS] Exemple rankMap:', firstKey, '->', rankMap[firstKey]);
+  }
   tennisCache[cacheKey] = { data: rankMap, timestamp: Date.now() };
   return rankMap;
 }
@@ -1339,17 +1354,24 @@ async function getPlayerSurfaceStats(playerId) {
   if (isTennisCacheValid(tennisCache[cacheKey])) return tennisCache[cacheKey].data;
 
   const raw = await tennisAPI('get_players', { player_key: playerId });
+
+  // ── DEBUG STRUCTURE BRUTE ──
+  console.log(`[DEBUG_PLAYERS] playerId:${playerId} | raw type:`, typeof raw, '| isArray:', Array.isArray(raw));
+  console.log(`[DEBUG_PLAYERS] raw (truncated):`, JSON.stringify(raw).slice(0, 600));
+  if (Array.isArray(raw) && raw.length > 0) {
+    console.log(`[DEBUG_PLAYERS] Premier objet keys:`, Object.keys(raw[0]));
+  } else if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    console.log(`[DEBUG_PLAYERS] Clés objet:`, Object.keys(raw));
+  }
+
   const player = Array.isArray(raw) ? raw[0] : raw;
 
   if (!player) {
+    console.log(`[DEBUG_PLAYERS] playerId:${playerId} — aucun joueur retourné`);
     tennisCache[cacheKey] = { data: null, timestamp: Date.now() };
     return null;
   }
 
-  // Structure attendue (peut varier selon l'API) :
-  // player.player_hard_win / player.player_hard_total
-  // player.player_clay_win / player.player_clay_total
-  // player.player_grass_win / player.player_grass_total
   const parseWinRate = (wins, total) => {
     const w = parseInt(wins || 0);
     const t = parseInt(total || 0);
@@ -1404,6 +1426,10 @@ function analyseTennisMatch(fixture, h2hFixtures, p1Recent, p2Recent, atpRankMap
   // Choisir le meilleur rang disponible (le plus fiable en premier)
   const rank1 = p1StatsRank || p1FixRank || p1MapRank || p1Seed || null;
   const rank2 = p2StatsRank || p2FixRank || p2MapRank || p2Seed || null;
+
+  // ── DEBUG RANG ──
+  console.log(`[DEBUG_RANG] ${player1?.name} (id:${p1IdStr}) — statsRank:${p1StatsRank} fixRank:${p1FixRank} mapRank:${p1MapRank} seed:${fixture.seed1} final:${rank1}`);
+  console.log(`[DEBUG_RANG] ${player2?.name} (id:${p2IdStr}) — statsRank:${p2StatsRank} fixRank:${p2FixRank} mapRank:${p2MapRank} seed:${fixture.seed2} final:${rank2}`);
 
   // ── FORME PONDÉRÉE ─────────────────────────────────────
   // 3 derniers matchs comptent double, 5 précédents comptent simple
