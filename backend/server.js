@@ -1313,79 +1313,59 @@ async function getTennisH2H(player1Id, player2Id) {
 
 // Récupère le classement ATP via get_standings
 async function getTennisStandings() {
-  const cacheKey = 'atp_standings';
-  if (isTennisCacheValid(tennisCache[cacheKey])) return tennisCache[cacheKey].data;
-
-  // get_standings retourne le classement ATP en cours
-  const raw = await tennisAPI('get_standings', { standing_type: 'atp' });
-
-  // ── DEBUG STRUCTURE BRUTE ──
-  console.log('[DEBUG_STANDINGS] raw type:', typeof raw, '| isArray:', Array.isArray(raw));
-  console.log('[DEBUG_STANDINGS] raw (truncated):', JSON.stringify(raw).slice(0, 500));
-  if (Array.isArray(raw) && raw.length > 0) {
-    console.log('[DEBUG_STANDINGS] Premier entry keys:', Object.keys(raw[0]));
-    console.log('[DEBUG_STANDINGS] Premier entry complet:', JSON.stringify(raw[0]));
-  } else if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
-    console.log('[DEBUG_STANDINGS] Clés objet:', Object.keys(raw));
-  }
-
-  const standings = Array.isArray(raw) ? raw : [];
-
-  // Construire une map { playerKey: rank }
-  const rankMap = {};
-  standings.forEach((entry, idx) => {
-    const key = String(entry.player_key || entry.id || '');
-    const rank = parseInt(entry.standing_place || entry.rank || idx + 1);
-    if (key) rankMap[key] = rank;
-  });
-
-  console.log(`[TENNIS] Standings ATP chargés: ${standings.length} joueurs | rankMap size: ${Object.keys(rankMap).length}`);
-  if (Object.keys(rankMap).length > 0) {
-    const firstKey = Object.keys(rankMap)[0];
-    console.log('[DEBUG_STANDINGS] Exemple rankMap:', firstKey, '->', rankMap[firstKey]);
-  }
-  tennisCache[cacheKey] = { data: rankMap, timestamp: Date.now() };
-  return rankMap;
+  // get_standings ne retourne pas de rang utilisable via cette API
+  // Le rang est extrait depuis get_players stats[] — voir getPlayerSurfaceStats()
+  return {};
 }
 
-// Récupère les stats par surface d'un joueur via get_players
+// Récupère le rang ATP et les stats par surface depuis get_players
+// Structure réelle API : player.stats[] = [{ season, type:"singles", rank, hard_won, hard_lost, clay_won, ... }]
 async function getPlayerSurfaceStats(playerId) {
   const cacheKey = `player_stats_${playerId}`;
   if (isTennisCacheValid(tennisCache[cacheKey])) return tennisCache[cacheKey].data;
 
   const raw = await tennisAPI('get_players', { player_key: playerId });
-
-  // ── DEBUG STRUCTURE BRUTE ──
-  console.log(`[DEBUG_PLAYERS] playerId:${playerId} | raw type:`, typeof raw, '| isArray:', Array.isArray(raw));
-  console.log(`[DEBUG_PLAYERS] raw (truncated):`, JSON.stringify(raw).slice(0, 600));
-  if (Array.isArray(raw) && raw.length > 0) {
-    console.log(`[DEBUG_PLAYERS] Premier objet keys:`, Object.keys(raw[0]));
-  } else if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
-    console.log(`[DEBUG_PLAYERS] Clés objet:`, Object.keys(raw));
-  }
-
   const player = Array.isArray(raw) ? raw[0] : raw;
 
   if (!player) {
-    console.log(`[DEBUG_PLAYERS] playerId:${playerId} — aucun joueur retourné`);
     tennisCache[cacheKey] = { data: null, timestamp: Date.now() };
     return null;
   }
 
-  const parseWinRate = (wins, total) => {
-    const w = parseInt(wins || 0);
-    const t = parseInt(total || 0);
+  // Les stats sont dans player.stats[] — tableau par saison/type
+  // On prend uniquement les entrées "singles" et on agrège toutes les saisons disponibles
+  const allStats = Array.isArray(player.stats) ? player.stats : [];
+  const singlesStats = allStats.filter(s => (s.type || '').toLowerCase() === 'singles');
+
+  // Rang ATP = le rang le plus récent (première entrée singles triée par saison desc)
+  const sortedBySeasonDesc = [...singlesStats].sort((a, b) => parseInt(b.season || 0) - parseInt(a.season || 0));
+  const latestRank = sortedBySeasonDesc.find(s => s.rank && parseInt(s.rank) > 0);
+  const rank = latestRank ? parseInt(latestRank.rank) : null;
+
+  // Agréger les victoires/défaites par surface sur toutes les saisons singles
+  const agg = { hard: [0,0], clay: [0,0], grass: [0,0] };
+  for (const s of singlesStats) {
+    agg.hard[0]  += parseInt(s.hard_won  || 0);
+    agg.hard[1]  += parseInt(s.hard_lost || 0);
+    agg.clay[0]  += parseInt(s.clay_won  || 0);
+    agg.clay[1]  += parseInt(s.clay_lost || 0);
+    agg.grass[0] += parseInt(s.grass_won  || 0);
+    agg.grass[1] += parseInt(s.grass_lost || 0);
+  }
+
+  const toRate = (w, l) => {
+    const t = w + l;
     return t > 0 ? { wins: w, total: t, rate: +(w / t).toFixed(3) } : null;
   };
 
   const stats = {
-    hard:  parseWinRate(player.player_hard_win,  player.player_hard_total),
-    clay:  parseWinRate(player.player_clay_win,  player.player_clay_total),
-    grass: parseWinRate(player.player_grass_win, player.player_grass_total),
-    rank:  player.player_rank ? parseInt(player.player_rank) : null,
+    rank,
+    hard:  toRate(agg.hard[0],  agg.hard[1]),
+    clay:  toRate(agg.clay[0],  agg.clay[1]),
+    grass: toRate(agg.grass[0], agg.grass[1]),
   };
 
-  console.log(`[TENNIS] Stats joueur ${playerId}: rank=${stats.rank} hard=${JSON.stringify(stats.hard)} clay=${JSON.stringify(stats.clay)}`);
+  console.log(`[TENNIS] Stats joueur ${playerId}: rank=${rank} hard=${JSON.stringify(stats.hard)} clay=${JSON.stringify(stats.clay)} grass=${JSON.stringify(stats.grass)}`);
   tennisCache[cacheKey] = { data: stats, timestamp: Date.now() };
   return stats;
 }
