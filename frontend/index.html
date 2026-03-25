@@ -2696,7 +2696,19 @@ renderMatrix();
 
 // ── STORAGE TENNIS ──────────────────────────────────────
 function tt_getTrack() {
-  try { return JSON.parse(localStorage.getItem('picksai_tennis_track') || '[]'); } catch(e) { return []; }
+  try {
+    const track = JSON.parse(localStorage.getItem('picksai_tennis_track') || '[]');
+    // Migration : s'assurer que chaque pick a un id string unique
+    let changed = false;
+    track.forEach((p, i) => {
+      if (!p.id || typeof p.id === 'number') {
+        p.id = String(p.id || Date.now()) + '_' + i;
+        changed = true;
+      }
+    });
+    if (changed) localStorage.setItem('picksai_tennis_track', JSON.stringify(track));
+    return track;
+  } catch(e) { return []; }
 }
 function tt_saveTrack(t) {
   localStorage.setItem('picksai_tennis_track', JSON.stringify(t));
@@ -2871,7 +2883,7 @@ function tt_renderList() {
     const gainDisplay = isPending
       ? `<div style="font-family:'Bebas Neue';font-size:14px;color:#f59e0b;letter-spacing:1px">⏳ EN ATTENTE</div>`
       : `<div class="track-gain" style="color:${gain>=0?'var(--green)':'var(--red)'}">${gain>=0?'+':''}${gain}€</div>`;
-    const pid = pick.id || '';
+    const pid = String(pick.id || '').replace(/'/g, '').replace(/"/g, '');
 
     return `<div class="track-item" style="border-color:${borderColor}">
       <div class="track-header">
@@ -2906,18 +2918,20 @@ function tt_renderList() {
 function tt_setResult(id, res) {
   if (!id) return;
   const track = tt_getTrack();
-  const pick = track.find(p => p.id === id);
+  const pick = track.find(p => String(p.id) === String(id));
   if (pick) { pick.resultat = res; tt_saveTrack(track); tt_render(); }
+  else { console.warn('tt_setResult: pick not found for id=', id, 'track ids=', track.map(p=>p.id)); }
 }
 function tt_reset(id) {
   if (!id) return;
   const track = tt_getTrack();
-  const pick = track.find(p => p.id === id);
+  const pick = track.find(p => String(p.id) === String(id));
   if (pick) { pick.resultat = null; tt_saveTrack(track); tt_render(); }
 }
 function tt_delete(id) {
   if (!id) return;
-  tt_saveTrack(tt_getTrack().filter(p => p.id !== id));
+  const before = tt_getTrack().length;
+  tt_saveTrack(tt_getTrack().filter(p => String(p.id) !== String(id)));
   tt_render();
 }
 
