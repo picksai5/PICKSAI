@@ -709,7 +709,106 @@
         </div>
       </div>
     </div>
+  <!-- TRACK TENNIS PAGE -->
+  <div class="page" id="page-track-tennis">
+
+    <!-- Bankroll globale -->
+    <div class="bankroll-hero" style="background:linear-gradient(135deg,#0ea5e911,var(--bg2));border:1px solid #0ea5e933;border-radius:14px;padding:20px;margin-bottom:12px">
+      <div class="bankroll-label">BANKROLL TENNIS</div>
+      <div style="font-family:'Bebas Neue';font-size:52px;line-height:1;margin-bottom:4px" id="ttrack-bankroll-amount">500€</div>
+      <div style="font-size:14px;font-weight:700" id="ttrack-bankroll-sub">0€ profit · 0 picks joués</div>
+      <div class="sparkline"><canvas id="ttrack-sparkline" height="60"></canvas></div>
+    </div>
+
+    <div class="stat-grid-2" style="margin-bottom:12px">
+      <div class="stat-box"><div class="stat-label">WIN RATE</div><div class="stat-value" id="ttrack-wr">—</div></div>
+      <div class="stat-box"><div class="stat-label">ROI</div><div class="stat-value" id="ttrack-roi">—</div></div>
+      <div class="stat-box"><div class="stat-label">ÉVOLUTION</div><div class="stat-value" id="ttrack-evol" style="color:#0ea5e9">—</div></div>
+      <div class="stat-box"><div class="stat-label">COTE MOYENNE</div><div class="stat-value" id="ttrack-cote-moy" style="color:#0ea5e9">—</div></div>
+    </div>
+
+    <!-- Capital -->
+    <div style="display:flex;gap:8px;margin-bottom:14px;align-items:center">
+      <div style="font-size:11px;color:var(--muted);flex-shrink:0">Capital base tennis :</div>
+      <input type="number" id="ttrack-capital-input" placeholder="500" style="flex:1;padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:13px">
+      <button onclick="saveTtrackCapital()" style="padding:6px 14px;border-radius:6px;border:1px solid #0ea5e955;background:#0ea5e922;color:#0ea5e9;font-size:12px;font-family:'Bebas Neue';cursor:pointer">OK</button>
+    </div>
+
+    <!-- Par catégorie -->
+    <div style="margin-bottom:14px">
+      <div style="font-family:'Bebas Neue';font-size:14px;letter-spacing:2px;color:var(--muted);margin-bottom:8px">BANKROLL PAR FIABILITÉ</div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+
+        <div style="background:var(--bg2);border:1px solid #10b98133;border-radius:10px;padding:12px">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <span style="font-family:'Bebas Neue';color:#10b981">🟢 VERT</span>
+            <span style="font-family:'Bebas Neue';font-size:20px;color:#10b981" id="ttrack-cat-vert-bankroll">—€</span>
+          </div>
+          <div class="stat-grid-2" style="margin-top:8px;gap:4px">
+            <div class="stat-box" style="padding:6px"><div class="stat-label" style="font-size:9px">PICKS</div><div class="stat-value" style="font-size:14px" id="ttrack-cat-vert-total">0</div></div>
+            <div class="stat-box" style="padding:6px"><div class="stat-label" style="font-size:9px">WIN RATE</div><div class="stat-value" style="font-size:14px" id="ttrack-cat-vert-wr">—</div></div>
+            <div class="stat-box" style="padding:6px"><div class="stat-label" style="font-size:9px">ROI</div><div class="stat-value" style="font-size:14px" id="ttrack-cat-vert-roi">—</div></div>
+            <div class="stat-box" style="padding:6px"><div class="stat-label" style="font-size:9px">COTE MOY.</div><div class="stat-value" style="font-size:14px" id="ttrack-cat-vert-cote">—</div></div>
+          </div>
+        </div>
+
+        <div style="background:var(--bg2);border:1px solid #f59e0b33;border-radius:10px;padding:12px">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <span style="font-family:'Bebas Neue';color:#f59e0b">🟡 ORANGE</span>
+            <span style="font-family:'Bebas Neue';font-size:20px;color:#f59e0b" id="ttrack-cat-orange-bankroll">—€</span>
+          </div>
+          <div class="stat-grid-2" style="margin-top:8px;gap:4px">
+            <div class="stat-box" style="padding:6px"><div class="stat-label" style="font-size:9px">PICKS</div><div class="stat-value" style="font-size:14px" id="ttrack-cat-orange-total">0</div></div>
+            <div class="stat-box" style="padding:6px"><div class="stat-label" style="font-size:9px">WIN RATE</div><div class="stat-value" style="font-size:14px" id="ttrack-cat-orange-wr">—</div></div>
+            <div class="stat-box" style="padding:6px"><div class="stat-label" style="font-size:9px">ROI</div><div class="stat-value" style="font-size:14px" id="ttrack-cat-orange-roi">—</div></div>
+            <div class="stat-box" style="padding:6px"><div class="stat-label" style="font-size:9px">COTE MOY.</div><div class="stat-value" style="font-size:14px" id="ttrack-cat-orange-cote">—</div></div>
+          </div>
+        </div>
+
+        <div style="background:var(--bg2);border:1px solid #ef444433;border-radius:10px;padding:12px">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <span style="font-family:'Bebas Neue';color:#ef4444">🔴 ROUGE</span>
+            <span style="font-family:'Bebas Neue';font-size:20px;color:#ef4444" id="ttrack-cat-rouge-bankroll">—€</span>
+          </div>
+          <div class="stat-grid-2" style="margin-top:8px;gap:4px">
+            <div class="stat-box" style="padding:6px"><div class="stat-label" style="font-size:9px">PICKS</div><div class="stat-value" style="font-size:14px" id="ttrack-cat-rouge-total">0</div></div>
+            <div class="stat-box" style="padding:6px"><div class="stat-label" style="font-size:9px">WIN RATE</div><div class="stat-value" style="font-size:14px" id="ttrack-cat-rouge-wr">—</div></div>
+            <div class="stat-box" style="padding:6px"><div class="stat-label" style="font-size:9px">ROI</div><div class="stat-value" style="font-size:14px" id="ttrack-cat-rouge-roi">—</div></div>
+            <div class="stat-box" style="padding:6px"><div class="stat-label" style="font-size:9px">COTE MOY.</div><div class="stat-value" style="font-size:14px" id="ttrack-cat-rouge-cote">—</div></div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Filtres -->
+    <div style="display:flex;gap:6px;margin-bottom:10px">
+      <button id="ttf-all" onclick="setTtrackFilter('all')" style="flex:1;padding:8px;border-radius:6px;border:1px solid #0ea5e9;background:#0ea5e9;color:#fff;font-family:'Bebas Neue';font-size:12px;cursor:pointer">TOUS</button>
+      <button id="ttf-vert" onclick="setTtrackFilter('VERT')" style="flex:1;padding:8px;border-radius:6px;border:1px solid #10b98155;background:transparent;color:#10b981;font-family:'Bebas Neue';font-size:12px;cursor:pointer">🟢 VERT</button>
+      <button id="ttf-orange" onclick="setTtrackFilter('ORANGE')" style="flex:1;padding:8px;border-radius:6px;border:1px solid #f59e0b55;background:transparent;color:#f59e0b;font-family:'Bebas Neue';font-size:12px;cursor:pointer">🟡 ORANGE</button>
+      <button id="ttf-rouge" onclick="setTtrackFilter('ROUGE')" style="flex:1;padding:8px;border-radius:6px;border:1px solid #ef444455;background:transparent;color:#ef4444;font-family:'Bebas Neue';font-size:12px;cursor:pointer">🔴 ROUGE</button>
+    </div>
+
+    <!-- Stats filtrées -->
+    <div class="stat-grid" style="margin-bottom:10px">
+      <div class="stat-box"><div class="stat-label">TOTAL PICKS</div><div class="stat-value" id="ttrack-total" style="color:#0ea5e9">0</div></div>
+      <div class="stat-box"><div class="stat-label">WIN RATE</div><div class="stat-value" id="ttrack-filter-wr">0%</div></div>
+      <div class="stat-box"><div class="stat-label">COTE MOYENNE</div><div class="stat-value" id="ttrack-filter-cote" style="color:#0ea5e9">—</div></div>
+      <div class="stat-box"><div class="stat-label">STREAK</div><div class="stat-value" id="ttrack-streak">—</div></div>
+    </div>
+
+    <!-- Liste picks -->
+    <div id="ttrack-list">
+      <div class="empty">
+        <div class="empty-icon">🎾</div>
+        <div class="empty-title">AUCUN PICK TENNIS</div>
+        <div class="empty-text">Lance un scan tennis et ajoute tes picks via le bouton 🎾 + TRACK RECORD.</div>
+      </div>
+    </div>
+
   </div>
+
+    </div>
 
 
 </div>
@@ -844,6 +943,7 @@ function showTab(tab) {
   if (tab === 'combis') renderCombis();
   if (tab === 'bankroll') renderBankroll();
   if (tab === 'tirs') renderTirsTrack();
+  if (tab === 'track-tennis') renderTtrackAll();
 }
 
 // ── MODULE TIRS CADRÉS ────────────────────────────────────
@@ -2743,6 +2843,9 @@ let ttSparkChart = null;
 function renderTtrackBankroll() {
   const track = getTennisTrack();
   const capital = getTennisCapital();
+  // Populate capital input
+  const capInput = document.getElementById('ttrack-capital-input');
+  if (capInput && !capInput.value) capInput.value = capital;
   const miseDef = +(capital * 0.05).toFixed(0);
 
   const played = track.filter(p => p.resultat === 'WIN' || p.resultat === 'LOSS');
@@ -3002,6 +3105,44 @@ function confirmTennisPick() {
 function addTennisToTrack(pick) { openTennisModal(pick); }
 
 // ── SCAN TENNIS ──
+function buildTennisPickCard(pick, ac, ae, se, pj) {
+  return `<div class="pick-card" style="border:1px solid ${ac}33;margin-bottom:12px">
+    <div class="pick-header">
+      <div>
+        <div class="pick-comp">${pick.competition} · ${se} ${pick.surface} · ${pick.heure}</div>
+        <div class="pick-teams" style="color:#fff">${pick.favori} <span style="color:#1e3a5f">vs</span> ${pick.adversaire}</div>
+        ${pick.favori_rang ? `<div style="font-size:10px;color:var(--muted);margin-top:2px">Rang ATP: #${pick.favori_rang} vs #${pick.adversaire_rang||'?'}</div>` : ''}
+      </div>
+      <div class="pick-score" style="text-align:right">
+        <div class="pick-alerte" style="color:${ac}">${ae} ${pick.alerte}</div>
+        <div class="pick-score-val" style="color:${ac};font-family:Bebas Neue;font-size:28px">${pick.scoreMatriciel}</div>
+      </div>
+    </div>
+    ${pick.factors && pick.factors.length ? `<div class="factors">${pick.factors.map(f=>`<span class="factor-badge" style="background:${ac}22;color:${ac}">${f}</span>`).join('')}</div>` : ''}
+    <div class="player-grid">
+      <div class="player-box">
+        <div class="player-box-label" style="color:${ac}">FAVORI</div>
+        <div class="player-name">${pick.favori}</div>
+        <div class="player-team">Forme: ${pick.favori_forme||'—'} (${pick.favori_bilan||'—'})</div>
+      </div>
+      <div class="player-box">
+        <div class="player-box-label" style="color:var(--muted)">ADVERSAIRE</div>
+        <div class="player-name">${pick.adversaire}</div>
+        <div class="player-team">Forme: ${pick.adversaire_forme||'—'} (${pick.adversaire_bilan||'—'})</div>
+      </div>
+    </div>
+    ${pick.h2h_global ? `<div style="display:flex;gap:12px;margin-bottom:10px">
+      <div class="stat-box" style="flex:1;padding:8px"><div class="stat-label">H2H GLOBAL</div><div style="font-family:Bebas Neue;font-size:18px">${pick.h2h_global}</div></div>
+      <div class="stat-box" style="flex:1;padding:8px"><div class="stat-label">H2H ${(pick.surface||'').toUpperCase()}</div><div style="font-family:Bebas Neue;font-size:18px">${pick.h2h_surface||'—'}</div></div>
+      <div class="stat-box" style="flex:1;padding:8px"><div class="stat-label">MATCHS H2H</div><div style="font-family:Bebas Neue;font-size:18px">${pick.h2h_total_matchs||0}</div></div>
+    </div>` : ''}
+    ${pick.raison ? `<div class="top-pick-reason" style="margin-bottom:10px">${pick.raison}</div>` : ''}
+    <div style="padding:8px 0;border-top:1px solid ${ac}22">
+      <button onclick="openTennisModal(${pj})" style="width:100%;padding:10px;border-radius:8px;border:1px solid ${ac}55;background:${ac}22;color:${ac};font-family:Bebas Neue;font-size:14px;letter-spacing:3px;cursor:pointer">🎾 + TRACK RECORD</button>
+    </div>
+  </div>`;
+}
+
 async function doScanTennis() {
   const btn = document.getElementById('tennis-btn');
   const logEl = document.getElementById('tennis-log');
@@ -3020,6 +3161,27 @@ async function doScanTennis() {
     logEl.innerHTML += `<div class="log-line"><span class="log-time">${now}</span><span style="color:${color}">${msg}</span></div>`;
     logEl.scrollTop = logEl.scrollHeight;
   }
+
+  // Vérifier si un scan du jour existe déjà
+  try {
+    const saved = JSON.parse(localStorage.getItem('picksai_tennis_last_scan') || '{}');
+    const today = new Date().toLocaleDateString('fr-FR');
+    if (saved.date === today && saved.picks && saved.picks.length > 0) {
+      btn.disabled = false;
+      btn.innerHTML = '🎾 RELANCER LE SCAN';
+      logEl.style.display = 'none';
+      document.getElementById('tennis-last-scan-badge').textContent = '🕐 Dernier scan : ' + saved.date + ' (cache)';
+      resultsEl.innerHTML = saved.picks.map((pick, i) => {
+        const ac = pick.alerte === 'VERT' ? '#10b981' : pick.alerte === 'ORANGE' ? '#f59e0b' : '#ef4444';
+        const ae = pick.alerte === 'VERT' ? '🟢' : pick.alerte === 'ORANGE' ? '🟡' : '🔴';
+        const se = {'Clay':'🔴','Hard':'🔵','Grass':'🟢','Carpet':'🟤'}[pick.surface] || '🎾';
+        const pj = JSON.stringify(pick).replace(/"/g, '&quot;');
+        return buildTennisPickCard(pick, ac, ae, se, pj);
+      }).join('');
+      emptyEl.style.display = 'none';
+      return;
+    }
+  } catch(e) {}
 
   try {
     log('🎾 Récupération des matchs ATP du jour...');
@@ -3040,46 +3202,21 @@ async function doScanTennis() {
 
     document.getElementById('tennis-last-scan-badge').textContent = '🕐 Dernier scan : ' + data.date;
 
+    // Sauvegarder le scan du jour en localStorage
+    try {
+      localStorage.setItem('picksai_tennis_last_scan', JSON.stringify({
+        date: data.date,
+        picks: data.picks,
+        rejected: data.rejected || []
+      }));
+    } catch(e) {}
+
     resultsEl.innerHTML = data.picks.map((pick, i) => {
       const ac = pick.alerte === 'VERT' ? '#10b981' : pick.alerte === 'ORANGE' ? '#f59e0b' : '#ef4444';
       const ae = pick.alerte === 'VERT' ? '🟢' : pick.alerte === 'ORANGE' ? '🟡' : '🔴';
       const se = {'Clay':'🔴','Hard':'🔵','Grass':'🟢','Carpet':'🟤'}[pick.surface] || '🎾';
       const pj = JSON.stringify(pick).replace(/"/g, '&quot;');
-      return `<div class="pick-card" style="border:1px solid ${ac}33;margin-bottom:12px">
-        <div class="pick-header">
-          <div>
-            <div class="pick-comp">${pick.competition} · ${se} ${pick.surface} · ${pick.heure}</div>
-            <div class="pick-teams" style="color:#fff">${pick.favori} <span style="color:#1e3a5f">vs</span> ${pick.adversaire}</div>
-            ${pick.favori_rang ? `<div style="font-size:10px;color:var(--muted);margin-top:2px">Rang ATP: #${pick.favori_rang} vs #${pick.adversaire_rang||'?'}</div>` : ''}
-          </div>
-          <div class="pick-score" style="text-align:right">
-            <div class="pick-alerte" style="color:${ac}">${ae} ${pick.alerte}</div>
-            <div class="pick-score-val" style="color:${ac};font-family:Bebas Neue;font-size:28px">${pick.scoreMatriciel}</div>
-          </div>
-        </div>
-        ${pick.factors && pick.factors.length ? `<div class="factors">${pick.factors.map(f=>`<span class="factor-badge" style="background:${ac}22;color:${ac}">${f}</span>`).join('')}</div>` : ''}
-        <div class="player-grid">
-          <div class="player-box">
-            <div class="player-box-label" style="color:${ac}">FAVORI</div>
-            <div class="player-name">${pick.favori}</div>
-            <div class="player-team">Forme: ${pick.favori_forme||'—'} (${pick.favori_bilan||'—'})</div>
-          </div>
-          <div class="player-box">
-            <div class="player-box-label" style="color:var(--muted)">ADVERSAIRE</div>
-            <div class="player-name">${pick.adversaire}</div>
-            <div class="player-team">Forme: ${pick.adversaire_forme||'—'} (${pick.adversaire_bilan||'—'})</div>
-          </div>
-        </div>
-        ${pick.h2h_global ? `<div style="display:flex;gap:12px;margin-bottom:10px">
-          <div class="stat-box" style="flex:1;padding:8px"><div class="stat-label">H2H GLOBAL</div><div style="font-family:Bebas Neue;font-size:18px">${pick.h2h_global}</div></div>
-          <div class="stat-box" style="flex:1;padding:8px"><div class="stat-label">H2H ${(pick.surface||'').toUpperCase()}</div><div style="font-family:Bebas Neue;font-size:18px">${pick.h2h_surface||'—'}</div></div>
-          <div class="stat-box" style="flex:1;padding:8px"><div class="stat-label">MATCHS H2H</div><div style="font-family:Bebas Neue;font-size:18px">${pick.h2h_total_matchs||0}</div></div>
-        </div>` : ''}
-        ${pick.raison ? `<div class="top-pick-reason" style="margin-bottom:10px">${pick.raison}</div>` : ''}
-        <div style="padding:8px 0;border-top:1px solid ${ac}22">
-          <button onclick="openTennisModal(${pj})" style="width:100%;padding:10px;border-radius:8px;border:1px solid ${ac}55;background:${ac}22;color:${ac};font-family:Bebas Neue;font-size:14px;letter-spacing:3px;cursor:pointer">🎾 + TRACK RECORD</button>
-        </div>
-      </div>`;
+      return buildTennisPickCard(pick, ac, ae, se, pj);
     }).join('');
 
     if (data.rejected && data.rejected.length > 0) {
