@@ -581,8 +581,8 @@
   </div>
 
   <!-- TENNIS PAGE -->
+  <!-- SCAN TENNIS PAGE -->
   <div class="page" id="page-tennis">
-    <!-- SCAN BTN -->
     <div class="scan-center">
       <button class="scan-btn" id="tennis-btn" onclick="doScanTennis()" style="background:linear-gradient(135deg,#0ea5e9,#0369a1);border-color:#0ea5e9">🎾 SCAN TENNIS ATP</button>
       <div class="scan-sub">RANG ATP · H2H SURFACE · FORME PONDÉRÉE · NIVEAU TOURNOI</div>
@@ -593,123 +593,11 @@
     <div class="empty" id="tennis-empty">
       <div class="empty-icon">🎾</div>
       <div class="empty-title">TENNIS PRÊT</div>
-      <div class="empty-text">Lance un scan pour analyser les matchs ATP du jour<br>via la <span style="color:#0ea5e9">Matrice Tennis v2</span></div>
+      <div class="empty-text">Lance un scan pour analyser les matchs ATP du jour<br>Ajoute les picks au <span style="color:#0ea5e9">📋 TRACK TENNIS</span></div>
     </div>
+  </div>
 
-    <!-- BANKROLL TENNIS -->
-    <div style="margin-top:16px">
-      <div class="bankroll-hero" style="background:linear-gradient(135deg,#0ea5e911,var(--bg2));border:1px solid #0ea5e933;border-radius:14px;padding:16px;margin-bottom:12px">
-        <div class="bankroll-label">BANKROLL TENNIS</div>
-        <div style="font-family:'Bebas Neue';font-size:42px;line-height:1" id="tennis-bankroll-amount">500€</div>
-        <div style="font-size:12px;font-weight:700" id="tennis-bankroll-sub">0€ profit · 0 picks joués</div>
-        <div class="sparkline"><canvas id="tennis-sparkline" height="60"></canvas></div>
-      </div>
-      <div class="stat-grid-2" style="margin-bottom:12px">
-        <div class="stat-box"><div class="stat-label">WIN RATE</div><div class="stat-value" id="tennis-wr">—</div></div>
-        <div class="stat-box"><div class="stat-label">ROI</div><div class="stat-value" id="tennis-roi">—</div></div>
-        <div class="stat-box"><div class="stat-label">ÉVOLUTION</div><div class="stat-value" id="tennis-evol" style="color:#0ea5e9">—</div></div>
-        <div class="stat-box"><div class="stat-label">COTE MOYENNE</div><div class="stat-value" id="tennis-cote-moy" style="color:#0ea5e9">—</div></div>
-        <div class="stat-box"><div class="stat-label">PICKS JOUÉS</div><div class="stat-value" id="tennis-total" style="color:#0ea5e9">0</div></div>
-      </div>
-
-      <!-- Bankrolls par catégorie tennis -->
-      <div style="margin-bottom:12px">
-        <div style="font-family:'Bebas Neue';font-size:14px;letter-spacing:2px;color:var(--muted);margin-bottom:8px">BANKROLL PAR FIABILITÉ</div>
-        <div style="display:flex;flex-direction:column;gap:8px">
-
-          <div style="background:var(--bg2);border:1px solid #10b98133;border-radius:10px;padding:12px">
-            <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="toggleTennisCatCurve('vert')">
-              <div style="font-family:'Bebas Neue';font-size:13px;color:#10b981">🟢 VERT</div>
-              <div style="font-family:'Bebas Neue';font-size:20px;color:#10b981" id="tennis-cat-vert-bankroll">—€</div>
-            </div>
-            <div id="tennis-cat-vert-curve-wrap" style="display:none;margin-top:8px"><canvas id="tennis-cat-vert-curve" height="60" style="width:100%"></canvas></div>
-            <div class="stat-grid-2" style="margin-top:8px;gap:4px">
-              <div class="stat-box" style="padding:6px"><div class="stat-label" style="font-size:9px">PICKS</div><div class="stat-value" style="font-size:14px" id="tennis-cat-vert-total">0</div></div>
-              <div class="stat-box" style="padding:6px"><div class="stat-label" style="font-size:9px">WIN RATE</div><div class="stat-value" style="font-size:14px" id="tennis-cat-vert-wr">—</div></div>
-              <div class="stat-box" style="padding:6px"><div class="stat-label" style="font-size:9px">ÉVOL.</div><div class="stat-value" style="font-size:14px" id="tennis-cat-vert-evol">—</div></div>
-              <div class="stat-box" style="padding:6px"><div class="stat-label" style="font-size:9px">ROI</div><div class="stat-value" style="font-size:14px" id="tennis-cat-vert-roi">—</div></div>
-              <div class="stat-box" style="padding:6px"><div class="stat-label" style="font-size:9px">COTE MOY.</div><div class="stat-value" style="font-size:14px" id="tennis-cat-vert-cote">—</div></div>
-            </div>
-          </div>
-
-          <div style="background:var(--bg2);border:1px solid #f59e0b33;border-radius:10px;padding:12px">
-            <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="toggleTennisCatCurve('orange')">
-              <div style="font-family:'Bebas Neue';font-size:13px;color:#f59e0b">🟡 ORANGE</div>
-              <div style="font-family:'Bebas Neue';font-size:20px;color:#f59e0b" id="tennis-cat-orange-bankroll">—€</div>
-            </div>
-            <div id="tennis-cat-orange-curve-wrap" style="display:none;margin-top:8px"><canvas id="tennis-cat-orange-curve" height="60" style="width:100%"></canvas></div>
-            <div class="stat-grid-2" style="margin-top:8px;gap:4px">
-              <div class="stat-box" style="padding:6px"><div class="stat-label" style="font-size:9px">PICKS</div><div class="stat-value" style="font-size:14px" id="tennis-cat-orange-total">0</div></div>
-              <div class="stat-box" style="padding:6px"><div class="stat-label" style="font-size:9px">WIN RATE</div><div class="stat-value" style="font-size:14px" id="tennis-cat-orange-wr">—</div></div>
-              <div class="stat-box" style="padding:6px"><div class="stat-label" style="font-size:9px">ÉVOL.</div><div class="stat-value" style="font-size:14px" id="tennis-cat-orange-evol">—</div></div>
-              <div class="stat-box" style="padding:6px"><div class="stat-label" style="font-size:9px">ROI</div><div class="stat-value" style="font-size:14px" id="tennis-cat-orange-roi">—</div></div>
-              <div class="stat-box" style="padding:6px"><div class="stat-label" style="font-size:9px">COTE MOY.</div><div class="stat-value" style="font-size:14px" id="tennis-cat-orange-cote">—</div></div>
-            </div>
-          </div>
-
-          <div style="background:var(--bg2);border:1px solid #ef444433;border-radius:10px;padding:12px">
-            <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="toggleTennisCatCurve('rouge')">
-              <div style="font-family:'Bebas Neue';font-size:13px;color:#ef4444">🔴 ROUGE</div>
-              <div style="font-family:'Bebas Neue';font-size:20px;color:#ef4444" id="tennis-cat-rouge-bankroll">—€</div>
-            </div>
-            <div id="tennis-cat-rouge-curve-wrap" style="display:none;margin-top:8px"><canvas id="tennis-cat-rouge-curve" height="60" style="width:100%"></canvas></div>
-            <div class="stat-grid-2" style="margin-top:8px;gap:4px">
-              <div class="stat-box" style="padding:6px"><div class="stat-label" style="font-size:9px">PICKS</div><div class="stat-value" style="font-size:14px" id="tennis-cat-rouge-total">0</div></div>
-              <div class="stat-box" style="padding:6px"><div class="stat-label" style="font-size:9px">WIN RATE</div><div class="stat-value" style="font-size:14px" id="tennis-cat-rouge-wr">—</div></div>
-              <div class="stat-box" style="padding:6px"><div class="stat-label" style="font-size:9px">ÉVOL.</div><div class="stat-value" style="font-size:14px" id="tennis-cat-rouge-evol">—</div></div>
-              <div class="stat-box" style="padding:6px"><div class="stat-label" style="font-size:9px">ROI</div><div class="stat-value" style="font-size:14px" id="tennis-cat-rouge-roi">—</div></div>
-              <div class="stat-box" style="padding:6px"><div class="stat-label" style="font-size:9px">COTE MOY.</div><div class="stat-value" style="font-size:14px" id="tennis-cat-rouge-cote">—</div></div>
-            </div>
-          </div>
-
-        </div>
-      </div>
-
-      <!-- Paramètres capital tennis -->
-      <div style="display:flex;gap:8px;margin-bottom:10px;align-items:center">
-        <div style="font-size:11px;color:var(--muted);flex-shrink:0">Capital base tennis :</div>
-        <input type="number" id="tennis-capital-input" placeholder="500" style="flex:1;padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:12px">
-        <button onclick="saveTtrackCapital()" style="padding:6px 12px;border-radius:6px;border:1px solid #0ea5e955;background:#0ea5e922;color:#0ea5e9;font-size:11px;font-family:'Bebas Neue';cursor:pointer">OK</button>
-      </div>
-
-      <!-- Courbe bankroll tennis -->
-      <div id="tennis-curve-wrap" style="display:none;background:var(--bg2);border-radius:12px;padding:14px;margin-bottom:14px">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-          <div style="font-family:'Bebas Neue';font-size:14px;letter-spacing:2px;color:var(--muted)">COURBE BANKROLL TENNIS</div>
-          <div id="tennis-curve-stats" style="display:flex;gap:14px;font-size:11px"></div>
-        </div>
-        <canvas id="tennis-curve" height="100" style="width:100%"></canvas>
-      </div>
-
-      <!-- Track Record Tennis -->
-      <div>
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-          <div style="font-family:'Bebas Neue';font-size:16px;letter-spacing:3px;color:var(--muted)">TRACK RECORD TENNIS</div>
-        </div>
-        <!-- Filtres -->
-        <div style="display:flex;gap:6px;margin-bottom:10px">
-          <button id="ttf-all" onclick="setTennisTrackFilter('all')" style="flex:1;padding:7px;border-radius:6px;border:1px solid #0ea5e9;background:#0ea5e9;color:#fff;font-family:'Bebas Neue';font-size:12px;cursor:pointer">TOUS</button>
-          <button id="ttf-vert" onclick="setTennisTrackFilter('VERT')" style="flex:1;padding:7px;border-radius:6px;border:1px solid #10b98155;background:transparent;color:#10b981;font-family:'Bebas Neue';font-size:12px;cursor:pointer">🟢 VERT</button>
-          <button id="ttf-orange" onclick="setTennisTrackFilter('ORANGE')" style="flex:1;padding:7px;border-radius:6px;border:1px solid #f59e0b55;background:transparent;color:#f59e0b;font-family:'Bebas Neue';font-size:12px;cursor:pointer">🟡 ORANGE</button>
-          <button id="ttf-rouge" onclick="setTennisTrackFilter('ROUGE')" style="flex:1;padding:7px;border-radius:6px;border:1px solid #ef444455;background:transparent;color:#ef4444;font-family:'Bebas Neue';font-size:12px;cursor:pointer">🔴 ROUGE</button>
-        </div>
-        <!-- Stats filtrées -->
-        <div class="stat-grid" style="margin-bottom:10px">
-          <div class="stat-box"><div class="stat-label">TOTAL PICKS</div><div class="stat-value" id="tennis-track-total" style="color:#0ea5e9">0</div></div>
-          <div class="stat-box"><div class="stat-label">WIN RATE</div><div class="stat-value" id="tennis-track-wr">0%</div></div>
-          <div class="stat-box"><div class="stat-label">COTE MOYENNE</div><div class="stat-value" id="tennis-track-cote-moy" style="color:#0ea5e9">—</div></div>
-          <div class="stat-box"><div class="stat-label">STREAK</div><div class="stat-value" id="tennis-track-streak">—</div></div>
-        </div>
-        <div id="tennis-track-list">
-          <div class="empty">
-            <div class="empty-icon">🎾</div>
-            <div class="empty-title">AUCUN PICK TENNIS</div>
-            <div class="empty-text">Lance un scan tennis et ajoute des picks au track record.</div>
-          </div>
-        </div>
-      </div>
-    </div>
-  <!-- TRACK TENNIS PAGE -->
+    <!-- TRACK TENNIS PAGE -->
   <div class="page" id="page-track-tennis">
 
     <!-- Bankroll globale -->
