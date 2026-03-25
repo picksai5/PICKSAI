@@ -201,6 +201,7 @@
   <button class="tab" onclick="showTab('matrix')">🧬 MATRICE</button>
   <button class="tab" onclick="showTab('backtest')">🔬 BACKTEST</button>
   <button class="tab" onclick="showTab('tennis')">🎾 TENNIS</button>
+  <button class="tab" onclick="showTab('track-tennis')">📋 TRACK TENNIS</button>
 </div>
 
 <!-- CONTENT -->
@@ -668,7 +669,7 @@
       <div style="display:flex;gap:8px;margin-bottom:10px;align-items:center">
         <div style="font-size:11px;color:var(--muted);flex-shrink:0">Capital base tennis :</div>
         <input type="number" id="tennis-capital-input" placeholder="500" style="flex:1;padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:12px">
-        <button onclick="saveTennisCapital()" style="padding:6px 12px;border-radius:6px;border:1px solid #0ea5e955;background:#0ea5e922;color:#0ea5e9;font-size:11px;font-family:'Bebas Neue';cursor:pointer">OK</button>
+        <button onclick="saveTtrackCapital()" style="padding:6px 12px;border-radius:6px;border:1px solid #0ea5e955;background:#0ea5e922;color:#0ea5e9;font-size:11px;font-family:'Bebas Neue';cursor:pointer">OK</button>
       </div>
 
       <!-- Courbe bankroll tennis -->
@@ -2704,78 +2705,91 @@ renderMatrix();
 // ── MODULE TENNIS ──────────────────────────────────────
 // ══════════════════════════════════════════════════════
 
-// ── STORAGE TENNIS ──
-function getTennisTrack() { try { return JSON.parse(localStorage.getItem('picksai_tennis_track') || '[]'); } catch { return []; } }
+// ── STORAGE ──
+function getTennisTrack() {
+  try { return JSON.parse(localStorage.getItem('picksai_tennis_track') || '[]'); } catch { return []; }
+}
 function saveTennisTrack(t) { localStorage.setItem('picksai_tennis_track', JSON.stringify(t)); }
 function getTennisCapital() { return parseFloat(localStorage.getItem('picksai_tennis_capital') || '500'); }
-function saveTennisCapital() {
-  const v = parseFloat(document.getElementById('tennis-capital-input').value);
+
+function saveTtrackCapital() {
+  const v = parseFloat(document.getElementById('ttrack-capital-input').value);
   if (!isNaN(v) && v > 0) {
     localStorage.setItem('picksai_tennis_capital', v.toString());
-    renderTennisBankroll();
-    alert('Capital tennis sauvegardé : ' + v + '€');
+    renderTtrackAll();
   }
 }
 
-let tennisCurveChart = null;
-let tennisCatCurves = {};
-let tennisTrackFilter = 'all';
+// ── FILTRE TRACK TENNIS ──
+let ttFilter = 'all';
 
-function setTennisTrackFilter(f) {
-  tennisTrackFilter = f;
-  ['all','vert','orange','rouge'].forEach(id => {
-    const btn = document.getElementById('ttf-' + id);
+function setTtrackFilter(f) {
+  ttFilter = f;
+  const configs = { all: '#0ea5e9', VERT: '#10b981', ORANGE: '#f59e0b', ROUGE: '#ef4444' };
+  ['all','VERT','ORANGE','ROUGE'].forEach(k => {
+    const btn = document.getElementById('ttf-' + k.toLowerCase());
     if (!btn) return;
-    const colors = { all: '#0ea5e9', vert: '#10b981', orange: '#f59e0b', rouge: '#ef4444' };
-    const active = id === f;
-    btn.style.background = active ? colors[id] : 'transparent';
-    btn.style.color = active ? '#fff' : colors[id];
+    const active = k === f;
+    btn.style.background = active ? configs[k] : 'transparent';
+    btn.style.color = active ? '#fff' : configs[k];
+    btn.style.borderColor = configs[k] + (active ? '' : '55');
   });
-  renderTennisTrackList();
+  renderTtrackList();
 }
 
-function renderTennisBankroll() {
+// ── RENDER BANKROLL TRACK TENNIS ──
+let ttSparkChart = null;
+
+function renderTtrackBankroll() {
   const track = getTennisTrack();
   const capital = getTennisCapital();
-  const mise = capital * 0.05;
+  const miseDef = +(capital * 0.05).toFixed(0);
 
-  // Stats globales
-  const played = track.filter(p => p.resultat !== null && p.resultat !== undefined);
+  const played = track.filter(p => p.resultat === 'WIN' || p.resultat === 'LOSS');
   const won = played.filter(p => p.resultat === 'WIN');
+
   let bankroll = capital;
   let curve = [capital];
   played.forEach(p => {
-    const pickMise = p.mise || mise;
-    const gain = p.resultat === 'WIN' ? pickMise * (p.cote - 1) : -pickMise;
-    bankroll += gain;
-    curve.push(+bankroll.toFixed(2));
+    const m = p.mise || miseDef;
+    const g = p.resultat === 'WIN' ? +(m * (p.cote - 1)).toFixed(2) : -m;
+    bankroll = +(bankroll + g).toFixed(2);
+    curve.push(bankroll);
   });
   const profit = +(bankroll - capital).toFixed(2);
   const wr = played.length ? Math.round(won.length / played.length * 100) : 0;
-  const roi = played.length ? +(profit / (mise * played.length) * 100).toFixed(1) : 0;
+  const roi = played.length ? +((profit / played.reduce((s,p)=>(s + (p.mise||miseDef)), 0)) * 100).toFixed(1) : 0;
   const evol = played.length ? +((bankroll - capital) / capital * 100).toFixed(1) : 0;
-  const coteMoy = played.length ? +(played.reduce((s,p) => s + (p.cote||1.75), 0) / played.length).toFixed(2) : null;
+  const coteMoy = played.length ? +(played.reduce((s,p)=>s+(p.cote||1.7),0)/played.length).toFixed(2) : null;
 
-  document.getElementById('tennis-bankroll-amount').textContent = bankroll.toFixed(0) + '€';
-  document.getElementById('tennis-bankroll-sub').textContent = (profit >= 0 ? '+' : '') + profit + '€ profit · ' + played.length + ' picks joués';
-  document.getElementById('tennis-wr').textContent = wr + '%';
-  document.getElementById('tennis-roi').textContent = (roi >= 0 ? '+' : '') + roi + '%';
-  const evolEl = document.getElementById('tennis-evol');
+  const amEl = document.getElementById('ttrack-bankroll-amount');
+  const subEl = document.getElementById('ttrack-bankroll-sub');
+  const wrEl = document.getElementById('ttrack-wr');
+  const roiEl = document.getElementById('ttrack-roi');
+  const evolEl = document.getElementById('ttrack-evol');
+  const coteEl = document.getElementById('ttrack-cote-moy');
+  if (!amEl) return; // page not loaded yet
+
+  amEl.textContent = bankroll.toFixed(0) + '€';
+  amEl.style.color = profit >= 0 ? '#10b981' : '#ef4444';
+  subEl.textContent = (profit >= 0 ? '+' : '') + profit + '€ profit · ' + played.length + ' picks joués';
+  wrEl.textContent = wr + '%';
+  roiEl.textContent = (roi >= 0 ? '+' : '') + roi + '%';
   evolEl.textContent = (evol >= 0 ? '+' : '') + evol + '%';
   evolEl.style.color = evol >= 0 ? '#10b981' : '#ef4444';
-  document.getElementById('tennis-cote-moy').textContent = coteMoy ? coteMoy : '—';
-  document.getElementById('tennis-total').textContent = played.length;
+  coteEl.textContent = coteMoy || '—';
 
   // Sparkline
   if (curve.length > 1) {
-    const ctx = document.getElementById('tennis-sparkline').getContext('2d');
-    const last = tennisCurveChart;
-    if (last && typeof last.destroy === 'function') last.destroy();
-    tennisCurveChart = new Chart(ctx, {
-      type: 'line',
-      data: { labels: curve.map((_,i)=>i), datasets: [{ data: curve, borderColor: profit >= 0 ? '#0ea5e9' : '#ef4444', borderWidth: 2, pointRadius: 0, fill: true, backgroundColor: profit >= 0 ? '#0ea5e911' : '#ef444411', tension: 0.4 }] },
-      options: { responsive: true, plugins: { legend: { display: false } }, scales: { x: { display: false }, y: { display: false } }, animation: false }
-    });
+    const ctx = document.getElementById('ttrack-sparkline');
+    if (ctx) {
+      if (ttSparkChart) { try { ttSparkChart.destroy(); } catch {} }
+      ttSparkChart = new Chart(ctx.getContext('2d'), {
+        type: 'line',
+        data: { labels: curve.map((_,i)=>i), datasets: [{ data: curve, borderColor: profit>=0?'#0ea5e9':'#ef4444', borderWidth:2, pointRadius:0, fill:true, backgroundColor:profit>=0?'#0ea5e911':'#ef444411', tension:0.4 }] },
+        options: { responsive:true, plugins:{legend:{display:false}}, scales:{x:{display:false},y:{display:false}}, animation:false }
+      });
+    }
   }
 
   // Par catégorie
@@ -2784,117 +2798,82 @@ function renderTennisBankroll() {
     const catPicks = played.filter(p => p.alerte === label);
     const catWon = catPicks.filter(p => p.resultat === 'WIN');
     let catBankroll = capital;
-    const catCurve = [capital];
     catPicks.forEach(p => {
-      const pickMise = p.mise || mise;
-      const gain = p.resultat === 'WIN' ? pickMise * (p.cote - 1) : -pickMise;
-      catBankroll += gain;
-      catCurve.push(+catBankroll.toFixed(2));
+      const m = p.mise || miseDef;
+      catBankroll = +(catBankroll + (p.resultat==='WIN' ? m*(p.cote-1) : -m)).toFixed(2);
     });
-    const catProfit = +(catBankroll - capital).toFixed(2);
-    const catWr = catPicks.length ? Math.round(catWon.length / catPicks.length * 100) : 0;
-    const catRoi = catPicks.length ? +(catProfit / (mise * catPicks.length) * 100).toFixed(1) : 0;
-    const catEvol = catPicks.length ? +((catBankroll - capital) / capital * 100).toFixed(1) : 0;
-    const catCote = catPicks.length ? +(catPicks.reduce((s,p)=>s+(p.cote||1.75),0)/catPicks.length).toFixed(2) : null;
+    const catWr = catPicks.length ? Math.round(catWon.length/catPicks.length*100) : 0;
+    const catRoi = catPicks.length ? +((catBankroll-capital)/catPicks.reduce((s,p)=>s+(p.mise||miseDef),0)*100).toFixed(1) : 0;
+    const catCote = catPicks.length ? +(catPicks.reduce((s,p)=>s+(p.cote||1.7),0)/catPicks.length).toFixed(2) : null;
 
-    document.getElementById('tennis-cat-' + cat + '-bankroll').textContent = catBankroll.toFixed(0) + '€';
-    document.getElementById('tennis-cat-' + cat + '-total').textContent = catPicks.length;
-    document.getElementById('tennis-cat-' + cat + '-wr').textContent = catWr + '%';
-    const eel = document.getElementById('tennis-cat-' + cat + '-evol');
-    eel.textContent = (catEvol >= 0 ? '+' : '') + catEvol + '%';
-    eel.style.color = catEvol >= 0 ? '#10b981' : '#ef4444';
-    document.getElementById('tennis-cat-' + cat + '-roi').textContent = (catRoi >= 0 ? '+' : '') + catRoi + '%';
-    document.getElementById('tennis-cat-' + cat + '-cote').textContent = catCote || '—';
-
-    // Courbe catégorie
-    if (catCurve.length > 1) {
-      const canvasId = 'tennis-cat-' + cat + '-curve';
-      const c = document.getElementById(canvasId);
-      if (c) {
-        if (tennisCatCurves[cat] && typeof tennisCatCurves[cat].destroy === 'function') tennisCatCurves[cat].destroy();
-        const colors = { vert: '#10b981', orange: '#f59e0b', rouge: '#ef4444' };
-        tennisCatCurves[cat] = new Chart(c.getContext('2d'), {
-          type: 'line',
-          data: { labels: catCurve.map((_,i)=>i), datasets: [{ data: catCurve, borderColor: colors[cat], borderWidth: 2, pointRadius: 0, fill: true, backgroundColor: colors[cat] + '11', tension: 0.4 }] },
-          options: { responsive: true, plugins: { legend: { display: false } }, scales: { x: { display: false }, y: { display: false } }, animation: false }
-        });
-      }
-    }
+    const bEl = document.getElementById('ttrack-cat-'+cat+'-bankroll');
+    if (!bEl) return;
+    bEl.textContent = catBankroll.toFixed(0) + '€';
+    document.getElementById('ttrack-cat-'+cat+'-total').textContent = catPicks.length;
+    document.getElementById('ttrack-cat-'+cat+'-wr').textContent = catWr + '%';
+    document.getElementById('ttrack-cat-'+cat+'-roi').textContent = (catRoi>=0?'+':'')+catRoi+'%';
+    document.getElementById('ttrack-cat-'+cat+'-cote').textContent = catCote || '—';
   });
-
-  // Courbe bankroll tennis (onglet courbe)
-  if (curve.length > 1) {
-    document.getElementById('tennis-curve-wrap').style.display = 'block';
-    const statsDiv = document.getElementById('tennis-curve-stats');
-    statsDiv.innerHTML = `<span style="color:${evol>=0?'#10b981':'#ef4444'}">${evol>=0?'+':''}${evol}%</span><span style="color:var(--muted)">ROI ${roi>=0?'+':''}${roi}%</span>`;
-    const ctx2 = document.getElementById('tennis-curve').getContext('2d');
-    if (tennisCurveChart && typeof tennisCurveChart.destroy === 'function') { tennisCurveChart.destroy(); tennisCurveChart = null; }
-    tennisCurveChart = new Chart(ctx2, {
-      type: 'line',
-      data: { labels: curve.map((_,i)=>i===0?'Start':'P'+i), datasets: [{ label: 'Bankroll', data: curve, borderColor: profit>=0?'#0ea5e9':'#ef4444', borderWidth: 2, pointRadius: curve.length > 20 ? 0 : 3, fill: true, backgroundColor: profit>=0?'#0ea5e911':'#ef444411', tension: 0.4 }] },
-      options: { responsive: true, plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => ctx.raw.toFixed(0) + '€' } } }, scales: { x: { display: curve.length <= 20, ticks: { color: '#3a5a80', font: { size: 9 } } }, y: { ticks: { color: '#3a5a80', font: { size: 9 }, callback: v => v.toFixed(0) + '€' }, grid: { color: '#1e3a5f22' } } }, animation: false }
-    });
-  }
 }
 
-function toggleTennisCatCurve(cat) {
-  const wrap = document.getElementById('tennis-cat-' + cat + '-curve-wrap');
-  if (wrap) wrap.style.display = wrap.style.display === 'none' ? 'block' : 'none';
-}
-
-function renderTennisTrackList() {
+// ── RENDER LISTE TRACK TENNIS ──
+function renderTtrackList() {
   const track = getTennisTrack();
   const capital = getTennisCapital();
-  const miseDef = capital * 0.05;
+  const miseDef = +(capital * 0.05).toFixed(0);
 
-  // Filtrer
-  const filtered = tennisTrackFilter === 'all' ? track : track.filter(p => p.alerte === tennisTrackFilter.toUpperCase());
-  const played = filtered.filter(p => p.resultat !== null && p.resultat !== undefined);
-  const won = played.filter(p => p.resultat === 'WIN');
+  const filtered = ttFilter === 'all' ? track : track.filter(p => p.alerte === ttFilter);
 
   // Stats filtrées
-  document.getElementById('tennis-track-total').textContent = played.length;
-  const wr = played.length ? Math.round(won.length / played.length * 100) : 0;
-  document.getElementById('tennis-track-wr').textContent = wr + '%';
-  const coteMoy = played.length ? +(played.reduce((s,p)=>s+(p.cote||1.75),0)/played.length).toFixed(2) : null;
-  document.getElementById('tennis-track-cote-moy').textContent = coteMoy || '—';
+  const played = filtered.filter(p => p.resultat === 'WIN' || p.resultat === 'LOSS');
+  const won = played.filter(p => p.resultat === 'WIN');
+  const wr = played.length ? Math.round(won.length/played.length*100) : 0;
+  const coteMoy = played.length ? +(played.reduce((s,p)=>s+(p.cote||1.7),0)/played.length).toFixed(2) : null;
+
+  const totalEl = document.getElementById('ttrack-total');
+  if (!totalEl) return;
+  totalEl.textContent = played.length;
+  document.getElementById('ttrack-filter-wr').textContent = wr + '%';
+  document.getElementById('ttrack-filter-cote').textContent = coteMoy || '—';
 
   // Streak
   let streak = 0, streakType = '';
-  for (let i = track.length - 1; i >= 0; i--) {
-    if (track[i].resultat === null || track[i].resultat === undefined) break;
-    if (i === track.length - 1) { streakType = track[i].resultat; streak = 1; }
-    else if (track[i].resultat === streakType) streak++;
+  for (let i = track.length-1; i >= 0; i--) {
+    const r = track[i].resultat;
+    if (r !== 'WIN' && r !== 'LOSS') break;
+    if (!streakType) { streakType = r; streak = 1; }
+    else if (r === streakType) streak++;
     else break;
   }
-  const streakEl = document.getElementById('tennis-track-streak');
-  if (streak > 0) {
-    streakEl.textContent = (streakType === 'WIN' ? '🔥' : '❄️') + ' ' + streak;
-    streakEl.style.color = streakType === 'WIN' ? '#10b981' : '#ef4444';
-  } else { streakEl.textContent = '—'; streakEl.style.color = ''; }
+  const streakEl = document.getElementById('ttrack-streak');
+  if (streakEl) {
+    streakEl.textContent = streak > 0 ? (streakType==='WIN'?'🔥':'❄️')+' '+streak : '—';
+    streakEl.style.color = streak > 0 ? (streakType==='WIN'?'#10b981':'#ef4444') : '';
+  }
 
-  // Liste
-  const listEl = document.getElementById('tennis-track-list');
+  const listEl = document.getElementById('ttrack-list');
+  if (!listEl) return;
+
   if (!filtered.length) {
-    listEl.innerHTML = '<div class="empty"><div class="empty-icon">🎾</div><div class="empty-title">AUCUN PICK</div><div class="empty-text">Ajoute des picks au track record depuis les résultats du scan.</div></div>';
+    listEl.innerHTML = '<div class="empty"><div class="empty-icon">🎾</div><div class="empty-title">AUCUN PICK</div><div class="empty-text">Lance un scan tennis et ajoute tes picks via le bouton 🎾 + TRACK RECORD.</div></div>';
     return;
   }
 
-  const html = [...filtered].reverse().map(pick => {
-    const realIdx = track.indexOf(pick);
+  listEl.innerHTML = [...filtered].reverse().map((pick, revI) => {
+    // Index réel dans track[] via id unique
+    const realIdx = track.findIndex(p => p.id === pick.id);
     const ac = pick.alerte === 'VERT' ? '#10b981' : pick.alerte === 'ORANGE' ? '#f59e0b' : '#ef4444';
-    const pickMise = pick.mise || miseDef;
-    const isPending = pick.resultat === null || pick.resultat === undefined;
+    const m = pick.mise || miseDef;
+    const isPending = pick.resultat !== 'WIN' && pick.resultat !== 'LOSS';
     const isWin = pick.resultat === 'WIN';
-    const gain = isWin ? +(pickMise * (pick.cote - 1)).toFixed(2) : isPending ? null : -pickMise;
+    const gain = isWin ? +(m*(pick.cote-1)).toFixed(2) : isPending ? null : -m;
     const borderColor = isPending ? '#f59e0b44' : isWin ? '#10b98133' : '#ef444422';
     const statusIcon = isPending ? '⏳' : isWin ? '✅' : '❌';
     const gainDisplay = isPending
       ? `<div style="font-family:'Bebas Neue';font-size:14px;color:#f59e0b;letter-spacing:1px">⏳ EN ATTENTE</div>`
-      : `<div class="track-gain" style="color:${gain >= 0 ? 'var(--green)' : 'var(--red)'}">${gain >= 0 ? '+' : ''}${gain}€</div>`;
+      : `<div class="track-gain" style="color:${gain>=0?'var(--green)':'var(--red)'}">${gain>=0?'+':''}${gain}€</div>`;
 
-    return `
-    <div class="track-item" style="border-color:${borderColor}">
+    return `<div class="track-item" style="border-color:${borderColor}">
       <div class="track-header">
         <div style="flex:1">
           <div class="track-player">
@@ -2902,64 +2881,56 @@ function renderTennisTrackList() {
             <span class="track-name">Victoire ${pick.favori || '—'}</span>
             <span style="font-size:10px;padding:2px 6px;border-radius:3px;background:${ac}22;color:${ac};border:1px solid ${ac}44">${pick.alerte}</span>
           </div>
-          <div class="track-match">${pick.match} · ${pick.competition || 'ATP'}</div>
-          <div style="font-size:10px;color:var(--muted);margin-top:2px">🎾 ${pick.surface || '—'} · #${pick.favori_rang||'?'} vs #${pick.adversaire_rang||'?'} · Score ${pick.scoreMatriciel || '—'}</div>
-          ${isPending ? `
-          <div style="display:flex;gap:6px;margin-top:8px">
-            <button onclick="setTennisResult(${realIdx},'WIN')" style="flex:1;padding:6px;background:#10b98122;border:1px solid #10b98155;color:#10b981;border-radius:6px;cursor:pointer;font-size:11px;font-family:'Bebas Neue'">✅ GAGNÉ</button>
-            <button onclick="setTennisResult(${realIdx},'LOSS')" style="flex:1;padding:6px;background:#ef444422;border:1px solid #ef444455;color:#ef4444;border-radius:6px;cursor:pointer;font-size:11px;font-family:'Bebas Neue'">❌ PERDU</button>
+          <div class="track-match">${pick.match || '—'} · ${pick.competition || 'ATP'}</div>
+          <div style="font-size:10px;color:var(--muted);margin-top:2px">🎾 ${pick.surface||'—'} · #${pick.favori_rang||'?'} vs #${pick.adversaire_rang||'?'} · Score ${pick.scoreMatriciel||'—'}</div>
+          ${isPending ? `<div style="display:flex;gap:6px;margin-top:8px">
+            <button onclick="setTtResult('${pick.id}','WIN')" style="flex:1;padding:6px;background:#10b98122;border:1px solid #10b98155;color:#10b981;border-radius:6px;cursor:pointer;font-size:11px;font-family:'Bebas Neue'">✅ GAGNÉ</button>
+            <button onclick="setTtResult('${pick.id}','LOSS')" style="flex:1;padding:6px;background:#ef444422;border:1px solid #ef444455;color:#ef4444;border-radius:6px;cursor:pointer;font-size:11px;font-family:'Bebas Neue'">❌ PERDU</button>
           </div>` : ''}
         </div>
         <div style="text-align:right;flex-shrink:0;margin-left:14px">
           ${gainDisplay}
-          <div class="track-mise">Mise: ${pickMise}€ · <span style="color:#0ea5e9;font-weight:500">×${pick.cote || '—'}</span></div>
-          <div class="track-date">${pick.date || ''}</div>
+          <div class="track-mise">Mise: ${m}€ · <span style="color:#0ea5e9;font-weight:500">×${pick.cote||'—'}</span></div>
+          <div class="track-date">${pick.date||''}</div>
           <div style="display:flex;gap:6px;margin-top:6px;justify-content:flex-end">
-            ${!isPending ? `<button onclick="resetTennisResult(${realIdx})" style="padding:3px 8px;background:transparent;border:1px solid #3b82f644;color:#3b82f6;border-radius:4px;cursor:pointer;font-size:10px" onmouseover="this.style.background='#3b82f622'" onmouseout="this.style.background='transparent'">✏️ Modifier</button>` : ''}
-            <button onclick="deleteTennisTrack(${realIdx})" style="padding:3px 8px;background:transparent;border:1px solid #ef444444;color:#ef4444;border-radius:4px;cursor:pointer;font-size:10px" onmouseover="this.style.background='#ef444422'" onmouseout="this.style.background='transparent'">🗑</button>
+            ${!isPending ? `<button onclick="resetTtResult('${pick.id}')" style="padding:3px 8px;background:transparent;border:1px solid #3b82f644;color:#3b82f6;border-radius:4px;cursor:pointer;font-size:10px">✏️</button>` : ''}
+            <button onclick="deleteTtPick('${pick.id}')" style="padding:3px 8px;background:transparent;border:1px solid #ef444444;color:#ef4444;border-radius:4px;cursor:pointer;font-size:10px">🗑</button>
           </div>
         </div>
       </div>
     </div>`;
   }).join('');
-
-  listEl.innerHTML = html;
 }
 
-function setTennisResult(idx, res) {
+function setTtResult(id, res) {
   const track = getTennisTrack();
-  if (track[idx]) {
-    track[idx].resultat = res;
-    saveTennisTrack(track);
-    renderTennisBankroll();
-    renderTennisTrackList();
-  }
+  const pick = track.find(p => p.id === id);
+  if (pick) { pick.resultat = res; saveTennisTrack(track); renderTtrackAll(); }
 }
-
-function resetTennisResult(idx) {
+function resetTtResult(id) {
   const track = getTennisTrack();
-  if (track[idx]) {
-    track[idx].resultat = null;
-    saveTennisTrack(track);
-    renderTennisBankroll();
-    renderTennisTrackList();
-  }
+  const pick = track.find(p => p.id === id);
+  if (pick) { pick.resultat = null; saveTennisTrack(track); renderTtrackAll(); }
+}
+function deleteTtPick(id) {
+  let track = getTennisTrack();
+  track = track.filter(p => p.id !== id);
+  saveTennisTrack(track); renderTtrackAll();
 }
 
-function deleteTennisTrack(idx) {
-  const track = getTennisTrack();
-  track.splice(idx, 1);
-  saveTennisTrack(track);
-  renderTennisBankroll();
-  renderTennisTrackList();
+function renderTtrackAll() {
+  renderTtrackBankroll();
+  renderTtrackList();
 }
 
+// ── MODAL TENNIS ──
 let currentTennisPick = null;
 
 function openTennisModal(pick) {
   currentTennisPick = typeof pick === 'string' ? JSON.parse(pick) : pick;
   const capital = getTennisCapital();
   const defaultMise = +(capital * 0.05).toFixed(0);
+
   document.getElementById('tennis-modal-player').textContent = 'Victoire ' + (currentTennisPick.favori || '—');
   document.getElementById('tennis-modal-match').textContent =
     (currentTennisPick.match || '—') + ' · ' + (currentTennisPick.competition || 'ATP') +
@@ -2979,53 +2950,58 @@ function closeTennisModal() {
 function updateTennisImpact() {
   const mise = parseFloat(document.getElementById('tennis-modal-mise').value) || 0;
   const cote = parseFloat(document.getElementById('tennis-modal-cote').value) || 0;
-  const gain = mise > 0 && cote > 1 ? +(mise * (cote - 1)).toFixed(2) : null;
   const amountEl = document.getElementById('tennis-impact-amount');
   const newEl = document.getElementById('tennis-impact-new');
-  if (gain !== null) {
+  if (mise > 0 && cote > 1) {
+    const gain = +(mise * (cote - 1)).toFixed(2);
     amountEl.textContent = mise + '€ misés → +' + gain + '€ si WIN';
-    newEl.textContent = 'Perte potentielle : -' + mise + '€';
     amountEl.style.color = '#0ea5e9';
+    newEl.textContent = 'Perte potentielle : -' + mise + '€';
   } else {
     amountEl.textContent = '—';
-    newEl.textContent = 'Résultat à définir après le match';
+    newEl.textContent = 'Saisissez la mise et la cote';
   }
 }
 
 function confirmTennisPick() {
-  if (!currentTennisPick) return;
+  if (!currentTennisPick) { alert('Erreur: aucun pick sélectionné'); return; }
   const mise = parseFloat(document.getElementById('tennis-modal-mise').value);
   const cote = parseFloat(document.getElementById('tennis-modal-cote').value);
-  if (!mise || mise <= 0 || !cote || cote <= 1) { alert('Mise et cote invalides'); return; }
+  if (!mise || mise <= 0) { alert('Mise invalide'); return; }
+  if (!cote || cote <= 1) { alert('Cote invalide (doit être > 1)'); return; }
 
   const track = getTennisTrack();
-  track.push({
-    match: currentTennisPick.match,
-    favori: currentTennisPick.favori,
-    adversaire: currentTennisPick.adversaire,
-    competition: currentTennisPick.competition,
-    surface: currentTennisPick.surface,
-    heure: currentTennisPick.heure,
-    alerte: currentTennisPick.alerte,
-    scoreMatriciel: currentTennisPick.scoreMatriciel,
+  const newPick = {
+    id: Date.now() + '_' + Math.random().toString(36).substr(2,5),
+    match: currentTennisPick.match || '',
+    favori: currentTennisPick.favori || '',
+    adversaire: currentTennisPick.adversaire || '',
+    competition: currentTennisPick.competition || 'ATP',
+    surface: currentTennisPick.surface || '',
+    heure: currentTennisPick.heure || '',
+    alerte: currentTennisPick.alerte || 'ORANGE',
+    scoreMatriciel: currentTennisPick.scoreMatriciel || '',
+    favori_rang: currentTennisPick.favori_rang || '',
+    adversaire_rang: currentTennisPick.adversaire_rang || '',
     cote: cote,
     mise: mise,
-    favori_rang: currentTennisPick.favori_rang,
-    adversaire_rang: currentTennisPick.adversaire_rang,
     date: new Date().toLocaleDateString('fr-FR'),
     resultat: null,
-  });
+  };
+  track.push(newPick);
   saveTennisTrack(track);
-  renderTennisBankroll();
-  renderTennisTrackList();
   closeTennisModal();
+  // Refresh si on est sur l'onglet track-tennis
+  renderTtrackAll();
+  // Feedback visuel
+  const btn = document.getElementById('tennis-btn');
+  if (btn) btn.style.boxShadow = '0 0 20px #0ea5e9';
+  setTimeout(() => { if (btn) btn.style.boxShadow = ''; }, 1000);
 }
 
-function addTennisToTrack(pick, cote) {
-  // Kept for backward compat — now unused (modal used instead)
-  openTennisModal(pick);
-}
+function addTennisToTrack(pick) { openTennisModal(pick); }
 
+// ── SCAN TENNIS ──
 async function doScanTennis() {
   const btn = document.getElementById('tennis-btn');
   const logEl = document.getElementById('tennis-log');
@@ -3040,8 +3016,8 @@ async function doScanTennis() {
   emptyEl.style.display = 'none';
 
   function log(msg, color = '#60a5fa') {
-    const now = new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-    logEl.innerHTML += '<div class="log-line"><span class="log-time">' + now + '</span><span style="color:' + color + '">' + msg + '</span></div>';
+    const now = new Date().toLocaleTimeString('fr-FR', { hour:'2-digit', minute:'2-digit', second:'2-digit' });
+    logEl.innerHTML += `<div class="log-line"><span class="log-time">${now}</span><span style="color:${color}">${msg}</span></div>`;
     logEl.scrollTop = logEl.scrollHeight;
   }
 
@@ -3056,97 +3032,62 @@ async function doScanTennis() {
     if (!data.picks || data.picks.length === 0) {
       emptyEl.style.display = 'block';
       emptyEl.querySelector('.empty-title').textContent = 'AUCUN PICK TENNIS';
-      emptyEl.querySelector('.empty-text').textContent = `Pas de matchs ATP avec signal suffisant aujourd'hui.`;
+      emptyEl.querySelector('.empty-text').textContent = "Pas de matchs ATP avec signal suffisant aujourd'hui.";
       btn.disabled = false;
       btn.innerHTML = '🎾 RELANCER LE SCAN';
       return;
     }
 
-    // Badge dernier scan
     document.getElementById('tennis-last-scan-badge').textContent = '🕐 Dernier scan : ' + data.date;
 
-    // Afficher les picks
-    let html = '';
+    resultsEl.innerHTML = data.picks.map((pick, i) => {
+      const ac = pick.alerte === 'VERT' ? '#10b981' : pick.alerte === 'ORANGE' ? '#f59e0b' : '#ef4444';
+      const ae = pick.alerte === 'VERT' ? '🟢' : pick.alerte === 'ORANGE' ? '🟡' : '🔴';
+      const se = {'Clay':'🔴','Hard':'🔵','Grass':'🟢','Carpet':'🟤'}[pick.surface] || '🎾';
+      const pj = JSON.stringify(pick).replace(/"/g, '&quot;');
+      return `<div class="pick-card" style="border:1px solid ${ac}33;margin-bottom:12px">
+        <div class="pick-header">
+          <div>
+            <div class="pick-comp">${pick.competition} · ${se} ${pick.surface} · ${pick.heure}</div>
+            <div class="pick-teams" style="color:#fff">${pick.favori} <span style="color:#1e3a5f">vs</span> ${pick.adversaire}</div>
+            ${pick.favori_rang ? `<div style="font-size:10px;color:var(--muted);margin-top:2px">Rang ATP: #${pick.favori_rang} vs #${pick.adversaire_rang||'?'}</div>` : ''}
+          </div>
+          <div class="pick-score" style="text-align:right">
+            <div class="pick-alerte" style="color:${ac}">${ae} ${pick.alerte}</div>
+            <div class="pick-score-val" style="color:${ac};font-family:Bebas Neue;font-size:28px">${pick.scoreMatriciel}</div>
+          </div>
+        </div>
+        ${pick.factors && pick.factors.length ? `<div class="factors">${pick.factors.map(f=>`<span class="factor-badge" style="background:${ac}22;color:${ac}">${f}</span>`).join('')}</div>` : ''}
+        <div class="player-grid">
+          <div class="player-box">
+            <div class="player-box-label" style="color:${ac}">FAVORI</div>
+            <div class="player-name">${pick.favori}</div>
+            <div class="player-team">Forme: ${pick.favori_forme||'—'} (${pick.favori_bilan||'—'})</div>
+          </div>
+          <div class="player-box">
+            <div class="player-box-label" style="color:var(--muted)">ADVERSAIRE</div>
+            <div class="player-name">${pick.adversaire}</div>
+            <div class="player-team">Forme: ${pick.adversaire_forme||'—'} (${pick.adversaire_bilan||'—'})</div>
+          </div>
+        </div>
+        ${pick.h2h_global ? `<div style="display:flex;gap:12px;margin-bottom:10px">
+          <div class="stat-box" style="flex:1;padding:8px"><div class="stat-label">H2H GLOBAL</div><div style="font-family:Bebas Neue;font-size:18px">${pick.h2h_global}</div></div>
+          <div class="stat-box" style="flex:1;padding:8px"><div class="stat-label">H2H ${(pick.surface||'').toUpperCase()}</div><div style="font-family:Bebas Neue;font-size:18px">${pick.h2h_surface||'—'}</div></div>
+          <div class="stat-box" style="flex:1;padding:8px"><div class="stat-label">MATCHS H2H</div><div style="font-family:Bebas Neue;font-size:18px">${pick.h2h_total_matchs||0}</div></div>
+        </div>` : ''}
+        ${pick.raison ? `<div class="top-pick-reason" style="margin-bottom:10px">${pick.raison}</div>` : ''}
+        <div style="padding:8px 0;border-top:1px solid ${ac}22">
+          <button onclick="openTennisModal(${pj})" style="width:100%;padding:10px;border-radius:8px;border:1px solid ${ac}55;background:${ac}22;color:${ac};font-family:Bebas Neue;font-size:14px;letter-spacing:3px;cursor:pointer">🎾 + TRACK RECORD</button>
+        </div>
+      </div>`;
+    }).join('');
 
-    data.picks.forEach((pick, i) => {
-      const alerteColor = pick.alerte === 'VERT' ? '#10b981' : pick.alerte === 'ORANGE' ? '#f59e0b' : '#ef4444';
-      const alerteEmoji = pick.alerte === 'VERT' ? '🟢' : pick.alerte === 'ORANGE' ? '🟡' : '🔴';
-      const surfaceEmoji = { 'Clay': '🔴', 'Hard': '🔵', 'Grass': '🟢', 'Carpet': '🟤' }[pick.surface] || '🎾';
-
-      html += '<div class="pick-card" style="border:1px solid ' + alerteColor + '33;margin-bottom:12px">';
-      html += '<div class="pick-header">';
-      html += '<div>';
-      html += '<div class="pick-comp">' + pick.competition + ' · ' + surfaceEmoji + ' ' + pick.surface + ' · ' + pick.heure + '</div>';
-      html += '<div class="pick-teams" style="color:#fff">' + pick.favori + ' <span style="color:#1e3a5f">vs</span> ' + pick.adversaire + '</div>';
-      if (pick.favori_rang || pick.adversaire_rang) {
-        html += '<div style="font-size:10px;color:var(--muted);margin-top:2px">Rang ATP: #' + (pick.favori_rang || '?') + ' vs #' + (pick.adversaire_rang || '?') + '</div>';
-      }
-      html += '</div>';
-      html += '<div class="pick-score" style="text-align:right">';
-      html += '<div class="pick-alerte" style="color:' + alerteColor + '">' + alerteEmoji + ' ' + pick.alerte + '</div>';
-      html += '<div class="pick-score-val" style="color:' + alerteColor + ';font-family:Bebas Neue;font-size:28px">' + pick.scoreMatriciel + '</div>';
-      html += '</div>';
-      html += '</div>';
-
-      // Facteurs
-      if (pick.factors && pick.factors.length > 0) {
-        html += '<div class="factors">';
-        pick.factors.forEach(f => {
-          html += '<span class="factor-badge" style="background:' + alerteColor + '22;color:' + alerteColor + '">' + f + '</span>';
-        });
-        html += '</div>';
-      }
-
-      // Stats joueurs
-      html += '<div class="player-grid">';
-      html += '<div class="player-box">';
-      html += '<div class="player-box-label" style="color:' + alerteColor + '">FAVORI</div>';
-      html += '<div class="player-name">' + pick.favori + '</div>';
-      html += '<div class="player-team">Forme: ' + (pick.favori_forme || '—') + ' (' + (pick.favori_bilan || '—') + ')</div>';
-      html += '</div>';
-      html += '<div class="player-box">';
-      html += '<div class="player-box-label" style="color:var(--muted)">ADVERSAIRE</div>';
-      html += '<div class="player-name">' + pick.adversaire + '</div>';
-      html += '<div class="player-team">Forme: ' + (pick.adversaire_forme || '—') + ' (' + (pick.adversaire_bilan || '—') + ')</div>';
-      html += '</div>';
-      html += '</div>';
-
-      // H2H
-      if (pick.h2h_global) {
-        html += '<div style="display:flex;gap:12px;margin-bottom:10px">';
-        html += '<div class="stat-box" style="flex:1;padding:8px"><div class="stat-label">H2H GLOBAL</div><div style="font-family:Bebas Neue;font-size:18px">' + pick.h2h_global + '</div></div>';
-        html += '<div class="stat-box" style="flex:1;padding:8px"><div class="stat-label">H2H ' + (pick.surface || '').toUpperCase() + '</div><div style="font-family:Bebas Neue;font-size:18px">' + (pick.h2h_surface || '—') + '</div></div>';
-        html += '<div class="stat-box" style="flex:1;padding:8px"><div class="stat-label">MATCHS H2H</div><div style="font-family:Bebas Neue;font-size:18px">' + (pick.h2h_total_matchs || 0) + '</div></div>';
-        html += '</div>';
-      }
-
-      // Analyse Claude
-      if (pick.raison) {
-        html += '<div class="top-pick-reason" style="margin-bottom:10px">' + pick.raison + '</div>';
-      }
-
-      // Bouton Track Record → ouvre modal
-      const pickJson = JSON.stringify(pick).replace(/"/g, '&quot;');
-      html += '<div style="padding:8px 0;border-top:1px solid ' + alerteColor + '22">';
-      html += '<button onclick="openTennisModal(' + pickJson + ')" style="width:100%;padding:10px;border-radius:8px;border:1px solid ' + alerteColor + '55;background:' + alerteColor + '22;color:' + alerteColor + ';font-family:Bebas Neue;font-size:14px;letter-spacing:3px;cursor:pointer">🎾 + TRACK RECORD</button>';
-      html += '</div>';
-
-      html += '</div>';
-    });
-
-    // Matchs rejetés
     if (data.rejected && data.rejected.length > 0) {
-      html += '<div style="margin-top:14px">';
-      html += '<div style="font-family:Bebas Neue;font-size:13px;color:var(--muted);letter-spacing:2px;margin-bottom:6px">MATCHS EXCLUS (' + data.rejected.length + ')</div>';
-      data.rejected.forEach(r => {
-        html += '<div style="font-size:11px;color:#1a2a40;padding:3px 0">';
-        html += r.match + ' — <span style="color:#2a3a50">' + r.raison + '</span>';
-        html += '</div>';
-      });
-      html += '</div>';
+      resultsEl.innerHTML += `<div style="margin-top:14px">
+        <div style="font-family:Bebas Neue;font-size:13px;color:var(--muted);letter-spacing:2px;margin-bottom:6px">MATCHS EXCLUS (${data.rejected.length})</div>
+        ${data.rejected.map(r=>`<div style="font-size:11px;color:#1a2a40;padding:3px 0">${r.match} — <span style="color:#2a3a50">${r.raison}</span></div>`).join('')}
+      </div>`;
     }
-
-    resultsEl.innerHTML = html;
 
   } catch (e) {
     log('❌ Erreur: ' + e.message, '#ef4444');
@@ -3157,10 +3098,8 @@ async function doScanTennis() {
   btn.innerHTML = '🎾 RELANCER LE SCAN';
 }
 
-// Init tennis
-renderTennisBankroll();
-renderTennisTrackList();
-
+// ── INIT ──
+renderTtrackAll();
 </script>
 </body>
 </html>
