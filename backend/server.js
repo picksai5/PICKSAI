@@ -51,22 +51,39 @@ function isInjuredPlayer(playerName, injuredNames) {
 
 // Saison spécifique par league — les qualifs CdM utilisent l'année du tournoi
 const LEAGUE_SEASON_OVERRIDE = {
-  32: 2026, 35: 2026, 36: 2026, 30: 2026, 31: 2026, 33: 2026,
+  32: 2024,  // Qualifs CdM UEFA — saison 2024 dans l'API
+  35: 2026, 36: 2026, 30: 2026, 31: 2026, 33: 2026,
 };
 function getLeagueSeason(leagueId) {
   return LEAGUE_SEASON_OVERRIDE[leagueId] || SEASON;
 }
 
 // Essaye plusieurs saisons et retourne les fixtures de la première non-vide
+// IDs alternatifs pour les confédérations (l'API a parfois des IDs différents)
+const LEAGUE_ALT_IDS = {
+  35: [35, 11],   // CONMEBOL — id 11 = qualifs Am. Sud dans certaines versions
+  36: [36, 29],   // CAF
+  30: [30, 26],   // AFC
+  31: [31, 30],   // CONCACAF
+};
+
 async function getFixturesWithFallback(leagueId, date) {
-  const seasons = LEAGUE_SEASON_OVERRIDE[leagueId]
-    ? [LEAGUE_SEASON_OVERRIDE[leagueId], LEAGUE_SEASON_OVERRIDE[leagueId] - 1]
-    : [SEASON];
-  for (const season of seasons) {
-    const data = await footballAPI('/fixtures', { date, league: leagueId, season });
-    if (data.length > 0) {
-      console.log(`[Fixtures] League ${leagueId} saison ${season}: ${data.length} matchs`);
-      return data;
+  // Saisons à tester : override, puis 2024, 2025, 2026, saison courante
+  const baseSeasons = LEAGUE_SEASON_OVERRIDE[leagueId]
+    ? [LEAGUE_SEASON_OVERRIDE[leagueId], 2024, 2025, 2026]
+    : [SEASON, SEASON - 1];
+  const seasons = [...new Set(baseSeasons)];
+  
+  // IDs à tester pour cette league
+  const ids = LEAGUE_ALT_IDS[leagueId] ? LEAGUE_ALT_IDS[leagueId] : [leagueId];
+
+  for (const lid of ids) {
+    for (const season of seasons) {
+      const data = await footballAPI('/fixtures', { date, league: lid, season });
+      if (data.length > 0) {
+        console.log(`[Fixtures] League ${lid} (demandé: ${leagueId}) saison ${season}: ${data.length} matchs`);
+        return data;
+      }
     }
   }
   return [];
@@ -1426,10 +1443,13 @@ app.get('/api/debug-fixtures', async (req, res) => {
     const today = getTodayStr();
     const results = {};
     const testLeagues = [
-      { id: 32, name: 'Qualifs CdM UEFA', seasons: [2026, 2025, 2024] },
-      { id: 35, name: 'Qualifs CdM CONMEBOL', seasons: [2026, 2025] },
-      { id: 36, name: 'Qualifs CdM CAF', seasons: [2026, 2025] },
-      { id: 31, name: 'Qualifs CdM CONCACAF', seasons: [2026, 2025] },
+      { id: 32,  name: 'Qualifs CdM UEFA',     seasons: [2024, 2025, 2026] },
+      { id: 35,  name: 'Qualifs CdM CONMEBOL', seasons: [2024, 2025, 2026] },
+      { id: 11,  name: 'CONMEBOL alt (11)',    seasons: [2024, 2025, 2026] },
+      { id: 36,  name: 'Qualifs CdM CAF',      seasons: [2024, 2025, 2026] },
+      { id: 29,  name: 'CAF alt (29)',          seasons: [2024, 2025, 2026] },
+      { id: 31,  name: 'Qualifs CdM CONCACAF', seasons: [2024, 2025, 2026] },
+      { id: 30,  name: 'Qualifs CdM AFC',      seasons: [2024, 2025, 2026] },
     ];
     for (const league of testLeagues) {
       results[league.name] = {};
@@ -1437,9 +1457,8 @@ app.get('/api/debug-fixtures', async (req, res) => {
         const data = await footballAPI('/fixtures', { date: today, league: league.id, season });
         results[league.name][`season_${season}`] = {
           count: data.length,
-          fixtures: data.slice(0,3).map(f => ({
+          fixtures: data.slice(0,5).map(f => ({
             id: f.fixture?.id,
-            date: f.fixture?.date,
             status: f.fixture?.status?.short,
             home: f.teams?.home?.name,
             away: f.teams?.away?.name,
