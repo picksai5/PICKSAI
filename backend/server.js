@@ -57,6 +57,21 @@ function getLeagueSeason(leagueId) {
   return LEAGUE_SEASON_OVERRIDE[leagueId] || SEASON;
 }
 
+// Essaye plusieurs saisons et retourne les fixtures de la première non-vide
+async function getFixturesWithFallback(leagueId, date) {
+  const seasons = LEAGUE_SEASON_OVERRIDE[leagueId]
+    ? [LEAGUE_SEASON_OVERRIDE[leagueId], LEAGUE_SEASON_OVERRIDE[leagueId] - 1]
+    : [SEASON];
+  for (const season of seasons) {
+    const data = await footballAPI('/fixtures', { date, league: leagueId, season });
+    if (data.length > 0) {
+      console.log(`[Fixtures] League ${leagueId} saison ${season}: ${data.length} matchs`);
+      return data;
+    }
+  }
+  return [];
+}
+
 const LEAGUES = [
   { id: 61,  name: 'Ligue 1' },
   { id: 140, name: 'La Liga' },
@@ -844,7 +859,7 @@ app.get('/api/scan', async (req, res) => {
 
     const allFixtures = [];
     for (const league of LEAGUES) {
-      const data = await footballAPI('/fixtures', { date: today, league: league.id, season: getLeagueSeason(league.id) });
+      const data = await getFixturesWithFallback(league.id, today);
       // Exclure matchs reportés, annulés, abandonnés, suspendus
       const validFixtures = data.filter(f => {
         const status = f.fixture?.status?.short;
@@ -994,7 +1009,7 @@ app.get('/api/scan-tirs', async (req, res) => {
 
     const allFixtures = [];
     for (const league of TIRS_LEAGUES) {
-      const data = await footballAPI('/fixtures', { date: today, league: league.id, season: getLeagueSeason(league.id) });
+      const data = await getFixturesWithFallback(league.id, today);
       const valid = data.filter(f => !['PST','CANC','ABD','SUSP','AWD','WO'].includes(f.fixture?.status?.short));
       if (valid.length > 0) allFixtures.push(...valid.map(f => ({ ...f, leagueName: league.name, leagueId: league.id })));
     }
@@ -1404,6 +1419,36 @@ app.get('/api/scan-tennis', async (req, res) => {
     console.error('[Tennis] Erreur scan:', e.message);
     res.status(500).json({ error: e.message });
   }
+});
+
+app.get('/api/debug-fixtures', async (req, res) => {
+  try {
+    const today = getTodayStr();
+    const results = {};
+    const testLeagues = [
+      { id: 32, name: 'Qualifs CdM UEFA', seasons: [2026, 2025, 2024] },
+      { id: 35, name: 'Qualifs CdM CONMEBOL', seasons: [2026, 2025] },
+      { id: 36, name: 'Qualifs CdM CAF', seasons: [2026, 2025] },
+      { id: 31, name: 'Qualifs CdM CONCACAF', seasons: [2026, 2025] },
+    ];
+    for (const league of testLeagues) {
+      results[league.name] = {};
+      for (const season of league.seasons) {
+        const data = await footballAPI('/fixtures', { date: today, league: league.id, season });
+        results[league.name][`season_${season}`] = {
+          count: data.length,
+          fixtures: data.slice(0,3).map(f => ({
+            id: f.fixture?.id,
+            date: f.fixture?.date,
+            status: f.fixture?.status?.short,
+            home: f.teams?.home?.name,
+            away: f.teams?.away?.name,
+          }))
+        };
+      }
+    }
+    res.json({ today, results });
+  } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
 app.get('/api/health', (req, res) => res.json({ status: 'ok', name: 'PicksAI', version: '4.1', season: SEASON }));
