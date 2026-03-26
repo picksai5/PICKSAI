@@ -49,6 +49,14 @@ function isInjuredPlayer(playerName, injuredNames) {
 
 
 
+// Saison spécifique par league — les qualifs CdM utilisent l'année du tournoi
+const LEAGUE_SEASON_OVERRIDE = {
+  32: 2026, 35: 2026, 36: 2026, 30: 2026, 31: 2026, 33: 2026,
+};
+function getLeagueSeason(leagueId) {
+  return LEAGUE_SEASON_OVERRIDE[leagueId] || SEASON;
+}
+
 const LEAGUES = [
   { id: 61,  name: 'Ligue 1' },
   { id: 140, name: 'La Liga' },
@@ -60,7 +68,7 @@ const LEAGUES = [
   { id: 848, name: 'Conference League' },
   { id: 88,  name: 'Eredivisie' },
   { id: 94,  name: 'Liga Portugal' },
-  // Qualifications Coupe du Monde
+  // Qualifications Coupe du Monde 2026
   { id: 32,  name: 'Qualifs CdM UEFA' },
   { id: 35,  name: 'Qualifs CdM CONMEBOL' },
   { id: 36,  name: 'Qualifs CdM CAF' },
@@ -110,7 +118,7 @@ async function footballAPI(endpoint, params = {}) {
 async function getStandingsCached(leagueId) {
   const k = `${leagueId}_${SEASON}`;
   if (isCacheValid(cache.standings[k])) return cache.standings[k].data;
-  const s = await footballAPI('/standings', { league: leagueId, season: SEASON });
+  const s = await footballAPI('/standings', { league: leagueId, season: getLeagueSeason(leagueId) });
   const data = s[0]?.league?.standings?.[0] || [];
   cache.standings[k] = { data, timestamp: Date.now() };
   return data;
@@ -119,7 +127,7 @@ async function getStandingsCached(leagueId) {
 async function getTeamStatsCached(teamId, leagueId) {
   const k = `${teamId}_${leagueId}`;
   if (isCacheValid(cache.teamStats[k])) return cache.teamStats[k].data;
-  const data = await footballAPI('/teams/statistics', { team: teamId, league: leagueId, season: SEASON });
+  const data = await footballAPI('/teams/statistics', { team: teamId, league: leagueId, season: getLeagueSeason(leagueId) });
   cache.teamStats[k] = { data, timestamp: Date.now() };
   return data;
 }
@@ -127,8 +135,8 @@ async function getTeamStatsCached(teamId, leagueId) {
 async function getPlayersCached(teamId, leagueId) {
   const k = `${teamId}_${leagueId}`;
   if (isCacheValid(cache.players[k])) return cache.players[k].data;
-  const p1 = await footballAPI('/players', { team: teamId, league: leagueId, season: SEASON, page: 1 });
-  const p2 = await footballAPI('/players', { team: teamId, league: leagueId, season: SEASON, page: 2 });
+  const p1 = await footballAPI('/players', { team: teamId, league: leagueId, season: getLeagueSeason(leagueId), page: 1 });
+  const p2 = await footballAPI('/players', { team: teamId, league: leagueId, season: getLeagueSeason(leagueId), page: 2 });
   const data = [...p1, ...p2];
   cache.players[k] = { data, timestamp: Date.now() };
   return data;
@@ -231,7 +239,7 @@ async function preloadCache() {
   await Promise.all(LEAGUES.map(l => getStandingsCached(l.id)));
   const fixtures = [];
   for (const league of LEAGUES) {
-    const data = await footballAPI('/fixtures', { date: today, league: league.id, season: SEASON });
+    const data = await footballAPI('/fixtures', { date: today, league: league.id, season: getLeagueSeason(league.id) });
     fixtures.push(...data.map(f => ({ ...f, leagueId: league.id })));
   }
   const seen = new Set();
@@ -836,7 +844,7 @@ app.get('/api/scan', async (req, res) => {
 
     const allFixtures = [];
     for (const league of LEAGUES) {
-      const data = await footballAPI('/fixtures', { date: today, league: league.id, season: SEASON });
+      const data = await footballAPI('/fixtures', { date: today, league: league.id, season: getLeagueSeason(league.id) });
       // Exclure matchs reportés, annulés, abandonnés, suspendus
       const validFixtures = data.filter(f => {
         const status = f.fixture?.status?.short;
@@ -986,7 +994,7 @@ app.get('/api/scan-tirs', async (req, res) => {
 
     const allFixtures = [];
     for (const league of TIRS_LEAGUES) {
-      const data = await footballAPI('/fixtures', { date: today, league: league.id, season: SEASON });
+      const data = await footballAPI('/fixtures', { date: today, league: league.id, season: getLeagueSeason(league.id) });
       const valid = data.filter(f => !['PST','CANC','ABD','SUSP','AWD','WO'].includes(f.fixture?.status?.short));
       if (valid.length > 0) allFixtures.push(...valid.map(f => ({ ...f, leagueName: league.name, leagueId: league.id })));
     }
@@ -1167,644 +1175,7 @@ app.get('/api/scan-tirs', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ══════════════════════════════════════════════════════════
-
-// ══════════════════════════════════════════════════════════
-// ── MODULE TENNIS v2 ──────────────────────────────────────
-// ══════════════════════════════════════════════════════════
-const TENNIS_API_KEY  = process.env.TENNIS_API_KEY;
-const TENNIS_API_BASE = 'https://api.api-tennis.com/tennis/';
-
-// Cache tennis séparé
-const tennisCache = {};
-const TENNIS_CACHE_TTL = 3 * 60 * 60 * 1000; // 3h
-
-function isTennisCacheValid(e) { return e && Date.now() - e.timestamp < TENNIS_CACHE_TTL; }
-
-// api-tennis.com — tous les appels passent par ?method=X&APIkey=Y
-async function tennisAPI(method, extraParams = {}) {
-  await sleep(300);
-  try {
-    const res = await axios.get(TENNIS_API_BASE, {
-      params: { method, APIkey: TENNIS_API_KEY, ...extraParams },
-    });
-    if (res.data?.success !== 1) {
-      console.warn('[TENNIS] API non-success:', method, res.data?.result || '');
-      return null;
-    }
-    return res.data.result || null;
-  } catch (e) {
-    console.error('[TENNIS] API error:', method, e.message);
-    return null;
-  }
-}
-
-// ── INFÉRENCE DE SURFACE DEPUIS LE NOM DU TOURNOI ─────────
-function inferSurface(tournamentName) {
-  const t = (tournamentName || '').toLowerCase();
-
-  // Gazon
-  if (/wimbledon|queens|halle|'s-hertogenbosch|eastbourne|nottingham|newport|stuttgart grass/i.test(t)) return 'Grass';
-
-  // Terre battue
-  if (/roland.garros|paris clay|monte.carlo|montecarlo|madrid|barcelona|estoril|istanbul|bucharest|lyon clay|hamburg clay|rome|foro.italico|münchen|munich clay|geneva|geneva clay|gstaad|kitzbuhel|bastad|umag|cordoba|buenos.aires|rio|sao.paulo|marrakech|casablanca/i.test(t)) return 'Clay';
-
-  // Dur (indoor ou outdoor explicite)
-  if (/australian.open|us.open|miami|indian.wells|montreal|canada|cincinnati|shanghai|beijing|vienna|paris.masters|bercy|tokyo|singapore|rotterdam|marseille|sofia|st.petersburg|doha|dubai|abu.dhabi|astana|nur-sultan|brisbane|auckland|sydney|memphis|dallas|acapulco|phoenix|washington|winston.salem|new.york|atlanta|los.angeles|metz|toulouse|antwerp|moscow|stockholm|basel|london|o2|nitto/i.test(t)) return 'Hard';
-
-  return 'Unknown';
-}
-
-// ── NIVEAU DU TOURNOI ──────────────────────────────────────
-function getTournamentLevel(tournamentName) {
-  const t = (tournamentName || '').toLowerCase();
-  if (/australian.open|roland.garros|wimbledon|us.open/i.test(t)) return 'GrandSlam';
-  if (/miami|indian.wells|monte.carlo|montecarlo|madrid|rome|foro.italico|canada|montreal|toronto|cincinnati|shanghai|paris.masters|bercy/i.test(t)) return 'Masters1000';
-  if (/rotterdam|marseille|acapulco|dubai|doha|barcelona|munich|hamburg|washington|halle|queens|eastbourne|vienna|antwerp|stockholm|basel|metz|toulouse|sofia/i.test(t)) return 'ATP500';
-  return 'ATP250';
-}
-
-// ── HELPERS API-TENNIS.COM ────────────────────────────────
-function normalizeTennisFixture(f) {
-  const rawSurface = f.event_surface || f.court_surface || null;
-  // Inférer la surface si absente ou inconnue
-  const surface = (rawSurface && rawSurface.toLowerCase() !== 'unknown' && rawSurface !== '')
-    ? rawSurface
-    : inferSurface(f.tournament_name);
-
-  return {
-    id:             f.event_key,
-    player1:        { id: f.first_player_key,  name: f.event_first_player  },
-    player2:        { id: f.second_player_key, name: f.event_second_player },
-    date:           f.event_date ? f.event_date + (f.event_time ? 'T' + f.event_time : '') : null,
-    surface,
-    tournamentName: f.tournament_name || 'ATP',
-    status:         f.event_status || '',
-    eventType:      f.event_type_type || '',
-    winnerId:       f.event_winner === 'First Player'  ? f.first_player_key
-                  : f.event_winner === 'Second Player' ? f.second_player_key
-                  : null,
-    // Classement ATP si présent dans la fixture
-    rank1:          f.first_player_rank  ? parseInt(f.first_player_rank)  : null,
-    rank2:          f.second_player_rank ? parseInt(f.second_player_rank) : null,
-    // Seed si présent
-    seed1:          f.first_player_seed  ? parseInt(f.first_player_seed)  : null,
-    seed2:          f.second_player_seed ? parseInt(f.second_player_seed) : null,
-  };
-}
-
-// Récupère les matchs ATP Singles du jour
-async function getTennisFixturesToday() {
-  const today = getTodayStr();
-  const cacheKey = `fixtures_atp_${today}`;
-  if (isTennisCacheValid(tennisCache[cacheKey])) return tennisCache[cacheKey].data;
-
-  const raw = await tennisAPI('get_fixtures', { date_start: today, date_stop: today, event_type_key: 265 });
-  const all = Array.isArray(raw) ? raw : [];
-
-  const fixtures = all
-    .filter(f => (f.event_qualification || 'False') === 'False')
-    .map(normalizeTennisFixture);
-
-  console.log(`[TENNIS] getTennisFixturesToday → ${all.length} ATP Singles → ${fixtures.length} matchs`);
-  if (fixtures.length > 0) console.log('[TENNIS] Exemple:', JSON.stringify(fixtures[0]).slice(0, 300));
-
-  tennisCache[cacheKey] = { data: fixtures, timestamp: Date.now() };
-  return fixtures;
-}
-
-// Récupère les derniers matchs d'un joueur (forme récente)
-async function getPlayerRecentFixtures(playerId) {
-  const cacheKey = `player_${playerId}`;
-  if (isTennisCacheValid(tennisCache[cacheKey])) return tennisCache[cacheKey].data;
-
-  const raw = await tennisAPI('get_H2H', { first_player_key: playerId, second_player_key: playerId });
-  const r1 = raw?.firstPlayerResults  || [];
-  const r2 = raw?.secondPlayerResults || [];
-  const allResults = [...r1, ...r2];
-
-  const seen = new Set();
-  const deduped = allResults.filter(f => {
-    if (seen.has(f.event_key)) return false;
-    seen.add(f.event_key); return true;
-  }).sort((a, b) => new Date(b.event_date) - new Date(a.event_date));
-
-  const singles  = deduped.filter(f => (f.event_type_type || '').toLowerCase().includes('singles'));
-  const fixtures = singles.map(normalizeTennisFixture);
-
-  tennisCache[cacheKey] = { data: fixtures, timestamp: Date.now() };
-  return fixtures;
-}
-
-// Récupère le H2H entre deux joueurs
-async function getTennisH2H(player1Id, player2Id) {
-  const cacheKey = `h2h_${player1Id}_${player2Id}`;
-  if (isTennisCacheValid(tennisCache[cacheKey])) return tennisCache[cacheKey].data;
-
-  const raw = await tennisAPI('get_H2H', { first_player_key: player1Id, second_player_key: player2Id });
-  const h2hRaw  = raw?.H2H || [];
-  const fixtures = h2hRaw
-    .filter(f => (f.event_type_type || '').toLowerCase().includes('singles'))
-    .map(normalizeTennisFixture);
-
-  tennisCache[cacheKey] = { data: fixtures, timestamp: Date.now() };
-  return fixtures;
-}
-
-// Récupère le classement ATP via get_standings
-async function getTennisStandings() {
-  // get_standings ne retourne pas de rang utilisable via cette API
-  // Le rang est extrait depuis get_players stats[] — voir getPlayerSurfaceStats()
-  return {};
-}
-
-// Récupère le rang ATP et les stats par surface depuis get_players
-// Structure réelle API : player.stats[] = [{ season, type:"singles", rank, hard_won, hard_lost, clay_won, ... }]
-async function getPlayerSurfaceStats(playerId) {
-  const cacheKey = `player_stats_${playerId}`;
-  if (isTennisCacheValid(tennisCache[cacheKey])) return tennisCache[cacheKey].data;
-
-  const raw = await tennisAPI('get_players', { player_key: playerId });
-  const player = Array.isArray(raw) ? raw[0] : raw;
-
-  if (!player) {
-    tennisCache[cacheKey] = { data: null, timestamp: Date.now() };
-    return null;
-  }
-
-  // Les stats sont dans player.stats[] — tableau par saison/type
-  // On prend uniquement les entrées "singles" et on agrège toutes les saisons disponibles
-  const allStats = Array.isArray(player.stats) ? player.stats : [];
-  const singlesStats = allStats.filter(s => (s.type || '').toLowerCase() === 'singles');
-
-  // Rang ATP = le rang le plus récent (première entrée singles triée par saison desc)
-  const sortedBySeasonDesc = [...singlesStats].sort((a, b) => parseInt(b.season || 0) - parseInt(a.season || 0));
-  const latestRank = sortedBySeasonDesc.find(s => s.rank && parseInt(s.rank) > 0);
-  const rank = latestRank ? parseInt(latestRank.rank) : null;
-
-  // Agréger les victoires/défaites par surface sur toutes les saisons singles
-  const agg = { hard: [0,0], clay: [0,0], grass: [0,0] };
-  for (const s of singlesStats) {
-    agg.hard[0]  += parseInt(s.hard_won  || 0);
-    agg.hard[1]  += parseInt(s.hard_lost || 0);
-    agg.clay[0]  += parseInt(s.clay_won  || 0);
-    agg.clay[1]  += parseInt(s.clay_lost || 0);
-    agg.grass[0] += parseInt(s.grass_won  || 0);
-    agg.grass[1] += parseInt(s.grass_lost || 0);
-  }
-
-  const toRate = (w, l) => {
-    const t = w + l;
-    return t > 0 ? { wins: w, total: t, rate: +(w / t).toFixed(3) } : null;
-  };
-
-  const stats = {
-    rank,
-    hard:  toRate(agg.hard[0],  agg.hard[1]),
-    clay:  toRate(agg.clay[0],  agg.clay[1]),
-    grass: toRate(agg.grass[0], agg.grass[1]),
-  };
-
-  console.log(`[TENNIS] Stats joueur ${playerId}: rank=${rank} hard=${JSON.stringify(stats.hard)} clay=${JSON.stringify(stats.clay)} grass=${JSON.stringify(stats.grass)}`);
-  tennisCache[cacheKey] = { data: stats, timestamp: Date.now() };
-  return stats;
-}
-
-// Extrait l'id du gagnant depuis un objet fixture tennis
-function getTennisWinnerId(f) {
-  const raw = f.winnerId ?? f.winner_id ?? f.winner ?? null;
-  if (raw === null || raw === undefined) return null;
-  if (typeof raw === 'object') return String(raw.id ?? raw.playerId ?? '');
-  return String(raw);
-}
-
-// ── ANALYSE TENNIS v2 ──────────────────────────────────────
-// Facteurs : rang ATP, forme pondérée, H2H, surface, niveau tournoi
-function analyseTennisMatch(fixture, h2hFixtures, p1Recent, p2Recent, atpRankMap, p1SurfStats, p2SurfStats) {
-  const player1 = fixture.player1;
-  const player2 = fixture.player2;
-  const surface = fixture.surface || 'Unknown';
-  const tournamentLevel = getTournamentLevel(fixture.tournamentName);
-
-  // ── CLASSEMENT ATP ─────────────────────────────────────
-  // Priorité : stats API get_players > fixture seeds > standings map > null
-  const p1StatsRank = p1SurfStats?.rank || null;
-  const p2StatsRank = p2SurfStats?.rank || null;
-  const p1FixRank   = fixture.rank1 || null;
-  const p2FixRank   = fixture.rank2 || null;
-
-  // Seed → rang approximatif si aucun rang direct (seed 1 ≈ top 10, seed 2 ≈ top 20, etc.)
-  const seedToApproxRank = (seed) => seed ? seed * 8 : null;
-  const p1Seed = fixture.seed1 ? seedToApproxRank(fixture.seed1) : null;
-  const p2Seed = fixture.seed2 ? seedToApproxRank(fixture.seed2) : null;
-
-  const p1IdStr = String(player1?.id || '');
-  const p2IdStr = String(player2?.id || '');
-  const p1MapRank = atpRankMap ? atpRankMap[p1IdStr] : null;
-  const p2MapRank = atpRankMap ? atpRankMap[p2IdStr] : null;
-
-  // Choisir le meilleur rang disponible (le plus fiable en premier)
-  const rank1 = p1StatsRank || p1FixRank || p1MapRank || p1Seed || null;
-  const rank2 = p2StatsRank || p2FixRank || p2MapRank || p2Seed || null;
-
-  // ── DEBUG RANG ──
-  console.log(`[DEBUG_RANG] ${player1?.name} (id:${p1IdStr}) — statsRank:${p1StatsRank} fixRank:${p1FixRank} mapRank:${p1MapRank} seed:${fixture.seed1} final:${rank1}`);
-  console.log(`[DEBUG_RANG] ${player2?.name} (id:${p2IdStr}) — statsRank:${p2StatsRank} fixRank:${p2FixRank} mapRank:${p2MapRank} seed:${fixture.seed2} final:${rank2}`);
-
-  // ── FORME PONDÉRÉE ─────────────────────────────────────
-  // 3 derniers matchs comptent double, 5 précédents comptent simple
-  const getWeightedForm = (recent, playerId) => {
-    const all = (recent || []).filter(f => getTennisWinnerId(f) !== null);
-    const pidStr = String(playerId);
-
-    // 8 derniers matchs au total (3 derniers × 2 + 5 précédents × 1)
-    const last3  = all.slice(0, 3);
-    const prev5  = all.slice(3, 8);
-
-    const w3wins  = last3.filter(f => getTennisWinnerId(f) === pidStr).length;
-    const w3loss  = last3.length - w3wins;
-    const w5wins  = prev5.filter(f => getTennisWinnerId(f) === pidStr).length;
-    const w5loss  = prev5.length - w5wins;
-
-    // Score pondéré : dernier 3 matchs × 2, 5 suivants × 1
-    const wScore  = (w3wins * 2) - (w3loss * 2) + w5wins - w5loss;
-
-    // String visuel sur 5 derniers (pour affichage)
-    const last5   = all.slice(0, 5);
-    const formStr = last5.map(f => getTennisWinnerId(f) === pidStr ? 'W' : 'L').join('');
-    const wins    = last5.filter(f => getTennisWinnerId(f) === pidStr).length;
-    const losses  = last5.length - wins;
-
-    return {
-      wins, losses, total: last5.length, formStr,
-      wScore,       // score pondéré (utilisé dans matrice)
-      last3Total:   last3.length,
-      last3Wins:    w3wins,
-    };
-  };
-
-  const form1 = getWeightedForm(p1Recent, player1?.id);
-  const form2 = getWeightedForm(p2Recent, player2?.id);
-
-  // ── H2H GLOBAL ─────────────────────────────────────────
-  const h2hAll   = (h2hFixtures || []).filter(f => getTennisWinnerId(f) !== null);
-  const p1str    = String(player1?.id);
-  const p2str    = String(player2?.id);
-  const h2hWins1 = h2hAll.filter(f => getTennisWinnerId(f) === p1str).length;
-  const h2hWins2 = h2hAll.filter(f => getTennisWinnerId(f) === p2str).length;
-
-  // ── H2H SUR LA SURFACE ─────────────────────────────────
-  const surfLow   = surface.toLowerCase();
-  const h2hSurface = h2hAll.filter(f => {
-    const fs = (f.surface || '').toLowerCase();
-    return fs && fs !== 'unknown' && fs === surfLow;
-  });
-  const h2hSurfWins1 = h2hSurface.filter(f => getTennisWinnerId(f) === p1str).length;
-  const h2hSurfWins2 = h2hSurface.filter(f => getTennisWinnerId(f) === p2str).length;
-
-  // ── SCORE MATRICIEL ────────────────────────────────────
-  let score1 = 0;
-  let score2 = 0;
-  const factors = [];
-
-  // ── F1 — CLASSEMENT ATP (max 40pts) — facteur le plus prédictif ──
-  const rankGap = (rank1 && rank2) ? rank2 - rank1 : null; // positif = P1 mieux classé
-
-  if (rankGap !== null) {
-    factors.push('F1_RANG');
-    if      (rankGap >= 100) { score1 += 40; }
-    else if (rankGap >= 50)  { score1 += 32; }
-    else if (rankGap >= 30)  { score1 += 24; }
-    else if (rankGap >= 15)  { score1 += 16; }
-    else if (rankGap >= 8)   { score1 += 9;  }
-    else if (rankGap >= 3)   { score1 += 4;  }
-    else if (rankGap <= -100){ score2 += 40; }
-    else if (rankGap <= -50) { score2 += 32; }
-    else if (rankGap <= -30) { score2 += 24; }
-    else if (rankGap <= -15) { score2 += 16; }
-    else if (rankGap <= -8)  { score2 += 9;  }
-    else if (rankGap <= -3)  { score2 += 4;  }
-  } else {
-    // Pas de rang disponible — utiliser les seeds si présents
-    if (fixture.seed1 && !fixture.seed2) { score1 += 12; factors.push('F1_SEED'); }
-    if (fixture.seed2 && !fixture.seed1) { score2 += 12; factors.push('F1_SEED'); }
-  }
-
-  // ── F2 — FORME PONDÉRÉE (3 derniers × 2 + 5 précédents, max 30pts) ──
-  if (form1.total >= 2 || form1.last3Total >= 1) {
-    const ws = form1.wScore;
-    if      (ws >= 8)  { score1 += 30; factors.push('F2_FORME'); }
-    else if (ws >= 5)  { score1 += 22; factors.push('F2_FORME'); }
-    else if (ws >= 3)  { score1 += 14; factors.push('F2_FORME'); }
-    else if (ws >= 1)  { score1 += 7;  }
-    else if (ws <= -5) { score1 -= 12; }
-    else if (ws <= -3) { score1 -= 7;  }
-    else if (ws <= -1) { score1 -= 3;  }
-  }
-  if (form2.total >= 2 || form2.last3Total >= 1) {
-    const ws = form2.wScore;
-    if      (ws >= 8)  { score2 += 30; factors.push('F2_FORME'); }
-    else if (ws >= 5)  { score2 += 22; factors.push('F2_FORME'); }
-    else if (ws >= 3)  { score2 += 14; factors.push('F2_FORME'); }
-    else if (ws >= 1)  { score2 += 7;  }
-    else if (ws <= -5) { score2 -= 12; }
-    else if (ws <= -3) { score2 -= 7;  }
-    else if (ws <= -1) { score2 -= 3;  }
-  }
-
-  // ── F3 — STATS PAR SURFACE (get_players, max 20pts) ──
-  const getSurfKey = (surf) => {
-    const s = (surf || '').toLowerCase();
-    if (s.includes('hard'))  return 'hard';
-    if (s.includes('clay'))  return 'clay';
-    if (s.includes('grass')) return 'grass';
-    return null;
-  };
-  const surfKey = getSurfKey(surface);
-
-  if (surfKey && p1SurfStats?.[surfKey] && p2SurfStats?.[surfKey]) {
-    const r1 = p1SurfStats[surfKey].rate;
-    const r2 = p2SurfStats[surfKey].rate;
-    const surfDiff = r1 - r2;
-    if      (surfDiff >= 0.20) { score1 += 20; factors.push('F3_SURF'); }
-    else if (surfDiff >= 0.12) { score1 += 14; factors.push('F3_SURF'); }
-    else if (surfDiff >= 0.06) { score1 += 8;  }
-    else if (surfDiff <= -0.20){ score2 += 20; factors.push('F3_SURF'); }
-    else if (surfDiff <= -0.12){ score2 += 14; factors.push('F3_SURF'); }
-    else if (surfDiff <= -0.06){ score2 += 8;  }
-  } else if (surfKey && p1SurfStats?.[surfKey]) {
-    // Seulement P1 a les stats surface
-    if (p1SurfStats[surfKey].rate >= 0.60) { score1 += 8; }
-  } else if (surfKey && p2SurfStats?.[surfKey]) {
-    if (p2SurfStats[surfKey].rate >= 0.60) { score2 += 8; }
-  }
-
-  // ── F4 — H2H GLOBAL (max 20pts) ──
-  if (h2hAll.length >= 2) {
-    factors.push('F4_H2H');
-    if      (h2hWins1 >= 4 && h2hWins1 > h2hWins2 * 2) { score1 += 20; }
-    else if (h2hWins1 > h2hWins2 + 2)                   { score1 += 13; }
-    else if (h2hWins1 > h2hWins2)                        { score1 += 6;  }
-    if      (h2hWins2 >= 4 && h2hWins2 > h2hWins1 * 2) { score2 += 20; }
-    else if (h2hWins2 > h2hWins1 + 2)                   { score2 += 13; }
-    else if (h2hWins2 > h2hWins1)                        { score2 += 6;  }
-  }
-
-  // ── F5 — H2H SUR LA SURFACE (max 15pts) ──
-  if (h2hSurface.length >= 1) {
-    if      (h2hSurfWins1 > h2hSurfWins2 + 1) { score1 += 15; factors.push('F5_H2H_SURF'); }
-    else if (h2hSurfWins1 > h2hSurfWins2)      { score1 += 8;  }
-    if      (h2hSurfWins2 > h2hSurfWins1 + 1) { score2 += 15; factors.push('F5_H2H_SURF'); }
-    else if (h2hSurfWins2 > h2hSurfWins1)      { score2 += 8;  }
-  }
-
-  // ── F6 — NIVEAU DU TOURNOI (pondération favori) ──
-  // En Grand Chelem et Masters 1000, les grands favoris (rang ATP) s'imposent davantage
-  const tournamentBonus = tournamentLevel === 'GrandSlam' ? 1.20
-    : tournamentLevel === 'Masters1000' ? 1.12
-    : tournamentLevel === 'ATP500' ? 1.06
-    : 1.0;
-
-  // Appliquer le bonus si on a le rang
-  if (rankGap !== null && Math.abs(rankGap) >= 15 && tournamentLevel !== 'ATP250') {
-    if (rankGap > 0) { score1 = Math.round(score1 * tournamentBonus); factors.push('F6_NIVEAU'); }
-    else             { score2 = Math.round(score2 * tournamentBonus); factors.push('F6_NIVEAU'); }
-  }
-
-  // ── RÉSULTAT ───────────────────────────────────────────
-  const diff    = score1 - score2;
-  const absDiff = Math.abs(diff);
-
-  // Qualité des données disponibles
-  const hasRank = rank1 !== null || rank2 !== null;
-  const hasForm = form1.total >= 2 || form2.total >= 2;
-  const hasH2H  = h2hAll.length >= 1;
-  const dataQuality = (hasRank ? 3 : 0) + (hasForm ? 2 : 0) + (hasH2H ? 1 : 0) + form1.total + form2.total + h2hAll.length;
-
-  console.log(`[TENNIS] ${player1?.name} (r${rank1||'?'}) vs ${player2?.name} (r${rank2||'?'}) — surf:${surface} lvl:${tournamentLevel} | s1:${score1} s2:${score2} diff:${diff} | form1:${form1.formStr}(w${form1.wScore}) form2:${form2.formStr}(w${form2.wScore}) h2h:${h2hAll.length}`);
-
-  // Seuil minimal de données — rang seul suffit si écart important
-  if (dataQuality < 2 && !hasRank) {
-    return { alerte: null, reason: `Données insuffisantes (form1:${form1.total} form2:${form2.total} h2h:${h2hAll.length} rang:${hasRank})` };
-  }
-
-  // Seuil "trop équilibré" — abaissé à 10 (anciennement 15) pour générer plus de picks
-  if (absDiff < 10) {
-    return {
-      alerte: null, scoreMatriciel: 0, favori: null, adversaire: null, factors: [],
-      form1, form2, h2hWins1, h2hWins2, h2hSurfWins1, h2hSurfWins2,
-      h2hTotal: h2hAll.length, h2hSurface: h2hSurface.length, surface,
-      rank1, rank2,
-      reason: 'Match trop équilibré',
-    };
-  }
-
-  const favoriIsP1   = diff > 0;
-  const scoreMatriciel = Math.min(100, Math.round(absDiff * 1.0));
-
-  // ── SEUILS CALIBRÉS VERT/ORANGE/ROUGE ──
-  // Abaissés pour générer 2-4 picks/jour minimum
-  let alerte = null;
-  if      (scoreMatriciel >= 60) alerte = 'VERT';
-  else if (scoreMatriciel >= 38) alerte = 'ORANGE';
-  else if (scoreMatriciel >= 20) alerte = 'ROUGE';
-
-  return {
-    alerte,
-    scoreMatriciel,
-    favoriIsP1,
-    favori:     favoriIsP1 ? player1 : player2,
-    adversaire: favoriIsP1 ? player2 : player1,
-    factors: [...new Set(factors)],
-    form1, form2,
-    h2hWins1, h2hWins2,
-    h2hSurfWins1, h2hSurfWins2,
-    h2hTotal:    h2hAll.length,
-    h2hSurface:  h2hSurface.length,
-    surface,
-    tournamentLevel,
-    rank1, rank2,
-    rankGap,
-  };
-}
-
-// ── CLAUDE TENNIS ──────────────────────────────────────────
-async function genererAnalyseTennis(matchInfo) {
-  const { favori, adversaire, form1, form2, h2hWins1, h2hWins2,
-          h2hSurfWins1, h2hSurfWins2, surface, scoreMatriciel,
-          fixture, favoriIsP1, rank1, rank2, tournamentLevel } = matchInfo;
-
-  const favoriForm  = favoriIsP1 ? form1 : form2;
-  const adversForm  = favoriIsP1 ? form2 : form1;
-  const favoriH2H   = favoriIsP1 ? h2hWins1 : h2hWins2;
-  const adversH2H   = favoriIsP1 ? h2hWins2 : h2hWins1;
-  const favoriSurf  = favoriIsP1 ? h2hSurfWins1 : h2hSurfWins2;
-  const adversSurf  = favoriIsP1 ? h2hSurfWins2 : h2hSurfWins1;
-  const favoriRank  = favoriIsP1 ? rank1 : rank2;
-  const adversRank  = favoriIsP1 ? rank2 : rank1;
-
-  const today = new Date().toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
-
-  const prompt = `Expert tennis. Analyse ce match ATP et justifie le pronostic avec des données concrètes.
-
-MATCH: ${favori?.name} vs ${adversaire?.name}
-TOURNOI: ${fixture.tournamentName || 'ATP'} (${tournamentLevel}) | Surface: ${surface}
-PRONOSTIC: Victoire ${favori?.name} (score fiabilité: ${scoreMatriciel}/100)
-
-DONNÉES CLÉS:
-- Rang ATP ${favori?.name}: ${favoriRank ? '#' + favoriRank : 'N/A'} | Rang ATP ${adversaire?.name}: ${adversRank ? '#' + adversRank : 'N/A'}
-- Forme pondérée ${favori?.name} (5 derniers): ${favoriForm.formStr || 'N/A'} (${favoriForm.wins}V/${favoriForm.losses}D, score pondéré:${favoriForm.wScore})
-- Forme pondérée ${adversaire?.name}: ${adversForm.formStr || 'N/A'} (${adversForm.wins}V/${adversForm.losses}D, score pondéré:${adversForm.wScore})
-- H2H global: ${favori?.name} ${favoriH2H} - ${adversH2H} ${adversaire?.name}
-- H2H sur ${surface}: ${favori?.name} ${favoriSurf} - ${adversSurf} ${adversaire?.name}
-
-RÈGLES:
-1. 2 phrases MAX justifiant la victoire — cite les stats ci-dessus (rang ATP, forme, H2H)
-2. Vérifie que ${favori?.name} joue bien ce tournoi en ${today}
-3. Mentionne la surface si pertinente (avantage clair sur cette surface)
-
-JSON UNIQUEMENT:
-{"raison":"2 phrases pourquoi victoire avec stats concrètes","confiance":"${scoreMatriciel >= 60 ? 'ÉLEVÉE' : scoreMatriciel >= 38 ? 'MOYENNE' : 'FAIBLE'}"}`;
-
-  try {
-    const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 300,
-      messages: [{ role: 'user', content: prompt }],
-    });
-    const text = response.content[0].text;
-    const m = text.match(/\{[\s\S]*\}/);
-    if (m) return JSON.parse(m[0]);
-    return null;
-  } catch (e) {
-    console.error('[TENNIS] Claude error:', e.message);
-    return null;
-  }
-}
-
-// ── ROUTE SCAN TENNIS ──────────────────────────────────────
-app.get('/api/scan-tennis', async (req, res) => {
-  try {
-    if (!TENNIS_API_KEY) {
-      return res.status(500).json({ error: 'TENNIS_API_KEY manquante dans .env' });
-    }
-
-    // 1. Récupérer les matchs ATP du jour
-    const fixtures = await getTennisFixturesToday();
-    console.log(`[TENNIS] ${fixtures.length} matchs trouvés pour aujourd'hui`);
-
-    if (fixtures.length === 0) {
-      return res.json({
-        picks: [], rejected: [], total_analyses: 0,
-        date: new Date().toLocaleDateString('fr-FR'),
-      });
-    }
-
-    // 2. Charger le classement ATP en parallèle (une seule fois)
-    const atpRankMap = await getTennisStandings();
-
-    const picks = [];
-    const rejected = [];
-
-    for (const fixture of fixtures) {
-      try {
-        const p1 = fixture.player1;
-        const p2 = fixture.player2;
-        if (!p1?.id || !p2?.id) continue;
-
-        console.log(`[TENNIS] Analyse: ${p1.name} vs ${p2.name}`);
-
-        // Récupérer H2H, forme et stats surface en parallèle
-        const [h2hFixtures, p1Recent, p2Recent, p1SurfStats, p2SurfStats] = await Promise.all([
-          getTennisH2H(p1.id, p2.id),
-          getPlayerRecentFixtures(p1.id),
-          getPlayerRecentFixtures(p2.id),
-          getPlayerSurfaceStats(p1.id),
-          getPlayerSurfaceStats(p2.id),
-        ]);
-
-        const analyse = analyseTennisMatch(
-          fixture, h2hFixtures, p1Recent, p2Recent,
-          atpRankMap, p1SurfStats, p2SurfStats
-        );
-
-        if (!analyse.alerte) {
-          rejected.push({
-            match: `${p1.name} vs ${p2.name}`,
-            raison: analyse.reason || 'Match trop équilibré ou données insuffisantes',
-          });
-          continue;
-        }
-
-        // Générer l'analyse Claude
-        const claudeAnalyse = await genererAnalyseTennis({
-          ...analyse,
-          fixture,
-        });
-
-        const heure = fixture.date
-          ? new Date(fixture.date).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
-          : '?';
-
-        picks.push({
-          match:          `${p1.name} vs ${p2.name}`,
-          competition:    fixture.tournamentName || 'ATP',
-          heure,
-          surface:        analyse.surface,
-          tournamentLevel: analyse.tournamentLevel,
-          favori:         analyse.favori?.name,
-          adversaire:     analyse.adversaire?.name,
-          // Rangs ATP
-          favori_rang:    analyse.favoriIsP1 ? analyse.rank1 : analyse.rank2,
-          adversaire_rang: analyse.favoriIsP1 ? analyse.rank2 : analyse.rank1,
-          scoreMatriciel: analyse.scoreMatriciel,
-          alerte:         analyse.alerte,
-          factors:        analyse.factors,
-          // Forme
-          favori_forme:   analyse.favoriIsP1 ? analyse.form1.formStr : analyse.form2.formStr,
-          adversaire_forme: analyse.favoriIsP1 ? analyse.form2.formStr : analyse.form1.formStr,
-          favori_bilan:   analyse.favoriIsP1
-            ? `${analyse.form1.wins}V/${analyse.form1.losses}D`
-            : `${analyse.form2.wins}V/${analyse.form2.losses}D`,
-          adversaire_bilan: analyse.favoriIsP1
-            ? `${analyse.form2.wins}V/${analyse.form2.losses}D`
-            : `${analyse.form1.wins}V/${analyse.form1.losses}D`,
-          // H2H
-          h2h_global:      `${analyse.favoriIsP1 ? analyse.h2hWins1 : analyse.h2hWins2}-${analyse.favoriIsP1 ? analyse.h2hWins2 : analyse.h2hWins1}`,
-          h2h_surface:     `${analyse.favoriIsP1 ? analyse.h2hSurfWins1 : analyse.h2hSurfWins2}-${analyse.favoriIsP1 ? analyse.h2hSurfWins2 : analyse.h2hSurfWins1}`,
-          h2h_total_matchs: analyse.h2hTotal,
-          // Analyse Claude
-          raison: claudeAnalyse?.raison || `${analyse.favori?.name} favori selon la matrice`,
-        });
-
-      } catch (e) {
-        console.error('[TENNIS] Erreur match:', e.message);
-      }
-    }
-
-    // Trier et sélectionner (2 VERT + 1 ORANGE + 1 ROUGE max)
-    picks.sort((a, b) => b.scoreMatriciel - a.scoreMatriciel);
-    const verts  = picks.filter(p => p.alerte === 'VERT').slice(0, 2);
-    const orange = picks.filter(p => p.alerte === 'ORANGE').slice(0, 1);
-    const rouge  = picks.filter(p => p.alerte === 'ROUGE').slice(0, 1);
-    const top    = [...verts, ...orange, ...rouge];
-
-    res.json({
-      date:            new Date().toLocaleDateString('fr-FR'),
-      total_analyses:  fixtures.length,
-      picks:           top,
-      rejected,
-    });
-
-  } catch (e) {
-    console.error('[TENNIS] Erreur scan:', e.message);
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// ── FIN MODULE TENNIS v2 ───────────────────────────────────
-
-app.get('/api/health', (req, res) => res.json({ status: 'ok', name: 'PicksAI', version: '4.2', season: SEASON }));
+app.get('/api/health', (req, res) => res.json({ status: 'ok', name: 'PicksAI', version: '4.1', season: SEASON }));
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, '../frontend/index.html')));
 
 const PORT = process.env.PORT || 3000;
