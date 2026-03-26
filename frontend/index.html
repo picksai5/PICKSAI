@@ -581,8 +581,8 @@
   </div>
 
   <!-- TENNIS PAGE -->
+  <!-- SCAN TENNIS PAGE -->
   <div class="page" id="page-tennis">
-    <!-- SCAN BTN -->
     <div class="scan-center">
       <button class="scan-btn" id="tennis-btn" onclick="doScanTennis()" style="background:linear-gradient(135deg,#0ea5e9,#0369a1);border-color:#0ea5e9">🎾 SCAN TENNIS ATP</button>
       <div class="scan-sub">RANG ATP · H2H SURFACE · FORME PONDÉRÉE · NIVEAU TOURNOI</div>
@@ -593,123 +593,11 @@
     <div class="empty" id="tennis-empty">
       <div class="empty-icon">🎾</div>
       <div class="empty-title">TENNIS PRÊT</div>
-      <div class="empty-text">Lance un scan pour analyser les matchs ATP du jour<br>via la <span style="color:#0ea5e9">Matrice Tennis v2</span></div>
+      <div class="empty-text">Lance un scan pour analyser les matchs ATP du jour<br>Ajoute les picks au <span style="color:#0ea5e9">📋 TRACK TENNIS</span></div>
     </div>
+  </div>
 
-    <!-- BANKROLL TENNIS -->
-    <div style="margin-top:16px">
-      <div class="bankroll-hero" style="background:linear-gradient(135deg,#0ea5e911,var(--bg2));border:1px solid #0ea5e933;border-radius:14px;padding:16px;margin-bottom:12px">
-        <div class="bankroll-label">BANKROLL TENNIS</div>
-        <div style="font-family:'Bebas Neue';font-size:42px;line-height:1" id="tennis-bankroll-amount">500€</div>
-        <div style="font-size:12px;font-weight:700" id="tennis-bankroll-sub">0€ profit · 0 picks joués</div>
-        <div class="sparkline"><canvas id="tennis-sparkline" height="60"></canvas></div>
-      </div>
-      <div class="stat-grid-2" style="margin-bottom:12px">
-        <div class="stat-box"><div class="stat-label">WIN RATE</div><div class="stat-value" id="tennis-wr">—</div></div>
-        <div class="stat-box"><div class="stat-label">ROI</div><div class="stat-value" id="tennis-roi">—</div></div>
-        <div class="stat-box"><div class="stat-label">ÉVOLUTION</div><div class="stat-value" id="tennis-evol" style="color:#0ea5e9">—</div></div>
-        <div class="stat-box"><div class="stat-label">COTE MOYENNE</div><div class="stat-value" id="tennis-cote-moy" style="color:#0ea5e9">—</div></div>
-        <div class="stat-box"><div class="stat-label">PICKS JOUÉS</div><div class="stat-value" id="tennis-total" style="color:#0ea5e9">0</div></div>
-      </div>
-
-      <!-- Bankrolls par catégorie tennis -->
-      <div style="margin-bottom:12px">
-        <div style="font-family:'Bebas Neue';font-size:14px;letter-spacing:2px;color:var(--muted);margin-bottom:8px">BANKROLL PAR FIABILITÉ</div>
-        <div style="display:flex;flex-direction:column;gap:8px">
-
-          <div style="background:var(--bg2);border:1px solid #10b98133;border-radius:10px;padding:12px">
-            <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="toggleTennisCatCurve('vert')">
-              <div style="font-family:'Bebas Neue';font-size:13px;color:#10b981">🟢 VERT</div>
-              <div style="font-family:'Bebas Neue';font-size:20px;color:#10b981" id="tennis-cat-vert-bankroll">—€</div>
-            </div>
-            <div id="tennis-cat-vert-curve-wrap" style="display:none;margin-top:8px"><canvas id="tennis-cat-vert-curve" height="60" style="width:100%"></canvas></div>
-            <div class="stat-grid-2" style="margin-top:8px;gap:4px">
-              <div class="stat-box" style="padding:6px"><div class="stat-label" style="font-size:9px">PICKS</div><div class="stat-value" style="font-size:14px" id="tennis-cat-vert-total">0</div></div>
-              <div class="stat-box" style="padding:6px"><div class="stat-label" style="font-size:9px">WIN RATE</div><div class="stat-value" style="font-size:14px" id="tennis-cat-vert-wr">—</div></div>
-              <div class="stat-box" style="padding:6px"><div class="stat-label" style="font-size:9px">ÉVOL.</div><div class="stat-value" style="font-size:14px" id="tennis-cat-vert-evol">—</div></div>
-              <div class="stat-box" style="padding:6px"><div class="stat-label" style="font-size:9px">ROI</div><div class="stat-value" style="font-size:14px" id="tennis-cat-vert-roi">—</div></div>
-              <div class="stat-box" style="padding:6px"><div class="stat-label" style="font-size:9px">COTE MOY.</div><div class="stat-value" style="font-size:14px" id="tennis-cat-vert-cote">—</div></div>
-            </div>
-          </div>
-
-          <div style="background:var(--bg2);border:1px solid #f59e0b33;border-radius:10px;padding:12px">
-            <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="toggleTennisCatCurve('orange')">
-              <div style="font-family:'Bebas Neue';font-size:13px;color:#f59e0b">🟡 ORANGE</div>
-              <div style="font-family:'Bebas Neue';font-size:20px;color:#f59e0b" id="tennis-cat-orange-bankroll">—€</div>
-            </div>
-            <div id="tennis-cat-orange-curve-wrap" style="display:none;margin-top:8px"><canvas id="tennis-cat-orange-curve" height="60" style="width:100%"></canvas></div>
-            <div class="stat-grid-2" style="margin-top:8px;gap:4px">
-              <div class="stat-box" style="padding:6px"><div class="stat-label" style="font-size:9px">PICKS</div><div class="stat-value" style="font-size:14px" id="tennis-cat-orange-total">0</div></div>
-              <div class="stat-box" style="padding:6px"><div class="stat-label" style="font-size:9px">WIN RATE</div><div class="stat-value" style="font-size:14px" id="tennis-cat-orange-wr">—</div></div>
-              <div class="stat-box" style="padding:6px"><div class="stat-label" style="font-size:9px">ÉVOL.</div><div class="stat-value" style="font-size:14px" id="tennis-cat-orange-evol">—</div></div>
-              <div class="stat-box" style="padding:6px"><div class="stat-label" style="font-size:9px">ROI</div><div class="stat-value" style="font-size:14px" id="tennis-cat-orange-roi">—</div></div>
-              <div class="stat-box" style="padding:6px"><div class="stat-label" style="font-size:9px">COTE MOY.</div><div class="stat-value" style="font-size:14px" id="tennis-cat-orange-cote">—</div></div>
-            </div>
-          </div>
-
-          <div style="background:var(--bg2);border:1px solid #ef444433;border-radius:10px;padding:12px">
-            <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="toggleTennisCatCurve('rouge')">
-              <div style="font-family:'Bebas Neue';font-size:13px;color:#ef4444">🔴 ROUGE</div>
-              <div style="font-family:'Bebas Neue';font-size:20px;color:#ef4444" id="tennis-cat-rouge-bankroll">—€</div>
-            </div>
-            <div id="tennis-cat-rouge-curve-wrap" style="display:none;margin-top:8px"><canvas id="tennis-cat-rouge-curve" height="60" style="width:100%"></canvas></div>
-            <div class="stat-grid-2" style="margin-top:8px;gap:4px">
-              <div class="stat-box" style="padding:6px"><div class="stat-label" style="font-size:9px">PICKS</div><div class="stat-value" style="font-size:14px" id="tennis-cat-rouge-total">0</div></div>
-              <div class="stat-box" style="padding:6px"><div class="stat-label" style="font-size:9px">WIN RATE</div><div class="stat-value" style="font-size:14px" id="tennis-cat-rouge-wr">—</div></div>
-              <div class="stat-box" style="padding:6px"><div class="stat-label" style="font-size:9px">ÉVOL.</div><div class="stat-value" style="font-size:14px" id="tennis-cat-rouge-evol">—</div></div>
-              <div class="stat-box" style="padding:6px"><div class="stat-label" style="font-size:9px">ROI</div><div class="stat-value" style="font-size:14px" id="tennis-cat-rouge-roi">—</div></div>
-              <div class="stat-box" style="padding:6px"><div class="stat-label" style="font-size:9px">COTE MOY.</div><div class="stat-value" style="font-size:14px" id="tennis-cat-rouge-cote">—</div></div>
-            </div>
-          </div>
-
-        </div>
-      </div>
-
-      <!-- Paramètres capital tennis -->
-      <div style="display:flex;gap:8px;margin-bottom:10px;align-items:center">
-        <div style="font-size:11px;color:var(--muted);flex-shrink:0">Capital base tennis :</div>
-        <input type="number" id="tennis-capital-input" placeholder="500" style="flex:1;padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:12px">
-        <button onclick="saveTtrackCapital()" style="padding:6px 12px;border-radius:6px;border:1px solid #0ea5e955;background:#0ea5e922;color:#0ea5e9;font-size:11px;font-family:'Bebas Neue';cursor:pointer">OK</button>
-      </div>
-
-      <!-- Courbe bankroll tennis -->
-      <div id="tennis-curve-wrap" style="display:none;background:var(--bg2);border-radius:12px;padding:14px;margin-bottom:14px">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-          <div style="font-family:'Bebas Neue';font-size:14px;letter-spacing:2px;color:var(--muted)">COURBE BANKROLL TENNIS</div>
-          <div id="tennis-curve-stats" style="display:flex;gap:14px;font-size:11px"></div>
-        </div>
-        <canvas id="tennis-curve" height="100" style="width:100%"></canvas>
-      </div>
-
-      <!-- Track Record Tennis -->
-      <div>
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-          <div style="font-family:'Bebas Neue';font-size:16px;letter-spacing:3px;color:var(--muted)">TRACK RECORD TENNIS</div>
-        </div>
-        <!-- Filtres -->
-        <div style="display:flex;gap:6px;margin-bottom:10px">
-          <button id="ttf-all" onclick="setTennisTrackFilter('all')" style="flex:1;padding:7px;border-radius:6px;border:1px solid #0ea5e9;background:#0ea5e9;color:#fff;font-family:'Bebas Neue';font-size:12px;cursor:pointer">TOUS</button>
-          <button id="ttf-vert" onclick="setTennisTrackFilter('VERT')" style="flex:1;padding:7px;border-radius:6px;border:1px solid #10b98155;background:transparent;color:#10b981;font-family:'Bebas Neue';font-size:12px;cursor:pointer">🟢 VERT</button>
-          <button id="ttf-orange" onclick="setTennisTrackFilter('ORANGE')" style="flex:1;padding:7px;border-radius:6px;border:1px solid #f59e0b55;background:transparent;color:#f59e0b;font-family:'Bebas Neue';font-size:12px;cursor:pointer">🟡 ORANGE</button>
-          <button id="ttf-rouge" onclick="setTennisTrackFilter('ROUGE')" style="flex:1;padding:7px;border-radius:6px;border:1px solid #ef444455;background:transparent;color:#ef4444;font-family:'Bebas Neue';font-size:12px;cursor:pointer">🔴 ROUGE</button>
-        </div>
-        <!-- Stats filtrées -->
-        <div class="stat-grid" style="margin-bottom:10px">
-          <div class="stat-box"><div class="stat-label">TOTAL PICKS</div><div class="stat-value" id="tennis-track-total" style="color:#0ea5e9">0</div></div>
-          <div class="stat-box"><div class="stat-label">WIN RATE</div><div class="stat-value" id="tennis-track-wr">0%</div></div>
-          <div class="stat-box"><div class="stat-label">COTE MOYENNE</div><div class="stat-value" id="tennis-track-cote-moy" style="color:#0ea5e9">—</div></div>
-          <div class="stat-box"><div class="stat-label">STREAK</div><div class="stat-value" id="tennis-track-streak">—</div></div>
-        </div>
-        <div id="tennis-track-list">
-          <div class="empty">
-            <div class="empty-icon">🎾</div>
-            <div class="empty-title">AUCUN PICK TENNIS</div>
-            <div class="empty-text">Lance un scan tennis et ajoute des picks au track record.</div>
-          </div>
-        </div>
-      </div>
-    </div>
-  <!-- TRACK TENNIS PAGE -->
+    <!-- TRACK TENNIS PAGE -->
   <div class="page" id="page-track-tennis">
 
     <!-- Bankroll globale -->
@@ -734,66 +622,51 @@
       <button onclick="saveTtrackCapital()" style="padding:6px 14px;border-radius:6px;border:1px solid #0ea5e955;background:#0ea5e922;color:#0ea5e9;font-size:12px;font-family:'Bebas Neue';cursor:pointer">OK</button>
     </div>
 
-    <!-- Par catégorie avec courbes cliquables -->
+    <!-- Par catégorie -->
     <div style="margin-bottom:14px">
       <div style="font-family:'Bebas Neue';font-size:14px;letter-spacing:2px;color:var(--muted);margin-bottom:8px">BANKROLL PAR FIABILITÉ</div>
       <div style="display:flex;flex-direction:column;gap:8px">
 
         <div style="background:var(--bg2);border:1px solid #10b98133;border-radius:10px;padding:12px">
-          <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="tt_toggleCatCurve('vert')">
+          <div style="display:flex;justify-content:space-between;align-items:center">
             <span style="font-family:'Bebas Neue';color:#10b981">🟢 VERT</span>
             <span style="font-family:'Bebas Neue';font-size:20px;color:#10b981" id="ttrack-cat-vert-bankroll">—€</span>
           </div>
-          <div id="ttrack-cat-vert-curve-wrap" style="display:none;margin-top:8px"><canvas id="ttrack-cat-vert-curve" height="60" style="width:100%"></canvas></div>
           <div class="stat-grid-2" style="margin-top:8px;gap:4px">
             <div class="stat-box" style="padding:6px"><div class="stat-label" style="font-size:9px">PICKS</div><div class="stat-value" style="font-size:14px" id="ttrack-cat-vert-total">0</div></div>
             <div class="stat-box" style="padding:6px"><div class="stat-label" style="font-size:9px">WIN RATE</div><div class="stat-value" style="font-size:14px" id="ttrack-cat-vert-wr">—</div></div>
-            <div class="stat-box" style="padding:6px"><div class="stat-label" style="font-size:9px">ÉVOL.</div><div class="stat-value" style="font-size:14px" id="ttrack-cat-vert-evol">—</div></div>
             <div class="stat-box" style="padding:6px"><div class="stat-label" style="font-size:9px">ROI</div><div class="stat-value" style="font-size:14px" id="ttrack-cat-vert-roi">—</div></div>
             <div class="stat-box" style="padding:6px"><div class="stat-label" style="font-size:9px">COTE MOY.</div><div class="stat-value" style="font-size:14px" id="ttrack-cat-vert-cote">—</div></div>
           </div>
         </div>
 
         <div style="background:var(--bg2);border:1px solid #f59e0b33;border-radius:10px;padding:12px">
-          <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="tt_toggleCatCurve('orange')">
+          <div style="display:flex;justify-content:space-between;align-items:center">
             <span style="font-family:'Bebas Neue';color:#f59e0b">🟡 ORANGE</span>
             <span style="font-family:'Bebas Neue';font-size:20px;color:#f59e0b" id="ttrack-cat-orange-bankroll">—€</span>
           </div>
-          <div id="ttrack-cat-orange-curve-wrap" style="display:none;margin-top:8px"><canvas id="ttrack-cat-orange-curve" height="60" style="width:100%"></canvas></div>
           <div class="stat-grid-2" style="margin-top:8px;gap:4px">
             <div class="stat-box" style="padding:6px"><div class="stat-label" style="font-size:9px">PICKS</div><div class="stat-value" style="font-size:14px" id="ttrack-cat-orange-total">0</div></div>
             <div class="stat-box" style="padding:6px"><div class="stat-label" style="font-size:9px">WIN RATE</div><div class="stat-value" style="font-size:14px" id="ttrack-cat-orange-wr">—</div></div>
-            <div class="stat-box" style="padding:6px"><div class="stat-label" style="font-size:9px">ÉVOL.</div><div class="stat-value" style="font-size:14px" id="ttrack-cat-orange-evol">—</div></div>
             <div class="stat-box" style="padding:6px"><div class="stat-label" style="font-size:9px">ROI</div><div class="stat-value" style="font-size:14px" id="ttrack-cat-orange-roi">—</div></div>
             <div class="stat-box" style="padding:6px"><div class="stat-label" style="font-size:9px">COTE MOY.</div><div class="stat-value" style="font-size:14px" id="ttrack-cat-orange-cote">—</div></div>
           </div>
         </div>
 
         <div style="background:var(--bg2);border:1px solid #ef444433;border-radius:10px;padding:12px">
-          <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="tt_toggleCatCurve('rouge')">
+          <div style="display:flex;justify-content:space-between;align-items:center">
             <span style="font-family:'Bebas Neue';color:#ef4444">🔴 ROUGE</span>
             <span style="font-family:'Bebas Neue';font-size:20px;color:#ef4444" id="ttrack-cat-rouge-bankroll">—€</span>
           </div>
-          <div id="ttrack-cat-rouge-curve-wrap" style="display:none;margin-top:8px"><canvas id="ttrack-cat-rouge-curve" height="60" style="width:100%"></canvas></div>
           <div class="stat-grid-2" style="margin-top:8px;gap:4px">
             <div class="stat-box" style="padding:6px"><div class="stat-label" style="font-size:9px">PICKS</div><div class="stat-value" style="font-size:14px" id="ttrack-cat-rouge-total">0</div></div>
             <div class="stat-box" style="padding:6px"><div class="stat-label" style="font-size:9px">WIN RATE</div><div class="stat-value" style="font-size:14px" id="ttrack-cat-rouge-wr">—</div></div>
-            <div class="stat-box" style="padding:6px"><div class="stat-label" style="font-size:9px">ÉVOL.</div><div class="stat-value" style="font-size:14px" id="ttrack-cat-rouge-evol">—</div></div>
             <div class="stat-box" style="padding:6px"><div class="stat-label" style="font-size:9px">ROI</div><div class="stat-value" style="font-size:14px" id="ttrack-cat-rouge-roi">—</div></div>
             <div class="stat-box" style="padding:6px"><div class="stat-label" style="font-size:9px">COTE MOY.</div><div class="stat-value" style="font-size:14px" id="ttrack-cat-rouge-cote">—</div></div>
           </div>
         </div>
 
       </div>
-    </div>
-
-    <!-- Courbe évolutive globale -->
-    <div id="ttrack-curve-wrap" style="display:none;background:var(--bg2);border-radius:12px;padding:14px;margin-bottom:12px">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-        <div style="font-family:'Bebas Neue';font-size:13px;letter-spacing:2px;color:var(--muted)">COURBE BANKROLL TENNIS</div>
-        <div id="ttrack-curve-stats" style="font-size:11px;color:var(--muted)"></div>
-      </div>
-      <canvas id="ttrack-curve" height="100" style="width:100%"></canvas>
     </div>
 
     <!-- Filtres -->
@@ -2796,8 +2669,6 @@ function renderBacktestResults(data) {
 
 // ── INIT ──────────────────────────────────────────────────
 loadState();
-(async () => { await tt_loadTrack(); tt_render(); })();
-(async () => { await loadCombiState(); renderCombis(); })();
 (async () => {
   await loadTirsState();
   renderTirsTrack();
@@ -2820,303 +2691,224 @@ renderMatrix();
 
 // ══════════════════════════════════════════════════════
 // ══════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════
 // ── MODULE TENNIS ──────────────────────────────────────
 // ══════════════════════════════════════════════════════
 
-// ── STORAGE TENNIS ──────────────────────────────────────
-function tt_getTrack() {
-  try { return JSON.parse(localStorage.getItem('picksai_tennis_track') || '[]'); } catch(e) { return []; }
-}
-async function tt_saveTrack(t) {
-  const s = JSON.stringify(t);
-  try { await window.storage.set('picksai_tennis_track', s); } catch {}
-  try { localStorage.setItem('picksai_tennis_track', s); } catch {}
-}
-async function tt_loadTrack() {
-  try {
-    const r = await window.storage.get('picksai_tennis_track');
-    if (r?.value) localStorage.setItem('picksai_tennis_track', r.value);
-  } catch {}
-}
-function tt_getCapital() {
-  return parseFloat(localStorage.getItem('picksai_tennis_capital') || '500');
-}
+// ── STORAGE ─────────────────────────────────────────────
+const TT_PICKS_KEY    = 'picksai_tt_picks';
+const TT_CAPITAL_KEY  = 'picksai_tt_capital';
+const TT_MISE_KEY     = 'picksai_tt_mise';
 
-// ── CAPITAL ──────────────────────────────────────────────
-function saveTtrackCapital() {
-  const inp = document.getElementById('ttrack-capital-input');
-  if (!inp) return;
-  const v = parseFloat(inp.value);
-  if (isNaN(v) || v <= 0) { alert('Capital invalide'); return; }
-  localStorage.setItem('picksai_tennis_capital', String(v));
-  tt_render();
-}
+function tt_getPicks()  { try { return JSON.parse(localStorage.getItem(TT_PICKS_KEY) || '[]'); } catch(e) { return []; } }
+function tt_savePicks(p){ localStorage.setItem(TT_PICKS_KEY, JSON.stringify(p)); }
+function tt_getCapital(){ return parseFloat(localStorage.getItem(TT_CAPITAL_KEY) || '500'); }
+function tt_getMise()   { return parseFloat(localStorage.getItem(TT_MISE_KEY) || String(Math.round(tt_getCapital()*0.05))); }
 
 // ── FILTRE ───────────────────────────────────────────────
 let ttFilter = 'all';
 function setTtrackFilter(f) {
   ttFilter = f;
+  const colors = { all:'#0ea5e9', VERT:'#10b981', ORANGE:'#f59e0b', ROUGE:'#ef4444' };
   ['all','VERT','ORANGE','ROUGE'].forEach(k => {
     const btn = document.getElementById('ttf-' + k.toLowerCase());
     if (!btn) return;
-    const colors = { all:'#0ea5e9', VERT:'#10b981', ORANGE:'#f59e0b', ROUGE:'#ef4444' };
-    const active = k === f;
-    btn.style.background = active ? colors[k] : 'transparent';
-    btn.style.color = active ? '#fff' : colors[k];
-    btn.style.borderColor = active ? colors[k] : colors[k] + '55';
+    const active = (k === f);
+    btn.style.background   = active ? colors[k] : 'transparent';
+    btn.style.color        = active ? '#fff'     : colors[k];
+    btn.style.borderColor  = active ? colors[k]  : colors[k]+'55';
   });
-  tt_renderList();
+  tt_renderTrack();
 }
 
-// ── RENDER BANKROLL ──────────────────────────────────────
-let ttSpark = null;
-function tt_renderBankroll() {
+// ── CAPITAL ──────────────────────────────────────────────
+function saveTtrackCapital() {
+  const v = parseFloat(document.getElementById('ttrack-capital-input').value);
+  if (!v || v <= 0) { alert('Capital invalide'); return; }
+  localStorage.setItem(TT_CAPITAL_KEY, String(v));
+  localStorage.setItem(TT_MISE_KEY, String(Math.round(v * 0.05)));
+  tt_renderTrack();
+}
+
+// ── RESOLVE (GAGNÉ / PERDU) ──────────────────────────────
+function tt_resolvePick(id, won) {
+  const picks = tt_getPicks();
+  const pick  = picks.find(p => p.id === id);
+  if (!pick || !pick.pending) return;
+  const mise = pick.mise || tt_getMise();
+  pick.won     = won;
+  pick.pending = false;
+  pick.gain    = won ? Math.round(mise * (pick.cote - 1)) : -Math.round(mise);
+  tt_savePicks(picks);
+  tt_renderTrack();
+}
+
+// ── DELETE ───────────────────────────────────────────────
+function tt_deletePick(id) {
+  tt_savePicks(tt_getPicks().filter(p => p.id !== id));
+  tt_renderTrack();
+}
+
+// ── EDIT (remet en pending) ───────────────────────────────
+function tt_editPick(id) {
+  const picks = tt_getPicks();
+  const pick  = picks.find(p => p.id === id);
+  if (!pick) return;
+  pick.pending = true;
+  pick.won     = undefined;
+  pick.gain    = undefined;
+  tt_savePicks(picks);
+  tt_renderTrack();
+}
+
+// ── RENDER LISTE ─────────────────────────────────────────
+function tt_renderPicksList(picks) {
+  return picks.map((p, i) => {
+    const ac          = p.alerte==='VERT'?'#10b981':p.alerte==='ORANGE'?'#f59e0b':'#ef4444';
+    const isPending   = p.pending === true;
+    const borderColor = isPending ? '#f59e0b44' : p.won ? '#10b98133' : '#ef444422';
+    const statusIcon  = isPending ? '⏳' : p.won ? '✅' : '❌';
+    const gainDisplay = isPending
+      ? `<div style="font-family:'Bebas Neue';font-size:14px;color:#f59e0b;letter-spacing:1px">⏳ EN ATTENTE</div>`
+      : `<div class="track-gain" style="color:${(p.gain||0)>=0?'var(--green)':'var(--red)'}">${(p.gain||0)>=0?'+':''}${p.gain||0}€</div>`;
+    return `
+      <div class="track-item" style="border-color:${borderColor}">
+        <div class="track-header">
+          <div style="flex:1">
+            <div class="track-player">
+              <span>${statusIcon}</span>
+              <span class="track-name">Victoire ${p.favori||'—'}</span>
+              <span class="track-type">${p.competition||'ATP'}</span>
+              ${p.alerte?`<span style="font-size:10px;padding:2px 6px;border-radius:3px;background:${ac}22;color:${ac};border:1px solid ${ac}44">${p.alerte}</span>`:''}
+            </div>
+            <div class="track-match">${p.match||'—'} · 🎾 ${p.surface||'—'}</div>
+            <div style="font-size:10px;color:var(--muted);margin-top:2px">
+              #${p.favori_rang||'?'} vs #${p.adversaire_rang||'?'} · Score ${p.scoreMatriciel||'—'}
+            </div>
+            ${isPending ? `
+            <div style="display:flex;gap:6px;margin-top:8px">
+              <button onclick="tt_resolvePick('${p.id}',true)"
+                style="flex:1;padding:7px;background:#10b98122;border:1px solid #10b98155;color:#10b981;border-radius:6px;cursor:pointer;font-family:'Bebas Neue';font-size:13px">
+                ✅ GAGNÉ
+              </button>
+              <button onclick="tt_resolvePick('${p.id}',false)"
+                style="flex:1;padding:7px;background:#ef444422;border:1px solid #ef444455;color:#ef4444;border-radius:6px;cursor:pointer;font-family:'Bebas Neue';font-size:13px">
+                ❌ PERDU
+              </button>
+            </div>` : ''}
+          </div>
+          <div style="text-align:right;flex-shrink:0;margin-left:14px">
+            ${gainDisplay}
+            <div class="track-mise">Mise: ${p.mise||tt_getMise()}€ · <span style="color:#0ea5e9;font-weight:500">×${p.cote||'—'}</span></div>
+            <div class="track-date">${new Date(p.date).toLocaleDateString('fr-FR')}</div>
+            <div style="display:flex;gap:6px;margin-top:6px;justify-content:flex-end">
+              <button onclick="tt_editPick('${p.id}')"
+                style="padding:3px 8px;background:transparent;border:1px solid #3b82f644;color:#3b82f6;border-radius:4px;cursor:pointer;font-size:10px"
+                onmouseover="this.style.background='#3b82f622'" onmouseout="this.style.background='transparent'">✏️ Modifier</button>
+              <button onclick="tt_deletePick('${p.id}')"
+                style="padding:3px 8px;background:transparent;border:1px solid #ef444444;color:#ef4444;border-radius:4px;cursor:pointer;font-size:10px"
+                onmouseover="this.style.background='#ef444422'" onmouseout="this.style.background='transparent'">🗑</button>
+            </div>
+          </div>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+// ── RENDER TRACK (bankroll + liste) ─────────────────────
+function tt_renderTrack() {
+  const allPicks = tt_getPicks();
+  const capital  = tt_getCapital();
+  const mise0    = tt_getMise();
+  const filtered = ttFilter === 'all' ? allPicks : allPicks.filter(p => p.alerte === ttFilter);
+
+  // --- Bankroll globale ---
+  const resolved = allPicks.filter(p => !p.pending);
+  const won      = resolved.filter(p => p.won);
+  const profit   = resolved.reduce((a,p) => a + (p.gain||0), 0);
+  const bankroll = capital + profit;
+  const wr       = resolved.length ? Math.round(won.length/resolved.length*100) : 0;
+  const totalMise= resolved.reduce((a,p) => a + (p.mise||mise0), 0);
+  const roi      = totalMise > 0 ? +(profit/totalMise*100).toFixed(1) : 0;
+  const evol     = +((bankroll-capital)/capital*100).toFixed(1);
+  const coteMoy  = resolved.length ? +(resolved.reduce((a,p)=>a+(p.cote||1.7),0)/resolved.length).toFixed(2) : null;
+
   const amEl = document.getElementById('ttrack-bankroll-amount');
-  if (!amEl) return; // page pas dans le DOM
+  if (!amEl) return;
 
-  const track = tt_getTrack();
-  const capital = tt_getCapital();
-  const mise0 = Math.round(capital * 0.05);
-
-  // Capital input
-  const inp = document.getElementById('ttrack-capital-input');
-  if (inp && inp.value === '') inp.value = capital;
-
-  // Calcul bankroll
-  const played = track.filter(p => p.resultat === 'WIN' || p.resultat === 'LOSS');
-  const won = played.filter(p => p.resultat === 'WIN');
-  let bankroll = capital;
-  const curve = [capital];
-  played.forEach(p => {
-    const m = p.mise || mise0;
-    bankroll = +(bankroll + (p.resultat === 'WIN' ? m*(p.cote-1) : -m)).toFixed(2);
-    curve.push(bankroll);
-  });
-  const profit = +(bankroll - capital).toFixed(2);
-  const totalMise = played.reduce((s,p) => s + (p.mise||mise0), 0);
-  const wr   = played.length ? Math.round(won.length/played.length*100) : 0;
-  const roi  = totalMise > 0 ? +(profit/totalMise*100).toFixed(1) : 0;
-  const evol = played.length ? +((bankroll-capital)/capital*100).toFixed(1) : 0;
-  const coteMoy = played.length ? +(played.reduce((s,p)=>s+(p.cote||1.7),0)/played.length).toFixed(2) : null;
-
-  // Affichage
   amEl.textContent = bankroll.toFixed(0) + '€';
   amEl.style.color = profit >= 0 ? '#10b981' : '#ef4444';
   document.getElementById('ttrack-bankroll-sub').textContent =
-    (profit>=0?'+':'') + profit + '€ profit · ' + played.length + ' picks joués';
-  document.getElementById('ttrack-wr').textContent = wr + '%';
-  document.getElementById('ttrack-roi').textContent = (roi>=0?'+':'') + roi + '%';
+    (profit>=0?'+':'') + profit + '€ profit · ' + resolved.length + ' picks joués';
+  document.getElementById('ttrack-wr').textContent   = wr + '%';
+  document.getElementById('ttrack-roi').textContent  = (roi>=0?'+':'') + roi + '%';
   const evolEl = document.getElementById('ttrack-evol');
   evolEl.textContent = (evol>=0?'+':'') + evol + '%';
   evolEl.style.color = evol >= 0 ? '#10b981' : '#ef4444';
   document.getElementById('ttrack-cote-moy').textContent = coteMoy || '—';
 
+  // Capital input
+  const cinp = document.getElementById('ttrack-capital-input');
+  if (cinp && cinp.value === '') cinp.value = capital;
+
   // Sparkline
-  if (curve.length > 1) {
+  if (resolved.length >= 1) {
+    let b = capital;
+    const curve = [capital];
+    [...resolved].reverse().forEach(p => { b += (p.gain||0); curve.push(b); });
     const ctx = document.getElementById('ttrack-sparkline');
     if (ctx) {
-      if (ttSpark) { try { ttSpark.destroy(); } catch(e){} ttSpark = null; }
-      ttSpark = new Chart(ctx.getContext('2d'), {
-        type: 'line',
-        data: { labels: curve.map((_,i)=>i),
-                datasets: [{ data: curve, borderColor: profit>=0?'#0ea5e9':'#ef4444',
-                             borderWidth:2, pointRadius:0, fill:true,
-                             backgroundColor: profit>=0?'#0ea5e911':'#ef444411', tension:0.4 }] },
-        options: { responsive:true, plugins:{legend:{display:false}},
-                   scales:{x:{display:false},y:{display:false}}, animation:false }
+      if (window._ttSpark) { try { window._ttSpark.destroy(); } catch(e){} }
+      window._ttSpark = new Chart(ctx.getContext('2d'), {
+        type:'line',
+        data:{ labels: curve.map((_,i)=>i),
+               datasets:[{ data:curve, borderColor:profit>=0?'#0ea5e9':'#ef4444',
+                           borderWidth:2, pointRadius:0, fill:true,
+                           backgroundColor:profit>=0?'#0ea5e911':'#ef444411', tension:0.4 }] },
+        options:{ responsive:true, plugins:{legend:{display:false}},
+                  scales:{x:{display:false},y:{display:false}}, animation:false }
       });
     }
   }
 
-  // Par catégorie avec évolution + courbes
+  // --- Par catégorie ---
   ['vert','orange','rouge'].forEach(cat => {
     const label = cat.toUpperCase();
-    const cp = played.filter(p => p.alerte === label);
-    const cw = cp.filter(p => p.resultat === 'WIN');
-    let cb = capital;
-    cp.forEach(p => {
-      const m = p.mise || mise0;
-      cb = +(cb + (p.resultat==='WIN' ? m*(p.cote-1) : -m)).toFixed(2);
-    });
-    const cprofit = +(cb - capital).toFixed(2);
-    const cwr  = cp.length ? Math.round(cw.length/cp.length*100) : 0;
-    const ctm  = cp.reduce((s,p)=>s+(p.mise||mise0),0);
-    const croi = ctm > 0 ? +((cprofit/ctm)*100).toFixed(1) : 0;
-    const cevol = cp.length ? +((cprofit/capital)*100).toFixed(1) : null;
-    const ccote= cp.length ? +(cp.reduce((s,p)=>s+(p.cote||1.7),0)/cp.length).toFixed(2) : null;
-    const catColor = cat === 'vert' ? '#10b981' : cat === 'orange' ? '#f59e0b' : '#ef4444';
-
-    const bEl = document.getElementById('ttrack-cat-'+cat+'-bankroll');
+    const cp    = resolved.filter(p => p.alerte === label);
+    const cw    = cp.filter(p => p.won);
+    const cprofit = cp.reduce((a,p)=>a+(p.gain||0),0);
+    const cb    = capital + cprofit;
+    const cwr   = cp.length ? Math.round(cw.length/cp.length*100) : 0;
+    const ctm   = cp.reduce((a,p)=>a+(p.mise||mise0),0);
+    const croi  = ctm > 0 ? +((cprofit/ctm)*100).toFixed(1) : 0;
+    const ccote = cp.length ? +(cp.reduce((a,p)=>a+(p.cote||1.7),0)/cp.length).toFixed(2) : null;
+    const bEl   = document.getElementById('ttrack-cat-'+cat+'-bankroll');
     if (!bEl) return;
     bEl.textContent = cb.toFixed(0) + '€';
-    bEl.style.color = cprofit >= 0 ? catColor : '#ef4444';
     document.getElementById('ttrack-cat-'+cat+'-total').textContent = cp.length;
-    document.getElementById('ttrack-cat-'+cat+'-wr').textContent = cwr + '%';
-    const evolEl = document.getElementById('ttrack-cat-'+cat+'-evol');
-    if (evolEl && cevol !== null) {
-      evolEl.textContent = (cevol>=0?'+':'') + cevol + '%';
-      evolEl.style.color = cevol >= 0 ? catColor : '#ef4444';
-    }
-    const roiEl = document.getElementById('ttrack-cat-'+cat+'-roi');
-    if (roiEl) { roiEl.textContent = (croi>=0?'+':'') + croi + '%'; roiEl.style.color = croi >= 0 ? catColor : '#ef4444'; }
-    document.getElementById('ttrack-cat-'+cat+'-cote').textContent = ccote ? '×'+ccote : '—';
+    document.getElementById('ttrack-cat-'+cat+'-wr').textContent    = cwr + '%';
+    document.getElementById('ttrack-cat-'+cat+'-roi').textContent   = (croi>=0?'+':'')+croi+'%';
+    document.getElementById('ttrack-cat-'+cat+'-cote').textContent  = ccote || '—';
   });
 
-  // Courbe globale
-  tt_drawGlobalCurve(played, capital);
-}
+  // --- Stats filtrées ---
+  const fResolved = filtered.filter(p => !p.pending);
+  const fWon      = fResolved.filter(p => p.won);
+  const fWr       = fResolved.length ? Math.round(fWon.length/fResolved.length*100) : 0;
+  const fCote     = fResolved.length ? +(fResolved.reduce((a,p)=>a+(p.cote||1.7),0)/fResolved.length).toFixed(2) : null;
 
-function tt_drawGlobalCurve(played, capital) {
-  const wrap = document.getElementById('ttrack-curve-wrap');
-  const canvas = document.getElementById('ttrack-curve');
-  const statsEl = document.getElementById('ttrack-curve-stats');
-  if (!wrap || !canvas) return;
-  if (played.length < 2) { wrap.style.display = 'none'; return; }
-
-  wrap.style.display = 'block';
-  canvas.width = canvas.offsetWidth || 340;
-  canvas.height = 100;
-  const ctx = canvas.getContext('2d');
-  const W = canvas.width, H = canvas.height;
-
-  let b = capital;
-  const values = [b];
-  [...played].forEach(p => {
-    const m = p.mise || Math.round(capital * 0.05);
-    b = +(b + (p.resultat === 'WIN' ? m*(p.cote-1) : -m)).toFixed(2);
-    values.push(b);
-  });
-
-  const profit = values[values.length-1] - capital;
-  const isPos = profit >= 0;
-  const lineColor = isPos ? '#0ea5e9' : '#ef4444';
-  const min = Math.min(...values) - 5, max = Math.max(...values) + 5, range = max - min || 1;
-
-  ctx.clearRect(0, 0, W, H);
-  const grad = ctx.createLinearGradient(0, 0, 0, H);
-  grad.addColorStop(0, lineColor + '30'); grad.addColorStop(1, lineColor + '03');
-  ctx.beginPath();
-  values.forEach((v, i) => {
-    const x = (i/(values.length-1))*W, y = H-((v-min)/range)*(H-12)-6;
-    i===0 ? ctx.moveTo(x,y) : ctx.lineTo(x,y);
-  });
-  ctx.lineTo(W,H); ctx.lineTo(0,H); ctx.closePath();
-  ctx.fillStyle = grad; ctx.fill();
-
-  ctx.beginPath();
-  ctx.strokeStyle = lineColor; ctx.lineWidth = 2; ctx.lineJoin = 'round';
-  values.forEach((v, i) => {
-    const x = (i/(values.length-1))*W, y = H-((v-min)/range)*(H-12)-6;
-    i===0 ? ctx.moveTo(x,y) : ctx.lineTo(x,y);
-  });
-  ctx.stroke();
-
-  played.forEach((p, i) => {
-    const x = ((i+1)/(values.length-1))*W;
-    const y = H-((values[i+1]-min)/range)*(H-12)-6;
-    const dotColor = p.alerte==='VERT'?'#10b981':p.alerte==='ORANGE'?'#f59e0b':'#ef4444';
-    ctx.beginPath(); ctx.arc(x, y, 3, 0, Math.PI*2);
-    ctx.fillStyle = p.resultat==='WIN' ? dotColor : '#ef4444';
-    ctx.fill();
-  });
-
-  const won = played.filter(p=>p.resultat==='WIN').length;
-  const coteMoy = played.length ? (played.reduce((s,p)=>s+(p.cote||1.7),0)/played.length).toFixed(2) : null;
-  if (statsEl) statsEl.innerHTML = `<span style="color:${lineColor};font-weight:500">${won}W / ${played.length-won}L</span>
-    <span style="color:${profit>=0?'#10b981':'#ef4444'};font-weight:500;margin-left:8px">${profit>=0?'+':''}${profit.toFixed(0)}€</span>
-    ${coteMoy ? `<span style="color:var(--muted);margin-left:8px">Cote moy. <strong style="color:var(--text)">×${coteMoy}</strong></span>` : ''}`;
-}
-
-// ── RENDER LISTE ─────────────────────────────────────────
-
-// ── COURBES PAR CATÉGORIE TENNIS ─────────────────────────
-function tt_toggleCatCurve(cat) {
-  const wrap = document.getElementById('ttrack-cat-'+cat+'-curve-wrap');
-  if (!wrap) return;
-  const visible = wrap.style.display !== 'none';
-  wrap.style.display = visible ? 'none' : 'block';
-  if (!visible) tt_drawCatCurve(cat);
-}
-
-function tt_drawCatCurve(cat) {
-  const canvas = document.getElementById('ttrack-cat-'+cat+'-curve');
-  if (!canvas) return;
-  const color = cat==='vert'?'#10b981':cat==='orange'?'#f59e0b':'#ef4444';
-  const capital = tt_getCapital();
-  const mise0 = Math.round(capital * 0.05);
-  const track = tt_getTrack();
-  const picks = track.filter(p => (p.alerte||'').toLowerCase()===cat && (p.resultat==='WIN'||p.resultat==='LOSS'));
-
-  if (picks.length < 2) return;
-  canvas.width = canvas.offsetWidth || 300;
-  canvas.height = 60;
-  const ctx = canvas.getContext('2d');
-  const W = canvas.width, H = canvas.height;
-
-  let b = capital;
-  const values = [b];
-  picks.forEach(p => {
-    const m = p.mise || mise0;
-    b = +(b + (p.resultat==='WIN' ? m*(p.cote-1) : -m)).toFixed(2);
-    values.push(b);
-  });
-
-  const min = Math.min(...values)-5, max = Math.max(...values)+5, range = max-min||1;
-  ctx.clearRect(0, 0, W, H);
-  const grad = ctx.createLinearGradient(0,0,0,H);
-  grad.addColorStop(0, color+'40'); grad.addColorStop(1, color+'05');
-
-  ctx.beginPath();
-  values.forEach((v,i) => {
-    const x=(i/(values.length-1))*W, y=H-((v-min)/range)*(H-6)-3;
-    i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);
-  });
-  ctx.lineTo(W,H); ctx.lineTo(0,H); ctx.closePath();
-  ctx.fillStyle=grad; ctx.fill();
-
-  ctx.beginPath();
-  ctx.strokeStyle=color; ctx.lineWidth=1.5; ctx.lineJoin='round';
-  values.forEach((v,i) => {
-    const x=(i/(values.length-1))*W, y=H-((v-min)/range)*(H-6)-3;
-    i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);
-  });
-  ctx.stroke();
-
-  picks.forEach((p,i) => {
-    const x=((i+1)/(values.length-1))*W;
-    const y=H-((values[i+1]-min)/range)*(H-6)-3;
-    ctx.beginPath(); ctx.arc(x,y,3,0,Math.PI*2);
-    ctx.fillStyle = p.resultat==='WIN' ? color : '#ef4444';
-    ctx.fill();
-  });
-}
-
-function tt_renderList() {
-  const listEl = document.getElementById('ttrack-list');
-  if (!listEl) return;
-
-  const track = tt_getTrack();
-  const capital = tt_getCapital();
-  const mise0 = Math.round(capital * 0.05);
-  const filtered = ttFilter === 'all' ? track : track.filter(p => p.alerte === ttFilter);
-
-  // Stats filtrées
-  const played = filtered.filter(p => p.resultat === 'WIN' || p.resultat === 'LOSS');
-  const won = played.filter(p => p.resultat === 'WIN');
-  const wr = played.length ? Math.round(won.length/played.length*100) : 0;
-  const coteMoy = played.length ? +(played.reduce((s,p)=>s+(p.cote||1.7),0)/played.length).toFixed(2) : null;
   const totalEl = document.getElementById('ttrack-total');
-  if (totalEl) totalEl.textContent = played.length;
+  if (totalEl) totalEl.textContent = fResolved.length;
   const wrEl = document.getElementById('ttrack-filter-wr');
-  if (wrEl) wrEl.textContent = wr + '%';
+  if (wrEl) wrEl.textContent = fWr + '%';
   const cEl = document.getElementById('ttrack-filter-cote');
-  if (cEl) cEl.textContent = coteMoy || '—';
+  if (cEl) cEl.textContent = fCote || '—';
 
-  // Streak (sur tout le track, pas filtré)
+  // Streak
   let streak = 0, streakType = '';
-  for (let i = track.length-1; i >= 0; i--) {
-    const r = track[i].resultat;
-    if (r !== 'WIN' && r !== 'LOSS') break;
+  for (let i = allPicks.length-1; i >= 0; i--) {
+    if (allPicks[i].pending) break;
+    const r = allPicks[i].won ? 'WIN' : 'LOSS';
     if (!streakType) { streakType = r; streak = 1; }
     else if (r === streakType) streak++;
     else break;
@@ -3124,101 +2916,32 @@ function tt_renderList() {
   const sEl = document.getElementById('ttrack-streak');
   if (sEl) {
     sEl.textContent = streak > 0 ? (streakType==='WIN'?'🔥':'❄️')+' '+streak : '—';
-    sEl.style.color = streak > 0 ? (streakType==='WIN'?'#10b981':'#ef4444') : '';
+    sEl.style.color = streak>0 ? (streakType==='WIN'?'#10b981':'#ef4444') : '';
   }
 
-  // Liste vide
+  // --- Liste ---
+  const listEl = document.getElementById('ttrack-list');
+  if (!listEl) return;
   if (!filtered.length) {
-    listEl.innerHTML = '<div class="empty"><div class="empty-icon">🎾</div><div class="empty-title">AUCUN PICK</div><div class="empty-text">Lance un scan tennis et clique sur 🎾 + TRACK RECORD pour ajouter un prono.</div></div>';
+    listEl.innerHTML = '<div class="empty"><div class="empty-icon">🎾</div><div class="empty-title">AUCUN PICK</div><div class="empty-text">Lance un scan tennis et clique sur 🎾 + TRACK RECORD.</div></div>';
     return;
   }
-
-  // Rendu des picks (du plus récent au plus ancien)
-  listEl.innerHTML = [...filtered].reverse().map(pick => {
-    const ac = pick.alerte === 'VERT' ? '#10b981' : pick.alerte === 'ORANGE' ? '#f59e0b' : '#ef4444';
-    const m = pick.mise || mise0;
-    const isPending = pick.resultat !== 'WIN' && pick.resultat !== 'LOSS';
-    const isWin = pick.resultat === 'WIN';
-    const gain = isWin ? +(m*(pick.cote-1)).toFixed(2) : isPending ? null : -m;
-    const borderColor = isPending ? '#f59e0b44' : isWin ? '#10b98133' : '#ef444422';
-    const statusIcon = isPending ? '⏳' : isWin ? '✅' : '❌';
-    const gainDisplay = isPending
-      ? `<div style="font-family:'Bebas Neue';font-size:14px;color:#f59e0b;letter-spacing:1px">⏳ EN ATTENTE</div>`
-      : `<div class="track-gain" style="color:${gain>=0?'var(--green)':'var(--red)'}">${gain>=0?'+':''}${gain}€</div>`;
-    const pid = pick.id || '';
-
-    return `<div class="track-item" style="border-color:${borderColor}">
-      <div class="track-header">
-        <div style="flex:1">
-          <div class="track-player">
-            <span>${statusIcon}</span>
-            <span class="track-name">Victoire ${pick.favori || '—'}</span>
-            <span style="font-size:10px;padding:2px 6px;border-radius:3px;background:${ac}22;color:${ac};border:1px solid ${ac}44">${pick.alerte}</span>
-          </div>
-          <div class="track-match">${pick.match||'—'} · ${pick.competition||'ATP'}</div>
-          <div style="font-size:10px;color:var(--muted);margin-top:2px">🎾 ${pick.surface||'—'} · #${pick.favori_rang||'?'} vs #${pick.adversaire_rang||'?'} · Score ${pick.scoreMatriciel||'—'}</div>
-          ${isPending ? `<div style="display:flex;gap:6px;margin-top:8px">
-            <button onclick="tt_setResult('${pid}','WIN')" style="flex:1;padding:7px;background:#10b98122;border:1px solid #10b98155;color:#10b981;border-radius:6px;cursor:pointer;font-family:'Bebas Neue';font-size:12px">✅ GAGNÉ</button>
-            <button onclick="tt_setResult('${pid}','LOSS')" style="flex:1;padding:7px;background:#ef444422;border:1px solid #ef444455;color:#ef4444;border-radius:6px;cursor:pointer;font-family:'Bebas Neue';font-size:12px">❌ PERDU</button>
-          </div>` : ''}
-        </div>
-        <div style="text-align:right;flex-shrink:0;margin-left:14px">
-          ${gainDisplay}
-          <div class="track-mise">Mise: ${m}€ · <span style="color:#0ea5e9;font-weight:500">×${pick.cote||'—'}</span></div>
-          <div class="track-date">${pick.date||''}</div>
-          <div style="display:flex;gap:6px;margin-top:6px;justify-content:flex-end">
-            ${!isPending ? `<button onclick="tt_reset('${pid}')" style="padding:3px 8px;background:transparent;border:1px solid #3b82f644;color:#3b82f6;border-radius:4px;cursor:pointer;font-size:10px">✏️</button>` : ''}
-            <button onclick="tt_delete('${pid}')" style="padding:3px 8px;background:transparent;border:1px solid #ef444444;color:#ef4444;border-radius:4px;cursor:pointer;font-size:10px">🗑</button>
-          </div>
-        </div>
-      </div>
-    </div>`;
-  }).join('');
+  listEl.innerHTML = tt_renderPicksList([...filtered].reverse());
 }
 
-// ── ACTIONS ──────────────────────────────────────────────
-function tt_setResult(id, res) {
-  if (!id) return;
-  const track = tt_getTrack();
-  const pick = track.find(p => p.id === id);
-  if (pick) { pick.resultat = res; tt_saveTrack(track); tt_render(); }
-}
-function tt_reset(id) {
-  if (!id) return;
-  const track = tt_getTrack();
-  const pick = track.find(p => p.id === id);
-  if (pick) { pick.resultat = null; tt_saveTrack(track); tt_render(); }
-}
-function tt_delete(id) {
-  if (!id) return;
-  tt_saveTrack(tt_getTrack().filter(p => p.id !== id));
-  tt_render();
-}
-
-// Compatibilité anciens noms
-function setTtResult(id, res) { tt_setResult(id, res); }
-function resetTtResult(id) { tt_reset(id); }
-function deleteTtPick(id) { tt_delete(id); }
-
-function tt_render() {
-  tt_renderBankroll();
-  tt_renderList();
-}
-// Ancien nom
-function renderTtrackAll() { tt_render(); }
-
-// ── MODAL TENNIS ──────────────────────────────────────────
-let currentTennisPick = null;
+// ── MODAL TENNIS ─────────────────────────────────────────
+let _ttCurrentPick = null;
 
 function openTennisModal(pick) {
-  currentTennisPick = typeof pick === 'string' ? JSON.parse(pick) : pick;
-  const defaultMise = Math.round(tt_getCapital() * 0.05);
-  document.getElementById('tennis-modal-player').textContent = 'Victoire ' + (currentTennisPick.favori || '—');
+  _ttCurrentPick = typeof pick === 'string' ? JSON.parse(pick) : pick;
+  const mise = tt_getMise();
+  document.getElementById('tennis-modal-player').textContent =
+    'Victoire ' + (_ttCurrentPick.favori || '—');
   document.getElementById('tennis-modal-match').textContent =
-    (currentTennisPick.match||'—') + ' · ' + (currentTennisPick.competition||'ATP') +
-    ' · ' + (currentTennisPick.surface||'—') +
-    (currentTennisPick.favori_rang ? ' · #'+currentTennisPick.favori_rang+' vs #'+(currentTennisPick.adversaire_rang||'?') : '');
-  document.getElementById('tennis-modal-mise').value = defaultMise;
+    (_ttCurrentPick.match||'—') + ' · ' + (_ttCurrentPick.competition||'ATP') +
+    ' · ' + (_ttCurrentPick.surface||'—') +
+    (_ttCurrentPick.favori_rang ? ' · #'+_ttCurrentPick.favori_rang+' vs #'+(_ttCurrentPick.adversaire_rang||'?') : '');
+  document.getElementById('tennis-modal-mise').value = mise;
   document.getElementById('tennis-modal-cote').value = '';
   updateTennisImpact();
   document.getElementById('modal-tennis').classList.add('open');
@@ -3226,57 +2949,60 @@ function openTennisModal(pick) {
 
 function closeTennisModal() {
   document.getElementById('modal-tennis').classList.remove('open');
-  currentTennisPick = null;
+  _ttCurrentPick = null;
 }
 
 function updateTennisImpact() {
   const mise = parseFloat(document.getElementById('tennis-modal-mise').value) || 0;
   const cote = parseFloat(document.getElementById('tennis-modal-cote').value) || 0;
-  const aEl = document.getElementById('tennis-impact-amount');
-  const nEl = document.getElementById('tennis-impact-new');
+  const aEl  = document.getElementById('tennis-impact-amount');
+  const nEl  = document.getElementById('tennis-impact-new');
   if (mise > 0 && cote > 1) {
-    aEl.textContent = mise + '€ misés → +' + +(mise*(cote-1)).toFixed(2) + '€ si WIN';
-    aEl.style.color = '#0ea5e9';
-    nEl.textContent = 'Perte potentielle : -' + mise + '€';
+    aEl.textContent  = mise + '€ misés → +' + +(mise*(cote-1)).toFixed(2) + '€ si WIN';
+    aEl.style.color  = '#0ea5e9';
+    nEl.textContent  = 'Perte potentielle : -' + mise + '€';
   } else {
-    aEl.textContent = '—';
-    nEl.textContent = 'Saisissez la mise et la cote réelle';
+    aEl.textContent  = '—';
+    nEl.textContent  = 'Saisissez la mise et la cote réelle';
   }
 }
 
 function confirmTennisPick() {
-  if (!currentTennisPick) { alert('Aucun pick sélectionné'); return; }
+  if (!_ttCurrentPick) return;
   const mise = parseFloat(document.getElementById('tennis-modal-mise').value);
   const cote = parseFloat(document.getElementById('tennis-modal-cote').value);
   if (!mise || mise <= 0) { alert('Mise invalide'); return; }
-  if (!cote || cote <= 1) { alert('Cote invalide (doit être > 1)'); return; }
+  if (!cote || cote <= 1) { alert('Cote invalide (> 1)'); return; }
 
-  const track = tt_getTrack();
-  track.push({
-    id: String(Date.now()) + '_' + Math.random().toString(36).substr(2,6),
-    match:          currentTennisPick.match || '',
-    favori:         currentTennisPick.favori || '',
-    adversaire:     currentTennisPick.adversaire || '',
-    competition:    currentTennisPick.competition || 'ATP',
-    surface:        currentTennisPick.surface || '',
-    heure:          currentTennisPick.heure || '',
-    alerte:         currentTennisPick.alerte || 'ORANGE',
-    scoreMatriciel: currentTennisPick.scoreMatriciel || '',
-    favori_rang:    currentTennisPick.favori_rang || '',
-    adversaire_rang:currentTennisPick.adversaire_rang || '',
+  const picks = tt_getPicks();
+  picks.unshift({
+    id:             'tt_' + Date.now(),
+    match:          _ttCurrentPick.match          || '',
+    favori:         _ttCurrentPick.favori         || '',
+    adversaire:     _ttCurrentPick.adversaire     || '',
+    competition:    _ttCurrentPick.competition    || 'ATP',
+    surface:        _ttCurrentPick.surface        || '',
+    heure:          _ttCurrentPick.heure          || '',
+    alerte:         _ttCurrentPick.alerte         || 'ORANGE',
+    scoreMatriciel: _ttCurrentPick.scoreMatriciel || '',
+    favori_rang:    _ttCurrentPick.favori_rang    || '',
+    adversaire_rang:_ttCurrentPick.adversaire_rang|| '',
     cote,
     mise,
-    date: new Date().toLocaleDateString('fr-FR'),
-    resultat: null,
+    date:    new Date().toISOString(),
+    pending: true,
+    won:     undefined,
+    gain:    undefined,
   });
-  tt_saveTrack(track);
+  tt_savePicks(picks);
   closeTennisModal();
-  tt_render();
-  // Badge de confirmation
+  tt_renderTrack();
+
+  // Badge confirmation
   const badge = document.getElementById('tennis-last-scan-badge');
   if (badge) {
     const orig = badge.textContent;
-    badge.textContent = '✅ Pick ajouté au Track Record !';
+    badge.textContent = '✅ Pick ajouté au Track Tennis !';
     badge.style.color = '#10b981';
     setTimeout(() => { badge.textContent = orig; badge.style.color = ''; }, 2500);
   }
@@ -3289,16 +3015,16 @@ function buildTennisPickCard(pick, ac, ae, se, pj) {
   return `<div class="pick-card" style="border:1px solid ${ac}33;margin-bottom:12px">
     <div class="pick-header">
       <div>
-        <div class="pick-comp">${pick.competition} · ${se} ${pick.surface} · ${pick.heure}</div>
+        <div class="pick-comp">${pick.competition} · ${se} ${pick.surface} · ${pick.heure||''}</div>
         <div class="pick-teams" style="color:#fff">${pick.favori} <span style="color:#1e3a5f">vs</span> ${pick.adversaire}</div>
-        ${pick.favori_rang ? `<div style="font-size:10px;color:var(--muted);margin-top:2px">Rang ATP: #${pick.favori_rang} vs #${pick.adversaire_rang||'?'}</div>` : ''}
+        ${pick.favori_rang?`<div style="font-size:10px;color:var(--muted);margin-top:2px">Rang ATP: #${pick.favori_rang} vs #${pick.adversaire_rang||'?'}</div>`:''}
       </div>
       <div class="pick-score" style="text-align:right">
         <div class="pick-alerte" style="color:${ac}">${ae} ${pick.alerte}</div>
         <div class="pick-score-val" style="color:${ac};font-family:Bebas Neue;font-size:28px">${pick.scoreMatriciel}</div>
       </div>
     </div>
-    ${pick.factors&&pick.factors.length ? `<div class="factors">${pick.factors.map(f=>`<span class="factor-badge" style="background:${ac}22;color:${ac}">${f}</span>`).join('')}</div>` : ''}
+    ${pick.factors&&pick.factors.length?`<div class="factors">${pick.factors.map(f=>`<span class="factor-badge" style="background:${ac}22;color:${ac}">${f}</span>`).join('')}</div>`:''}
     <div class="player-grid">
       <div class="player-box">
         <div class="player-box-label" style="color:${ac}">FAVORI</div>
@@ -3311,23 +3037,26 @@ function buildTennisPickCard(pick, ac, ae, se, pj) {
         <div class="player-team">Forme: ${pick.adversaire_forme||'—'} (${pick.adversaire_bilan||'—'})</div>
       </div>
     </div>
-    ${pick.h2h_global ? `<div style="display:flex;gap:12px;margin-bottom:10px">
+    ${pick.h2h_global?`<div style="display:flex;gap:12px;margin-bottom:10px">
       <div class="stat-box" style="flex:1;padding:8px"><div class="stat-label">H2H GLOBAL</div><div style="font-family:Bebas Neue;font-size:18px">${pick.h2h_global}</div></div>
       <div class="stat-box" style="flex:1;padding:8px"><div class="stat-label">H2H ${(pick.surface||'').toUpperCase()}</div><div style="font-family:Bebas Neue;font-size:18px">${pick.h2h_surface||'—'}</div></div>
       <div class="stat-box" style="flex:1;padding:8px"><div class="stat-label">MATCHS H2H</div><div style="font-family:Bebas Neue;font-size:18px">${pick.h2h_total_matchs||0}</div></div>
-    </div>` : ''}
-    ${pick.raison ? `<div class="top-pick-reason" style="margin-bottom:10px">${pick.raison}</div>` : ''}
+    </div>`:''}
+    ${pick.raison?`<div class="top-pick-reason" style="margin-bottom:10px">${pick.raison}</div>`:''}
     <div style="padding:8px 0;border-top:1px solid ${ac}22">
-      <button onclick="openTennisModal(${pj})" style="width:100%;padding:10px;border-radius:8px;border:1px solid ${ac}55;background:${ac}22;color:${ac};font-family:Bebas Neue;font-size:14px;letter-spacing:3px;cursor:pointer">🎾 + TRACK RECORD</button>
+      <button onclick="openTennisModal(${pj})"
+        style="width:100%;padding:10px;border-radius:8px;border:1px solid ${ac}55;background:${ac}22;color:${ac};font-family:Bebas Neue;font-size:14px;letter-spacing:3px;cursor:pointer">
+        🎾 + TRACK RECORD
+      </button>
     </div>
   </div>`;
 }
 
 async function doScanTennis() {
-  const btn = document.getElementById('tennis-btn');
-  const logEl = document.getElementById('tennis-log');
-  const resultsEl = document.getElementById('tennis-results');
-  const emptyEl = document.getElementById('tennis-empty');
+  const btn      = document.getElementById('tennis-btn');
+  const logEl    = document.getElementById('tennis-log');
+  const resultsEl= document.getElementById('tennis-results');
+  const emptyEl  = document.getElementById('tennis-empty');
 
   // Cache du jour
   try {
@@ -3349,10 +3078,8 @@ async function doScanTennis() {
 
   btn.disabled = true;
   btn.innerHTML = '<span class="spin">⏳</span> SCAN EN COURS...';
-  logEl.style.display = 'block';
-  logEl.innerHTML = '';
-  resultsEl.innerHTML = '';
-  emptyEl.style.display = 'none';
+  logEl.style.display = 'block'; logEl.innerHTML = '';
+  resultsEl.innerHTML = ''; emptyEl.style.display = 'none';
 
   function log(msg, color='#60a5fa') {
     const t = new Date().toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
@@ -3365,18 +3092,16 @@ async function doScanTennis() {
     const res = await fetch('/api/scan-tennis');
     if (!res.ok) throw new Error('Erreur API: ' + res.status);
     const data = await res.json();
-    log('✅ ' + data.total_analyses + ' matchs analysés — ' + data.picks.length + ' picks générés', '#10b981');
+    log('✅ ' + data.total_analyses + ' matchs · ' + data.picks.length + ' picks', '#10b981');
 
     if (!data.picks || !data.picks.length) {
       emptyEl.style.display = 'block';
       emptyEl.querySelector('.empty-title').textContent = 'AUCUN PICK TENNIS';
-      emptyEl.querySelector('.empty-text').textContent = "Pas de matchs ATP avec signal suffisant aujourd'hui.";
+      emptyEl.querySelector('.empty-text').textContent  = "Pas de matchs ATP avec signal suffisant.";
       btn.disabled = false; btn.innerHTML = '🎾 RELANCER LE SCAN'; return;
     }
 
     document.getElementById('tennis-last-scan-badge').textContent = '🕐 Dernier scan : ' + data.date;
-
-    // Sauvegarde cache
     try { localStorage.setItem('picksai_tennis_last_scan', JSON.stringify({ date: data.date, picks: data.picks, rejected: data.rejected||[] })); } catch(e) {}
 
     resultsEl.innerHTML = data.picks.map(pick => {
@@ -3393,18 +3118,15 @@ async function doScanTennis() {
         ${data.rejected.map(r=>`<div style="font-size:11px;color:#1a2a40;padding:3px 0">${r.match} — <span style="color:#2a3a50">${r.raison}</span></div>`).join('')}
       </div>`;
     }
-
   } catch(e) {
-    log('❌ Erreur: ' + e.message, '#ef4444');
+    log('❌ ' + e.message, '#ef4444');
     emptyEl.style.display = 'block';
   }
-
-  btn.disabled = false;
-  btn.innerHTML = '🎾 RELANCER LE SCAN';
+  btn.disabled = false; btn.innerHTML = '🎾 RELANCER LE SCAN';
 }
 
 // ── INIT ──
-document.addEventListener('DOMContentLoaded', () => { tt_render(); });
+document.addEventListener('DOMContentLoaded', () => { tt_renderTrack(); });
 </script>
 </body>
 </html>
