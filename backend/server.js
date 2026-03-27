@@ -1508,35 +1508,44 @@ app.get('/api/debug-fixtures', async (req, res) => {
 app.get('/api/debug-tennis', async (req, res) => {
   try {
     const today = getTodayStr();
+    const year = new Date().getFullYear();
     const results = {};
-    
-    // Test différents endpoints
-    const endpoints = [
-      { name: 'games?date', params: { date: today } },
-      { name: 'games?season', params: { season: new Date().getFullYear() } },
-      { name: 'tournaments?season', params: { season: new Date().getFullYear() } },
+
+    // Tester tous les endpoints possibles de l'API tennis
+    const tests = [
+      { name: 'games/date',        ep: '/games',       params: { date: today } },
+      { name: 'games/season',      ep: '/games',       params: { season: year } },
+      { name: 'games/season-1',    ep: '/games',       params: { season: year - 1 } },
+      { name: 'fixtures/date',     ep: '/fixtures',    params: { date: today } },
+      { name: 'matches/date',      ep: '/matches',     params: { date: today } },
+      { name: 'tournaments/live',  ep: '/tournaments', params: { live: true } },
+      { name: 'tournaments/date',  ep: '/tournaments', params: { date: today } },
+      { name: 'rankings/atp',      ep: '/rankings',    params: { type: 'atp' } },
     ];
-    
-    for (const ep of endpoints) {
+
+    for (const t of tests) {
       try {
-        const data = await tennisAPI('/games', ep.params);
-        results[ep.name] = {
-          count: data.length,
-          sample: data.slice(0,3).map(g => ({
-            id: g.id,
-            tournament: g.tournament?.name || g.league?.name || g.competition,
-            player1: g.players?.home?.name || g.player_1?.name || '?',
-            player2: g.players?.away?.name || g.player_2?.name || '?',
-            rank1: g.players?.home?.ranking || g.player_1?.ranking,
-            rank2: g.players?.away?.ranking || g.player_2?.ranking,
-            date: g.date || g.fixture?.date,
-            status: g.status?.short || g.fixture?.status?.short,
-          }))
+        await sleep(200);
+        const res2 = await axios.get(`${TENNIS_API_BASE}${t.ep}`, {
+          headers: { 'x-apisports-key': TENNIS_API_KEY },
+          params: t.params,
+        });
+        const raw = res2.data;
+        const data = raw?.response || raw?.results || raw || [];
+        const arr = Array.isArray(data) ? data : [];
+        results[t.name] = {
+          status: res2.status,
+          errors: raw?.errors,
+          results_count: raw?.results,
+          count: arr.length,
+          sample: arr.slice(0,2).map(g => JSON.stringify(g).substring(0,200)),
         };
-      } catch(e) { results[ep.name] = { error: e.message }; }
+      } catch(e) {
+        results[t.name] = { error: e.message };
+      }
     }
-    
-    res.json({ today, results });
+
+    res.json({ today, year, TENNIS_API_KEY: TENNIS_API_KEY ? 'SET (' + TENNIS_API_KEY.length + ' chars)' : 'NOT SET', results });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
