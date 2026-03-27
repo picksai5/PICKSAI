@@ -1297,11 +1297,39 @@ app.get('/api/scan-tennis', async (req, res) => {
     const today = getTodayStr();
     console.log('[Tennis] Scan du', today);
 
-    // 1. Récupérer les matchs du jour
-    const fixtures = await tennisAPI('/games', { date: today });
-    console.log('[Tennis] Matchs bruts:', fixtures.length);
+    // 1. Récupérer les matchs du jour — ATP + WTA via plusieurs appels
+    let allGames = [];
+    
+    // Essai 1 : par date
+    const byDate = await tennisAPI('/games', { date: today });
+    console.log('[Tennis] /games?date:', byDate.length);
+    if (byDate.length > 0) allGames = byDate;
+    
+    // Essai 2 : si vide, essayer avec timezone décalée (UTC+1/+2)
+    if (!allGames.length) {
+      const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1);
+      const tomorrowStr = tomorrow.toISOString().split('T')[0];
+      const byTomorrow = await tennisAPI('/games', { date: tomorrowStr });
+      console.log('[Tennis] /games?date tomorrow:', byTomorrow.length);
+      allGames = [...allGames, ...byTomorrow];
+    }
+    
+    // Essai 3 : chercher dans les tournois actifs de la saison
+    if (!allGames.length) {
+      const year = new Date().getFullYear();
+      const bySeason = await tennisAPI('/games', { season: year });
+      console.log('[Tennis] /games?season:', bySeason.length);
+      // Filtrer ceux d'aujourd'hui
+      allGames = bySeason.filter(g => {
+        const d = (g.date || g.fixture?.date || '').substring(0, 10);
+        return d === today;
+      });
+      console.log('[Tennis] Filtrés aujourd hui:', allGames.length);
+    }
 
-    if (!fixtures.length) {
+    console.log('[Tennis] Total matchs:', allGames.length);
+
+    if (!allGames.length) {
       return res.json({ picks: [], rejected: [], total_analyses: 0, date: new Date().toLocaleDateString('fr-FR') });
     }
 
@@ -1310,45 +1338,52 @@ app.get('/api/scan-tennis', async (req, res) => {
 
     for (const game of fixtures) {
       try {
-        const p1 = game.players?.home || game.player_1;
-        const p2 = game.players?.away || game.player_2;
-        if (!p1 || !p2) { rejected.push({ match: 'Inconnu', raison: 'Joueurs manquants' }); continue; }
+        // Parser flexible — supporte les 2 formats de l'API tennis
+        const extractPlayer = (g, side) => {
+          return g.players?.[side] || g[`player_${side==='home'?1:2}`] ||
+                 g.teams?.[side] || g[side] || null;
+        };
+        const p1 = extractPlayer(game, 'home');
+        const p2 = extractPlayer(game, 'away');
+        if (!p1 || !p2) { rejected.push({ match: JSON.stringify(game).substring(0,80), raison: 'Joueurs manquants' }); continue; }
 
-        const p1Name = p1.name || p1.fullname || '?';
-        const p2Name = p2.name || p2.fullname || '?';
+        const p1Name = p1.name || p1.fullname || p1.lastname || '?';
+        const p2Name = p2.name || p2.fullname || p2.lastname || '?';
         const matchStr = `${p1Name} vs ${p2Name}`;
 
-        // Rangs ATP
-        const rank1 = p1.ranking || p1.rank || 999;
-        const rank2 = p2.ranking || p2.rank || 999;
+        // Rangs ATP ou WTA (même champ, logique identique)
+        const rank1 = parseInt(p1.ranking || p1.rank || p1.position || 999);
+        const rank2 = parseInt(p2.ranking || p2.rank || p2.position || 999);
 
-        // Le favori est celui avec le meilleur rang (plus petit)
-        const favoriIsP1 = rank1 <= rank2;
-        const favori    = favoriIsP1 ? p1 : p2;
-        const adversaire= favoriIsP1 ? p2 : p1;
-        const favoriRank = favoriIsP1 ? rank1 : rank2;
-        const adversaireRank = favoriIsP1 ? rank2 : rank1;
+        // Le favori = meilleur rang (plus petit chiffre)
+        const favoriIsP1    = rank1 <= rank2;
+        const favori        = favoriIsP1 ? p1 : p2;
+        const adversaire    = favoriIsP1 ? p2 : p1;
+        const favoriRank    = Math.min(rank1, rank2);
+        const adversaireRank= Math.max(rank1, rank2);
 
-        // Si les deux joueurs sont non classés ou rang inconnu → skip
+        // Ignorer si les deux sont non classés
         if (favoriRank >= 500 && adversaireRank >= 500) {
-          rejected.push({ match: matchStr, raison: 'Rangs ATP inconnus' }); continue;
+          rejected.push({ match: matchStr, raison: 'Rangs inconnus' }); continue;
         }
 
         const favoriName    = favori.name || favori.fullname || '?';
         const adversaireName= adversaire.name || adversaire.fullname || '?';
 
         // Forme récente
-        const formeFavori    = favori.form    || favori.last5 || '';
+        const formeFavori    = favori.form || favori.last5 || '';
         const formeAdversaire= adversaire.form || adversaire.last5 || '';
 
         // Surface et tournoi
-        const surface    = game.venue?.surface || game.tournament?.surface || game.surface || 'Hard';
-        const tournament = game.tournament?.name || game.league?.name || game.competition || 'ATP';
-        const heure      = game.time || game.fixture?.time || '—';
+        const surface    = game.venue?.surface || game.tournament?.surface || game.round?.surface || game.surface || 'Hard';
+        const tournament = game.tournament?.name || game.league?.name || game.round?.name || game.competition || '—';
+        const isWTA      = /wta|women|dame|femme/i.test(tournament);
+        const circuit    = isWTA ? 'WTA' : 'ATP';
+        const heure      = (game.time || game.date || game.fixture?.date || '').substring(11,16) || '—';
 
         const grandSlam  = /grand slam|australian|roland|wimbledon|us open/i.test(tournament);
-        const masters1000= /masters|1000|atp 1000|miami|indian wells|madrid|rome|montreal|toronto|cincinnati|shanghai|paris/i.test(tournament);
-        const atp500     = /500|barcelona|dubai|rotterdam|washington|vienna|beijing/i.test(tournament);
+        const masters1000= /masters|1000|miami|indian wells|madrid|rome|montreal|toronto|cincinnati|shanghai|paris|wta 1000/i.test(tournament);
+        const atp500     = /500|barcelona|dubai|rotterdam|washington|vienna|beijing|wta 500/i.test(tournament);
 
         // H2H
         let h2hFavori = 0, h2hTotal = 0, h2hSurfFavori = 0, h2hSurfTotal = 0;
@@ -1394,7 +1429,7 @@ app.get('/api/scan-tennis', async (req, res) => {
           adversaire_forme: formeAdversaire || '—',
           favori_bilan: '',
           adversaire_bilan: '',
-          competition: tournament,
+          competition: `${circuit} · ${tournament}`,
           surface,
           heure,
           scoreMatriciel: score,
@@ -1466,6 +1501,41 @@ app.get('/api/debug-fixtures', async (req, res) => {
         };
       }
     }
+    res.json({ today, results });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/debug-tennis', async (req, res) => {
+  try {
+    const today = getTodayStr();
+    const results = {};
+    
+    // Test différents endpoints
+    const endpoints = [
+      { name: 'games?date', params: { date: today } },
+      { name: 'games?season', params: { season: new Date().getFullYear() } },
+      { name: 'tournaments?season', params: { season: new Date().getFullYear() } },
+    ];
+    
+    for (const ep of endpoints) {
+      try {
+        const data = await tennisAPI('/games', ep.params);
+        results[ep.name] = {
+          count: data.length,
+          sample: data.slice(0,3).map(g => ({
+            id: g.id,
+            tournament: g.tournament?.name || g.league?.name || g.competition,
+            player1: g.players?.home?.name || g.player_1?.name || '?',
+            player2: g.players?.away?.name || g.player_2?.name || '?',
+            rank1: g.players?.home?.ranking || g.player_1?.ranking,
+            rank2: g.players?.away?.ranking || g.player_2?.ranking,
+            date: g.date || g.fixture?.date,
+            status: g.status?.short || g.fixture?.status?.short,
+          }))
+        };
+      } catch(e) { results[ep.name] = { error: e.message }; }
+    }
+    
     res.json({ today, results });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
