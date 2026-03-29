@@ -131,7 +131,7 @@ const TIRS_LEAGUES = [
 ];
 
 // ── CACHE ─────────────────────────────────────────────────
-const cache = { standings: {}, teamStats: {}, players: {}, natLeagues: {}, fixtureStats: {}, predictions: {}, lastDate: null };
+const cache = { standings: {}, teamStats: {}, players: {}, natLeagues: {}, fixtureStats: {}, predictions: {}, lastDate: null, tennisRankMap: {}, tennisPlayerData: {}, tennisRankDate: null };
 const CACHE_TTL = 6 * 60 * 60 * 1000;
 function isCacheValid(e) { return e && Date.now() - e.timestamp < CACHE_TTL; }
 function getTodayStr() { return new Date().toISOString().split('T')[0]; }
@@ -1330,38 +1330,51 @@ app.get('/api/scan-tennis', async (req, res) => {
     const allGames = await tennisAPI('get_fixtures', { date_start: today, date_stop: today });
     console.log('[Tennis] Matchs bruts:', allGames.length);
 
-    // 2. Garder uniquement les Singles ATP + WTA (pas ITF, pas Doubles)
-    const singles = allGames.filter(g => {
+    // 2. Garder uniquement les Singles ATP + WTA des tournois dispo sur Winamax/Betclic
+    // Exclure : Challenger, ITF, M15, M25, M25+H, Davis Cup qualifs locaux
+    const isWinamaxTournoi = (g) => {
       const type = (g.event_type_type || '').toLowerCase();
-      return (type.includes('atp') || type.includes('wta')) && type.includes('singles');
-    });
-    console.log('[Tennis] ATP/WTA Singles:', singles.length);
+      const name = (g.tournament_name || '').toLowerCase();
+      // Doit être ATP ou WTA Singles
+      if (!(type.includes('atp') || type.includes('wta')) || !type.includes('singles')) return false;
+      // Exclure les petits tournois non couverts
+      if (/challenger|itf|m15|m25|m10|futures|next gen finals qualifying/i.test(name)) return false;
+      return true;
+    };
+    const singles = allGames.filter(isWinamaxTournoi);
+    console.log('[Tennis] ATP/WTA Singles Winamax-compatibles:', singles.length);
 
     if (!singles.length) {
       return res.json({ picks: [], rejected: [], total_analyses: 0, date: new Date().toLocaleDateString('fr-FR') });
     }
 
-    // 3. Récupérer les rangs des joueurs uniques en parallèle
-    const playerKeys = [...new Set(singles.flatMap(g => [g.first_player_key, g.second_player_key].filter(Boolean)))];
-    console.log('[Tennis] Joueurs uniques à charger:', playerKeys.length);
+    // 3. Récupérer les rangs — cache journalier pour éviter appels répétés
+    if (!cache.tennisRankDate || cache.tennisRankDate !== today) {
+      cache.tennisRankDate   = today;
+      cache.tennisRankMap    = {};
+      cache.tennisPlayerData = {};
+    }
+    const rankMap      = cache.tennisRankMap;
+    const playerDataMap= cache.tennisPlayerData;
 
-    const rankMap = {};
-    const playerDataMap = {}; // key → player data complet
-    // Appels par batch de 5 pour ne pas surcharger l'API
-    for (let i = 0; i < playerKeys.length; i += 5) {
-      const batch = playerKeys.slice(i, i + 5);
+    const allPlayerKeys = [...new Set(singles.flatMap(g => [g.first_player_key, g.second_player_key].filter(Boolean)))];
+    const missingKeys   = allPlayerKeys.filter(k => !rankMap[String(k)]);
+    console.log('[Tennis] Joueurs en cache:', allPlayerKeys.length - missingKeys.length, '/ à charger:', missingKeys.length);
+
+    for (let i = 0; i < missingKeys.length; i += 5) {
+      const batch = missingKeys.slice(i, i + 5);
       await Promise.all(batch.map(async key => {
         try {
           const data = await tennisAPI('get_players', { player_key: key });
           if (data && data.length > 0) {
             const rank = extractPlayerRank(data[0]);
             if (rank < 999) rankMap[String(key)] = rank;
-            playerDataMap[String(key)] = data[0]; // garder pour la forme
+            playerDataMap[String(key)] = data[0];
           }
         } catch(e) { /* rang optionnel */ }
       }));
     }
-    console.log('[Tennis] Rangs récupérés:', Object.keys(rankMap).length, 'joueurs');
+    console.log('[Tennis] Rangs disponibles:', Object.keys(rankMap).length, 'joueurs');
 
     const picks = [];
     const rejected = [];
