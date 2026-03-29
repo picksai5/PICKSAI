@@ -1422,11 +1422,11 @@ app.get('/api/scan-tennis', async (req, res) => {
     const rouges  = picks.filter(p => p.alerte === 'ROUGE').slice(0, 1);
     const finalPicks = [...verts, ...oranges, ...rouges];
 
-    console.log(`[Tennis] ${finalPicks.length} picks (${fixtures.length} matchs analysés)`);
+    console.log(`[Tennis] ${finalPicks.length} picks (${allGamesFiltered.length} matchs analysés)`);
 
     res.json({
       date: new Date().toLocaleDateString('fr-FR'),
-      total_analyses: fixtures.length,
+      total_analyses: allGamesFiltered.length,
       picks: finalPicks,
       rejected,
     });
