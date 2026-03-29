@@ -1365,8 +1365,6 @@ app.get('/api/scan-tennis', async (req, res) => {
 
         // H2H
         let h2hFavori = 0, h2hTotal = 0, h2hSurfFavori = 0, h2hSurfTotal = 0;
-        const favoriId    = favori.id;
-        const adversaireId= adversaire.id;
         if (favoriId && adversaireId) {
           try {
             const h2hData = await tennisAPI('get_H2H', { first_player_key: favoriId, second_player_key: adversaireId });
