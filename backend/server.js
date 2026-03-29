@@ -1213,7 +1213,6 @@ app.get('/api/scan-tirs', async (req, res) => {
 // ══════════════════════════════════════════════════════════
 
 const TENNIS_API_KEY  = process.env.TENNIS_API_KEY || process.env.FOOTBALL_API_KEY;
-const TENNIS_API_BASE = 'https://v1.tennis.api-sports.io';
 
 // API Tennis — api-tennis.com
 const TENNIS_API_BASE = 'https://api.api-tennis.com/tennis/';
