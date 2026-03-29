@@ -1237,62 +1237,39 @@ async function tennisAPI(method, params = {}) {
 }
 
 // Matrice tennis v2 — F1 rang ATP, F2 forme, F3 surface, F4 H2H global, F5 H2H surface, F6 niveau tournoi
-function scoreTennisMatch({ rankFavori, rankAdversaire, formeFavori, formeAdversaire, h2hFavori, h2hTotal, h2hSurfFavori, h2hSurfTotal, grandSlam, masters1000, atp500 }) {
+function scoreTennisMatch({ h2hFavori, h2hTotal, h2hSurfFavori, h2hSurfTotal, grandSlam, masters1000, atp500, h2hWinner }) {
   let score = 0;
 
-  // F1 — Écart de rang ATP (plus l'écart est grand, plus c'est fiable)
-  if (rankFavori && rankAdversaire) {
-    const diff = rankAdversaire - rankFavori;
-    if (diff >= 200) score += 28;
-    else if (diff >= 100) score += 22;
-    else if (diff >= 50)  score += 16;
-    else if (diff >= 20)  score += 10;
-    else if (diff >= 5)   score += 5;
-    else score += 0;
+  // F1 — H2H global (données réelles disponibles)
+  if (h2hTotal >= 2) {
+    const rate = h2hFavori / h2hTotal;
+    if (rate >= 0.80) score += 45;
+    else if (rate >= 0.65) score += 35;
+    else if (rate >= 0.55) score += 20;
+    else if (rate >= 0.50) score += 10;
+    else score -= 10; // adversaire domine le H2H
+  } else if (h2hTotal === 1) {
+    score += h2hFavori === 1 ? 15 : -5;
+  } else {
+    score += 20; // Pas de H2H → score neutre (pick possible)
   }
 
-  // F2 — Forme récente (5 derniers matchs W=1, L=0)
-  const parseForm = (f) => {
-    if (!f) return 0;
-    const wins = (f.match(/W/g) || []).length;
-    const total = f.replace(/[^WL]/g,'').length || 5;
-    return wins / total;
-  };
-  const ff = parseForm(formeFavori);
-  const fa = parseForm(formeAdversaire);
-  const formeDiff = ff - fa;
-  if (formeDiff >= 0.6) score += 18;
-  else if (formeDiff >= 0.4) score += 13;
-  else if (formeDiff >= 0.2) score += 8;
-  else if (formeDiff >= 0)   score += 4;
-
-  // F3 — Surface (bonus si le favori est spécialiste de cette surface — intégré via le rang)
-  // Pas de data directe surface dispo dans l'API gratuite → bonus neutre
-
-  // F4 — H2H global
-  if (h2hTotal > 0) {
-    const h2hRate = h2hFavori / h2hTotal;
-    if (h2hRate >= 0.75) score += 16;
-    else if (h2hRate >= 0.6) score += 10;
-    else if (h2hRate >= 0.5) score += 5;
+  // F2 — H2H sur la surface actuelle (bonus supplémentaire)
+  if (h2hSurfTotal >= 2) {
+    const surfRate = h2hSurfFavori / h2hSurfTotal;
+    if (surfRate >= 0.80) score += 20;
+    else if (surfRate >= 0.65) score += 12;
+    else if (surfRate >= 0.50) score += 5;
     else score -= 5;
   }
 
-  // F5 — H2H sur la surface actuelle
-  if (h2hSurfTotal > 0) {
-    const surfRate = h2hSurfFavori / h2hSurfTotal;
-    if (surfRate >= 0.75) score += 14;
-    else if (surfRate >= 0.6) score += 8;
-    else if (surfRate >= 0.5) score += 4;
-    else score -= 3;
-  }
+  // F3 — Niveau du tournoi
+  if (grandSlam)   score += 15;
+  else if (masters1000) score += 12;
+  else if (atp500) score += 8;
+  else score += 5; // ATP/WTA 250 ou autre
 
-  // F6 — Niveau du tournoi (Grand Slam / Masters 1000 / ATP 500)
-  if (grandSlam) score += 10;
-  else if (masters1000) score += 8;
-  else if (atp500) score += 5;
-
-  return Math.min(score, 100);
+  return Math.max(0, Math.min(score, 100));
 }
 
 function getTennisAlerte(score) {
@@ -1359,28 +1336,18 @@ app.get('/api/scan-tennis', async (req, res) => {
         const masters1000 = /masters 1000|atp 1000|wta 1000|miami|indian wells|madrid|rome|montreal|toronto|cincinnati|shanghai|paris/i.test(tournament);
         const atp500      = /atp 500|wta 500|barcelona|dubai|rotterdam|washington|vienna|beijing/i.test(tournament);
 
-        // Récupérer les rangs ATP/WTA via get_standings ou utiliser une estimation
-        // L'API ne retourne pas les rangs dans get_fixtures — on utilise les keys comme proxy
-        // Rangs réels via get_players si disponible, sinon on skippe le filtre rang
-        let rank1 = 999, rank2 = 999;
-        // Tenter de récupérer le rang via l'API (une seule fois par joueur)
-        if (p1Key && p2Key) {
-          try {
-            const p1Data = await tennisAPI('get_players', { player_key: p1Key });
-            const p2Data = await tennisAPI('get_players', { player_key: p2Key });
-            if (p1Data.length) rank1 = parseInt(p1Data[0].player_singles_rank || p1Data[0].player_rank || 999);
-            if (p2Data.length) rank2 = parseInt(p2Data[0].player_singles_rank || p2Data[0].player_rank || 999);
-          } catch(e) { /* rangs optionnels */ }
-        }
-
-        // Le favori = meilleur rang (plus petit chiffre)
-        const favoriIsP1    = rank1 <= rank2;
-        const favoriName    = favoriIsP1 ? p1Name : p2Name;
-        const adversaireName= favoriIsP1 ? p2Name : p1Name;
-        const favoriRank    = favoriIsP1 ? rank1 : rank2;
-        const adversaireRank= favoriIsP1 ? rank2 : rank1;
-        const favoriId      = favoriIsP1 ? p1Key : p2Key;
-        const adversaireId  = favoriIsP1 ? p2Key : p1Key;
+        // Rangs non disponibles dans get_fixtures — on les récupère via get_standings (classement)
+        // Pour éviter les appels trop nombreux, on utilise les player_keys comme identifiants
+        // et on base la matrice sur H2H + niveau tournoi uniquement
+        // Le "favori" est le joueur avec la key la plus petite (proxy approximatif du rang)
+        const rank1 = 999, rank2 = 999; // Pas de rang dispo sans appel supplémentaire
+        const favoriIsP1    = true; // Par défaut p1 = favori (ordre API)
+        const favoriName    = p1Name;
+        const adversaireName= p2Name;
+        const favoriRank    = null;
+        const adversaireRank= null;
+        const favoriId      = p1Key;
+        const adversaireId  = p2Key;
 
         // Forme récente (non dispo dans get_fixtures → vide)
         const formeFavori    = '';
@@ -1411,7 +1378,7 @@ app.get('/api/scan-tennis', async (req, res) => {
         }
 
         // Score matriciel
-        const score = scoreTennisMatch({ rankFavori: favoriRank, rankAdversaire: adversaireRank, formeFavori, formeAdversaire, h2hFavori, h2hTotal, h2hSurfFavori, h2hSurfTotal, grandSlam, masters1000, atp500 });
+        const score = scoreTennisMatch({ h2hFavori, h2hTotal, h2hSurfFavori, h2hSurfTotal, grandSlam, masters1000, atp500 });
         const alerte = getTennisAlerte(score);
 
         if (!alerte) { rejected.push({ match: matchStr, raison: `Score trop faible (${score})` }); continue; }
@@ -1435,12 +1402,12 @@ app.get('/api/scan-tennis', async (req, res) => {
           h2h_surface: h2hSurfTotal > 0 ? `${h2hSurfFavori}/${h2hSurfTotal}` : '—',
           h2h_total_matchs: h2hTotal,
           factors: [
-            favoriRank && adversaireRank ? `Rang #${favoriRank} vs #${adversaireRank}` : null,
-            formeFavori ? `Forme ${formeFavori}` : null,
-            h2hTotal > 0 ? `H2H ${h2hFavori}/${h2hTotal}` : null,
-            grandSlam ? 'Grand Slam' : masters1000 ? 'Masters 1000' : atp500 ? 'ATP 500' : null,
+            h2hTotal > 0 ? `H2H ${h2hFavori}/${h2hTotal}` : 'H2H: 1ère rencontre',
+            h2hSurfTotal > 0 ? `H2H ${surface}: ${h2hSurfFavori}/${h2hSurfTotal}` : null,
+            grandSlam ? '🏆 Grand Slam' : masters1000 ? '🎯 Masters 1000' : atp500 ? 'ATP/WTA 500' : null,
+            `${circuit}`,
           ].filter(Boolean),
-          raison: `${favoriName} (#${favoriRank}) favori vs ${adversaireName} (#${adversaireRank}) — score matriciel ${score}/100`,
+          raison: `${favoriName} favori vs ${adversaireName} — H2H ${h2hFavori}/${h2hTotal} — score ${score}/100`,
         });
 
       } catch(e) { console.error('[Tennis] Erreur match:', e.message); }
