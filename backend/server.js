@@ -1237,6 +1237,31 @@ async function tennisAPI(method, params = {}) {
   }
 }
 
+// Extraire le rang singles le plus récent depuis les stats joueur api-tennis.com
+function extractPlayerRank(playerData) {
+  if (!playerData || !playerData.stats) return 999;
+  const singleStats = playerData.stats
+    .filter(s => s.type === 'singles' && s.rank && parseInt(s.rank) > 0)
+    .sort((a, b) => parseInt(b.season || 0) - parseInt(a.season || 0));
+  if (singleStats.length === 0) return 999;
+  return parseInt(singleStats[0].rank);
+}
+
+// Extraire la forme récente (wins/total sur la dernière saison)
+function extractPlayerForm(playerData, surface) {
+  if (!playerData || !playerData.stats) return '';
+  const surf = surface.toLowerCase();
+  const recent = playerData.stats
+    .filter(s => s.type === 'singles' && s.season)
+    .sort((a, b) => parseInt(b.season || 0) - parseInt(a.season || 0))[0];
+  if (!recent) return '';
+  const won = parseInt(recent[surf+'_won'] || recent.matches_won || 0);
+  const lost = parseInt(recent[surf+'_lost'] || recent.matches_lost || 0);
+  const total = won + lost;
+  if (total === 0) return '';
+  return `${won}W/${lost}L`;
+}
+
 // Matrice tennis v2 — F1 rang ATP, F2 forme, F3 surface, F4 H2H global, F5 H2H surface, F6 niveau tournoi
 function scoreTennisMatch({ rankFavori, rankAdversaire, h2hFavori, h2hTotal, h2hSurfFavori, h2hSurfTotal, grandSlam, masters1000, atp500 }) {
   let score = 0;
@@ -1321,6 +1346,7 @@ app.get('/api/scan-tennis', async (req, res) => {
     console.log('[Tennis] Joueurs uniques à charger:', playerKeys.length);
 
     const rankMap = {};
+    const playerDataMap = {}; // key → player data complet
     // Appels par batch de 5 pour ne pas surcharger l'API
     for (let i = 0; i < playerKeys.length; i += 5) {
       const batch = playerKeys.slice(i, i + 5);
@@ -1328,9 +1354,9 @@ app.get('/api/scan-tennis', async (req, res) => {
         try {
           const data = await tennisAPI('get_players', { player_key: key });
           if (data && data.length > 0) {
-            const p = data[0];
-            const rank = parseInt(p.player_singles_rank || p.player_rank || p.ranking || 9999);
-            if (rank < 9999) rankMap[String(key)] = rank;
+            const rank = extractPlayerRank(data[0]);
+            if (rank < 999) rankMap[String(key)] = rank;
+            playerDataMap[String(key)] = data[0]; // garder pour la forme
           }
         } catch(e) { /* rang optionnel */ }
       }));
@@ -1403,8 +1429,8 @@ app.get('/api/scan-tennis', async (req, res) => {
           adversaire:      adversaireName,
           favori_rang:     favoriRank < 900 ? favoriRank : null,
           adversaire_rang: adversaireRank < 900 ? adversaireRank : null,
-          favori_forme:    '—',
-          adversaire_forme:'—',
+          favori_forme:    extractPlayerForm(playerDataMap[String(favoriId)], surface) || '—',
+          adversaire_forme: extractPlayerForm(playerDataMap[String(adversaireId)], surface) || '—',
           favori_bilan:    '',
           adversaire_bilan:'',
           competition:     `${circuit} · ${tournament}`,
