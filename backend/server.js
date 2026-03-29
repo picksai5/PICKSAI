@@ -1015,6 +1015,7 @@ app.post('/api/check-compos', async (req, res) => {
 app.get('/api/reset-cache', (req, res) => {
   cache.lastDate = null;
   ['standings','teamStats','players','natLeagues','fixtureStats','predictions'].forEach(k => { cache[k] = {}; });
+  cache.tennisRankMap = null;
   res.json({ status: 'Cache réinitialisé' });
 });
 
@@ -1299,22 +1300,35 @@ app.get('/api/scan-tennis', async (req, res) => {
     const today = getTodayStr();
     console.log('[Tennis] Scan du', today);
 
-    // 1. Charger les classements ATP + WTA en une seule fois
-    const rankMap = {}; // playerKey → rang
-    try {
-      const [atpRanks, wtaRanks] = await Promise.all([
-        tennisAPI('get_standings', { standing_type: 'atp' }),
-        tennisAPI('get_standings', { standing_type: 'wta' }),
-      ]);
-      [...atpRanks, ...wtaRanks].forEach(p => {
-        const key = p.player_key || p.id;
-        const rank = parseInt(p.standing_place || p.rank || p.position || 9999);
-        if (key) rankMap[key] = rank;
-      });
-      console.log('[Tennis] Classements chargés:', Object.keys(rankMap).length, 'joueurs');
-    } catch(e) {
-      console.warn('[Tennis] Classements non disponibles:', e.message);
+    // 1. Charger les classements ATP + WTA (avec cache journalier)
+    if (!cache.tennisRankMap || cache.tennisRankDate !== today) {
+      cache.tennisRankMap = {};
+      cache.tennisRankDate = today;
+      try {
+        // Essayer plusieurs méthodes pour récupérer les rangs
+        const methods = [
+          tennisAPI('get_standings', { standing_type: 'atp' }),
+          tennisAPI('get_standings', { standing_type: 'wta' }),
+          tennisAPI('get_rankings', { ranking_type: 'atp' }),
+          tennisAPI('get_rankings', { ranking_type: 'wta' }),
+        ];
+        const results = await Promise.allSettled(methods);
+        let totalLoaded = 0;
+        results.forEach(r => {
+          if (r.status === 'fulfilled' && Array.isArray(r.value)) {
+            r.value.forEach(p => {
+              const key = String(p.player_key || p.first_player_key || p.id || '');
+              const rank = parseInt(p.standing_place || p.player_rank || p.rank || p.position || 9999);
+              if (key && rank < 9999) { cache.tennisRankMap[key] = rank; totalLoaded++; }
+            });
+          }
+        });
+        console.log('[Tennis] Classements chargés:', totalLoaded, 'joueurs,', Object.keys(cache.tennisRankMap).length, 'uniques');
+      } catch(e) {
+        console.warn('[Tennis] Classements non disponibles:', e.message);
+      }
     }
+    const rankMap = cache.tennisRankMap;
 
     // 2. Récupérer tous les matchs du jour
     const allGames = await tennisAPI('get_fixtures', { date_start: today, date_stop: today });
