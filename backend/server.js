@@ -1451,31 +1451,33 @@ app.get('/api/scan-tennis', async (req, res) => {
 app.get('/api/debug-tennis', async (req, res) => {
   try {
     const today = getTodayStr();
-    const results = {};
+    
+    // Trouver le match Lehecka vs Sinner dans les fixtures du jour
+    const fixtures = await tennisAPI('get_fixtures', { date_start: today, date_stop: today });
+    const sinnerMatch = fixtures.find(g => 
+      (g.event_first_player||'').toLowerCase().includes('sinner') || 
+      (g.event_second_player||'').toLowerCase().includes('sinner')
+    );
+    
+    const p1key = sinnerMatch?.first_player_key;
+    const p2key = sinnerMatch?.second_player_key;
+    
+    // Tester get_players avec ces keys
+    const [p1data, p2data] = await Promise.all([
+      p1key ? tennisAPI('get_players', { player_key: p1key }) : Promise.resolve([]),
+      p2key ? tennisAPI('get_players', { player_key: p2key }) : Promise.resolve([]),
+    ]);
 
-    const methods = [
-      { name: 'get_ranking',   params: { ranking_type: 'atp' } },
-      { name: 'get_standings', params: { standing_type: 'atp' } },
-      { name: 'get_fixtures_sample', params: { date_start: today, date_stop: today } },
-    ];
-
-    for (const m of methods) {
-      try {
-        const methodName = m.name === 'get_fixtures_sample' ? 'get_fixtures' : m.name;
-        const data = await tennisAPI(methodName, m.params);
-        results[m.name] = {
-          count: data.length,
-          sample: data.slice(0, 2).map(g => ({
-            keys: Object.keys(g).join(', '),
-            raw: JSON.stringify(g).substring(0, 400),
-          })),
-        };
-      } catch(e) {
-        results[m.name] = { error: e.message };
-      }
-    }
-
-    res.json({ today, results });
+    res.json({
+      today,
+      sinner_match_found: !!sinnerMatch,
+      match_raw: sinnerMatch ? JSON.stringify(sinnerMatch).substring(0, 300) : null,
+      p1_key: p1key,
+      p2_key: p2key,
+      p1_player_data: p1data.length ? JSON.stringify(p1data[0]) : 'empty',
+      p2_player_data: p2data.length ? JSON.stringify(p2data[0]) : 'empty',
+      all_methods_tried: ['get_ranking→0', 'get_standings→0', 'get_players→?'],
+    });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
