@@ -1512,21 +1512,21 @@ app.get('/api/debug-tennis', async (req, res) => {
     const today = getTodayStr();
     const results = {};
 
-    // Tester les méthodes api-tennis.com
     const methods = [
-      { name: 'get_events',   params: {} },
-      { name: 'get_fixtures', params: { date_start: today, date_stop: today } },
-      { name: 'get_fixtures_all', params: { date_start: today, date_stop: today, event_type: 'ATP Singles' } },
+      { name: 'get_ranking',   params: { ranking_type: 'atp' } },
+      { name: 'get_standings', params: { standing_type: 'atp' } },
+      { name: 'get_fixtures_sample', params: { date_start: today, date_stop: today } },
     ];
 
     for (const m of methods) {
       try {
-        const data = await tennisAPI(m.name, m.params);
+        const methodName = m.name === 'get_fixtures_sample' ? 'get_fixtures' : m.name;
+        const data = await tennisAPI(methodName, m.params);
         results[m.name] = {
           count: data.length,
           sample: data.slice(0, 2).map(g => ({
             keys: Object.keys(g).join(', '),
-            raw: JSON.stringify(g).substring(0, 300),
+            raw: JSON.stringify(g).substring(0, 400),
           })),
         };
       } catch(e) {
@@ -1534,11 +1534,7 @@ app.get('/api/debug-tennis', async (req, res) => {
       }
     }
 
-    res.json({
-      today,
-      TENNIS_API_KEY: TENNIS_API_KEY ? `SET (${TENNIS_API_KEY.length} chars)` : 'NOT SET',
-      results,
-    });
+    res.json({ today, results });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
