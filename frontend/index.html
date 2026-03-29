@@ -3058,23 +3058,8 @@ async function doScanTennis() {
   const resultsEl= document.getElementById('tennis-results');
   const emptyEl  = document.getElementById('tennis-empty');
 
-  // Cache du jour
-  try {
-    const saved = JSON.parse(localStorage.getItem('picksai_tennis_last_scan') || '{}');
-    const today = new Date().toLocaleDateString('fr-FR');
-    if (saved.date === today && saved.picks && saved.picks.length > 0) {
-      document.getElementById('tennis-last-scan-badge').textContent = '🕐 Dernier scan : ' + saved.date + ' (cache)';
-      resultsEl.innerHTML = saved.picks.map(pick => {
-        const ac = pick.alerte==='VERT'?'#10b981':pick.alerte==='ORANGE'?'#f59e0b':'#ef4444';
-        const ae = pick.alerte==='VERT'?'🟢':pick.alerte==='ORANGE'?'🟡':'🔴';
-        const se = {'Clay':'🔴','Hard':'🔵','Grass':'🟢','Carpet':'🟤'}[pick.surface]||'🎾';
-        const pj = JSON.stringify(pick).replace(/"/g,'&quot;');
-        return buildTennisPickCard(pick, ac, ae, se, pj);
-      }).join('');
-      emptyEl.style.display = 'none';
-      return;
-    }
-  } catch(e) {}
+  // Pas de cache — toujours faire un vrai scan
+  localStorage.removeItem('picksai_tennis_last_scan');
 
   btn.disabled = true;
   btn.innerHTML = '<span class="spin">⏳</span> SCAN EN COURS...';
