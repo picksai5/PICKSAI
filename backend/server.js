@@ -1362,18 +1362,17 @@ app.get('/api/scan-tennis', async (req, res) => {
     // Paramètre correct : type_événement (pas standing_type)
     if (!rankMap || Object.keys(rankMap).length === 0) {
       try {
-        // Paramètre avec accent encodé explicitement
-        const atpStandings = await tennisAPI('get_standings', { 'type_%C3%A9v%C3%A9nement': 'ATP' });
-        const wtaStandings = await tennisAPI('get_standings', { 'type_%C3%A9v%C3%A9nement': 'WTA' });
+        const [atpStandings, wtaStandings] = await Promise.all([
+          tennisAPI('get_standings', { event_type: 'ATP' }),
+          tennisAPI('get_standings', { event_type: 'WTA' }),
+        ]);
         let loaded = 0;
         [...atpStandings, ...wtaStandings].forEach(p => {
-          const key = String(p.player_key || p.id || '');
-          const rank = parseInt(p.place || p.rank || p.standing_place || p.position || 9999);
+          const key = String(p.player_key || '');
+          const rank = parseInt(p.place || 9999);
           if (key && rank < 9999) { rankMap[key] = rank; loaded++; }
-          // Logger un exemple pour debug
-          if (loaded === 1) console.log('[Tennis] Exemple classement:', JSON.stringify(p).substring(0, 200));
         });
-        console.log('[Tennis] Classements chargés:', loaded, 'joueurs');
+        console.log('[Tennis] Classements temps réel:', loaded, 'joueurs (ATP+WTA)');
       } catch(e) {
         console.warn('[Tennis] get_standings échoué:', e.message);
       }
