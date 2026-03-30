@@ -1237,87 +1237,159 @@ async function tennisAPI(method, params = {}) {
   }
 }
 
-// Extraire le rang singles le plus récent depuis les stats joueur api-tennis.com
+// ═══════════════════════════════════════════════════════
+// ── MATRICE TENNIS v3 — 7 FACTEURS ──────────────────────
+// ═══════════════════════════════════════════════════════
+
+// Extraire le rang singles le plus récent depuis stats[]
 function extractPlayerRank(playerData) {
   if (!playerData || !playerData.stats) return 999;
-  const singleStats = playerData.stats
+  const singles = playerData.stats
     .filter(s => s.type === 'singles' && s.rank && parseInt(s.rank) > 0)
     .sort((a, b) => parseInt(b.season || 0) - parseInt(a.season || 0));
-  if (singleStats.length === 0) return 999;
-  return parseInt(singleStats[0].rank);
+  return singles.length ? parseInt(singles[0].rank) : 999;
 }
 
-// Extraire la forme récente (wins/total sur la dernière saison)
-function extractPlayerForm(playerData, surface) {
-  if (!playerData || !playerData.stats) return '';
-  const surf = surface.toLowerCase();
-  const recent = playerData.stats
-    .filter(s => s.type === 'singles' && s.season)
-    .sort((a, b) => parseInt(b.season || 0) - parseInt(a.season || 0))[0];
-  if (!recent) return '';
-  const won = parseInt(recent[surf+'_won'] || recent.matches_won || 0);
-  const lost = parseInt(recent[surf+'_lost'] || recent.matches_lost || 0);
+// F4 — Forme récente : win rate sur la saison en cours (2026) toutes surfaces
+function extractRecentForm(playerData) {
+  if (!playerData || !playerData.stats) return null;
+  const current = playerData.stats
+    .filter(s => s.type === 'singles' && (s.season === '2026' || s.season === '2025'))
+    .sort((a, b) => parseInt(b.season) - parseInt(a.season))[0];
+  if (!current) return null;
+  const won  = parseInt(current.matches_won  || 0);
+  const lost = parseInt(current.matches_lost || 0);
   const total = won + lost;
-  if (total === 0) return '';
-  return `${won}W/${lost}L`;
+  if (total < 3) return null; // pas assez de matchs
+  return { won, lost, total, rate: won / total };
 }
 
-// Matrice tennis v2 — F1 rang ATP, F2 forme, F3 surface, F4 H2H global, F5 H2H surface, F6 niveau tournoi
-function scoreTennisMatch({ rankFavori, rankAdversaire, h2hFavori, h2hTotal, h2hSurfFavori, h2hSurfTotal, grandSlam, masters1000, atp500 }) {
+// F5 — Spécialiste de la surface : win rate sur cette surface (3 dernières saisons)
+function extractSurfaceForm(playerData, surface) {
+  if (!playerData || !playerData.stats) return null;
+  const surf = surface.toLowerCase();
+  const key_won  = surf + '_won';
+  const key_lost = surf + '_lost';
+  const recent = playerData.stats
+    .filter(s => s.type === 'singles' && s.season && parseInt(s.season) >= 2023)
+    .sort((a, b) => parseInt(b.season) - parseInt(a.season))
+    .slice(0, 3);
+  let won = 0, lost = 0;
+  recent.forEach(s => {
+    won  += parseInt(s[key_won]  || 0);
+    lost += parseInt(s[key_lost] || 0);
+  });
+  const total = won + lost;
+  if (total < 5) return null;
+  return { won, lost, total, rate: won / total };
+}
+
+// F6 — Palmarès sur le tournoi : a-t-il déjà gagné ou fait finale/demi ici ?
+function extractTournamentPedigree(playerData, tournamentName) {
+  if (!playerData || !playerData.tournaments) return 0;
+  const tName = tournamentName.toLowerCase();
+  const titles = playerData.tournaments.filter(t =>
+    t.type === 'singles' && t.name && t.name.toLowerCase().includes(tName.split(' ')[0])
+  );
+  return titles.length; // nombre de fois qu'il a gagné ce tournoi
+}
+
+// ── SCORE MATRICIEL ──────────────────────────────────────
+function scoreTennisMatch({
+  rankFavori, rankAdversaire,
+  h2hFavori, h2hTotal, h2hSurfFavori, h2hSurfTotal,
+  formeFavori, formeAdversaire,
+  surfFormeFavori, surfFormeAdversaire,
+  pedigreeFavori, pedigreeAdversaire,
+  grandSlam, masters1000, atp500,
+}) {
   let score = 0;
+  const details = {};
 
-  // F1 — Écart de rang ATP/WTA
-  // Objectif : cotes ~1.40-1.80 → favoriser les écarts modérés (20-100 places)
-  // Éviter les écarts énormes (>150) qui donnent des cotes de 1.01
-  if (rankFavori && rankAdversaire && rankFavori < 900 && rankAdversaire < 900) {
+  // ── F1 — RANG ATP/WTA (30 pts max) ───────────────────
+  // Cible : écart 15-80 places → cotes ~1.40-1.80
+  if (rankFavori < 900 && rankAdversaire < 900) {
     const diff = rankAdversaire - rankFavori;
-    if      (diff >= 30 && diff <= 80)  score += 35; // Écart idéal → cote ~1.50-1.80
-    else if (diff >= 15 && diff < 30)   score += 28; // Bon écart → cote ~1.40-1.60
-    else if (diff > 80 && diff <= 150)  score += 20; // Grand écart → cote ~1.20-1.40
-    else if (diff > 150)                score += 5;  // Trop déséquilibré → cote < 1.20, peu utile
-    else if (diff >= 5 && diff < 15)    score += 15; // Petit écart → cote ~1.55-1.70
-    // diff < 5 → match trop serré
-  } else if (rankFavori < 100 && rankAdversaire >= 900) {
-    score += 10; // Non classé → incertain
+    if      (diff >= 30 && diff <= 80)  { score += 30; details.rang = `+30 (écart idéal ${diff})`; }
+    else if (diff >= 15 && diff < 30)   { score += 24; details.rang = `+24 (bon écart ${diff})`; }
+    else if (diff > 80 && diff <= 150)  { score += 16; details.rang = `+16 (grand écart ${diff})`; }
+    else if (diff > 150)                { score += 4;  details.rang = `+4 (déséquilibre ${diff})`; }
+    else if (diff >= 5 && diff < 15)    { score += 18; details.rang = `+18 (petit écart ${diff})`; }
+    else                                { score += 8;  details.rang = '+8 (match serré)'; }
   } else {
-    score += 15; // Rangs inconnus → neutre
+    score += 8; details.rang = '+8 (rang inconnu)';
   }
 
-  // F2 — H2H global
-  if (h2hTotal >= 2) {
+  // ── F2 — H2H GLOBAL (20 pts max) ─────────────────────
+  if (h2hTotal >= 3) {
     const rate = h2hFavori / h2hTotal;
-    if (rate >= 0.75) score += 25;
-    else if (rate >= 0.60) score += 18;
-    else if (rate >= 0.50) score += 10;
-    else score -= 5;
+    if      (rate >= 0.80) { score += 20; details.h2h = `+20 (domine H2H ${h2hFavori}/${h2hTotal})`; }
+    else if (rate >= 0.65) { score += 15; details.h2h = `+15 (bon H2H ${h2hFavori}/${h2hTotal})`; }
+    else if (rate >= 0.55) { score += 8;  details.h2h = `+8 (légère domination H2H)`; }
+    else if (rate >= 0.50) { score += 4;  details.h2h = '+4 (H2H équilibré)'; }
+    else                   { score -= 5;  details.h2h = `-5 (H2H défavorable ${h2hFavori}/${h2hTotal})`; }
+  } else if (h2hTotal === 2) {
+    const rate = h2hFavori / 2;
+    score += rate >= 0.5 ? 10 : -3;
+    details.h2h = `${rate >= 0.5 ? '+10' : '-3'} (H2H ${h2hFavori}/2)`;
   } else if (h2hTotal === 1) {
-    score += h2hFavori === 1 ? 10 : -3;
+    score += h2hFavori === 1 ? 8 : -2;
+    details.h2h = `${h2hFavori === 1 ? '+8' : '-2'} (H2H 1 match)`;
   } else {
-    score += 8; // 1ère rencontre → léger bonus (pas de mauvais H2H)
+    score += 6; details.h2h = '+6 (1ère rencontre)';
   }
 
-  // F3 — H2H sur la surface actuelle
+  // ── F3 — H2H SUR LA SURFACE (15 pts max) ─────────────
   if (h2hSurfTotal >= 2) {
-    const surfRate = h2hSurfFavori / h2hSurfTotal;
-    if (surfRate >= 0.75) score += 15;
-    else if (surfRate >= 0.60) score += 10;
-    else if (surfRate >= 0.50) score += 4;
-    else score -= 4;
+    const rate = h2hSurfFavori / h2hSurfTotal;
+    if      (rate >= 0.75) { score += 15; details.h2hSurf = `+15 (domine sur surface)`; }
+    else if (rate >= 0.60) { score += 10; details.h2hSurf = '+10 (bon sur surface)'; }
+    else if (rate >= 0.50) { score += 5;  details.h2hSurf = '+5 (légère domination surface)'; }
+    else                   { score -= 4;  details.h2hSurf = '-4 (H2H surface défavorable)'; }
   }
 
-  // F4 — Niveau du tournoi
-  if (grandSlam)        score += 12;
-  else if (masters1000) score += 10;
-  else if (atp500)      score += 6;
-  else                  score += 4;
+  // ── F4 — FORME RÉCENTE 2026 (15 pts max) ─────────────
+  if (formeFavori && formeAdversaire) {
+    const diff = formeFavori.rate - formeAdversaire.rate;
+    if      (diff >= 0.30) { score += 15; details.forme = `+15 (forme bien supérieure)`; }
+    else if (diff >= 0.15) { score += 10; details.forme = '+10 (meilleure forme)'; }
+    else if (diff >= 0.05) { score += 5;  details.forme = '+5 (légère supériorité forme)'; }
+    else if (diff >= -0.05){ score += 2;  details.forme = '+2 (forme équivalente)'; }
+    else if (diff < -0.15) { score -= 5;  details.forme = '-5 (forme inférieure)'; }
+  } else if (formeFavori && formeFavori.rate >= 0.65) {
+    score += 8; details.forme = '+8 (bonne forme favori)';
+  }
 
-  return Math.max(0, Math.min(score, 100));
+  // ── F5 — SPÉCIALISTE DE LA SURFACE (10 pts max) ──────
+  if (surfFormeFavori && surfFormeAdversaire) {
+    const diff = surfFormeFavori.rate - surfFormeAdversaire.rate;
+    if      (diff >= 0.25) { score += 10; details.surface = `+10 (spécialiste surface)`; }
+    else if (diff >= 0.15) { score += 7;  details.surface = '+7 (meilleur sur surface)'; }
+    else if (diff >= 0.05) { score += 3;  details.surface = '+3 (légère avantage surface)'; }
+    else if (diff < -0.15) { score -= 4;  details.surface = '-4 (adversaire spécialiste)'; }
+  } else if (surfFormeFavori && surfFormeFavori.rate >= 0.70) {
+    score += 7; details.surface = '+7 (spécialiste surface)';
+  }
+
+  // ── F6 — PALMARÈS TOURNOI (8 pts max) ────────────────
+  if (pedigreeFavori > pedigreeAdversaire) {
+    const bonus = Math.min(pedigreeFavori * 4, 8);
+    score += bonus; details.palmares = `+${bonus} (${pedigreeFavori} titre(s) ici)`;
+  }
+
+  // ── F7 — NIVEAU DU TOURNOI (10 pts max) ──────────────
+  if      (grandSlam)   { score += 10; details.tournoi = '+10 (Grand Chelem)'; }
+  else if (masters1000) { score += 8;  details.tournoi = '+8 (Masters 1000)'; }
+  else if (atp500)      { score += 5;  details.tournoi = '+5 (ATP/WTA 500)'; }
+  else                  { score += 3;  details.tournoi = '+3 (ATP/WTA 250)'; }
+
+  return { score: Math.max(0, Math.min(score, 100)), details };
 }
 
 function getTennisAlerte(score) {
-  if (score >= 60) return 'VERT';
-  if (score >= 38) return 'ORANGE';
-  if (score >= 20) return 'ROUGE';
+  if (score >= 62) return 'VERT';
+  if (score >= 42) return 'ORANGE';
+  if (score >= 25) return 'ROUGE';
   return null;
 }
 
@@ -1459,10 +1531,29 @@ app.get('/api/scan-tennis', async (req, res) => {
           } catch(e) { /* H2H optionnel */ }
         }
 
-        // Score matriciel
-        const score = scoreTennisMatch({ rankFavori: favoriRank, rankAdversaire: adversaireRank, h2hFavori, h2hTotal, h2hSurfFavori, h2hSurfTotal, grandSlam, masters1000, atp500 });
+        // F4 — Forme récente
+        const formeFavori    = extractRecentForm(playerDataMap[String(favoriId)]);
+        const formeAdversaire= extractRecentForm(playerDataMap[String(adversaireId)]);
+
+        // F5 — Spécialiste surface
+        const surfFormeFavori    = extractSurfaceForm(playerDataMap[String(favoriId)], surface);
+        const surfFormeAdversaire= extractSurfaceForm(playerDataMap[String(adversaireId)], surface);
+
+        // F6 — Palmarès tournoi
+        const pedigreeFavori    = extractTournamentPedigree(playerDataMap[String(favoriId)], tournament);
+        const pedigreeAdversaire= extractTournamentPedigree(playerDataMap[String(adversaireId)], tournament);
+
+        // Score matriciel v3
+        const { score, details } = scoreTennisMatch({
+          rankFavori: favoriRank, rankAdversaire: adversaireRank,
+          h2hFavori, h2hTotal, h2hSurfFavori, h2hSurfTotal,
+          formeFavori, formeAdversaire,
+          surfFormeFavori, surfFormeAdversaire,
+          pedigreeFavori, pedigreeAdversaire,
+          grandSlam, masters1000, atp500,
+        });
         const alerte = getTennisAlerte(score);
-        if (!alerte) { rejected.push({ match: matchStr, raison: `Score trop faible (${score})` }); continue; }
+        if (!alerte) { rejected.push({ match: matchStr, raison: `Score trop faible (${score}/100)` }); continue; }
 
         picks.push({
           match:           matchStr,
@@ -1470,8 +1561,8 @@ app.get('/api/scan-tennis', async (req, res) => {
           adversaire:      adversaireName,
           favori_rang:     favoriRank < 900 ? favoriRank : null,
           adversaire_rang: adversaireRank < 900 ? adversaireRank : null,
-          favori_forme:    extractPlayerForm(playerDataMap[String(favoriId)], surface) || '—',
-          adversaire_forme: extractPlayerForm(playerDataMap[String(adversaireId)], surface) || '—',
+          favori_forme:    formeFavori ? `${formeFavori.won}W/${formeFavori.lost}L (${Math.round(formeFavori.rate*100)}%)` : '—',
+          adversaire_forme: formeAdversaire ? `${formeAdversaire.won}W/${formeAdversaire.lost}L (${Math.round(formeAdversaire.rate*100)}%)` : '—',
           favori_bilan:    '',
           adversaire_bilan:'',
           competition:     `${circuit} · ${tournament}`,
@@ -1486,9 +1577,13 @@ app.get('/api/scan-tennis', async (req, res) => {
             (favoriRank < 900 && adversaireRank < 900) ? `#${favoriRank} vs #${adversaireRank}` : null,
             h2hTotal > 0 ? `H2H ${h2hFavori}/${h2hTotal}` : 'H2H: 1ère rencontre',
             h2hSurfTotal > 0 ? `H2H ${surface}: ${h2hSurfFavori}/${h2hSurfTotal}` : null,
-            grandSlam ? '🏆 Grand Slam' : masters1000 ? '🎯 Masters 1000' : atp500 ? 'ATP/WTA 500' : null,
+            formeFavori ? `Forme: ${formeFavori.won}W/${formeFavori.lost}L` : null,
+            surfFormeFavori ? `${surface}: ${Math.round(surfFormeFavori.rate*100)}% win` : null,
+            pedigreeFavori > 0 ? `🏆 ${pedigreeFavori}x vainqueur ici` : null,
+            grandSlam ? '🏆 Grand Chelem' : masters1000 ? '🎯 Masters 1000' : atp500 ? 'ATP/WTA 500' : null,
           ].filter(Boolean),
-          raison: `${favoriName}${favoriRank < 900 ? ' (#'+favoriRank+')' : ''} favori vs ${adversaireName}${adversaireRank < 900 ? ' (#'+adversaireRank+')' : ''} — score ${score}/100`,
+          raison: `${favoriName}${favoriRank < 900 ? ' (#'+favoriRank+')' : ''} favori vs ${adversaireName}${adversaireRank < 900 ? ' (#'+adversaireRank+')' : ''} — Matrice v3: ${score}/100`,
+          matrix_details: details,
         });
 
       } catch(e) { console.error('[Tennis] Erreur match:', e.message); }
