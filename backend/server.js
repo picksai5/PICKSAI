@@ -1405,6 +1405,12 @@ app.get('/api/scan-tennis', async (req, res) => {
         const favoriId      = favoriIsP1 ? p1Key  : p2Key;
         const adversaireId  = favoriIsP1 ? p2Key  : p1Key;
 
+        // Filtrer : favori doit être top 100 pour être sur Winamax
+        if (favoriRank > 100) {
+          rejected.push({ match: matchStr, raison: `Joueurs hors top 100 (#${favoriRank} vs #${adversaireRank}) — non dispo Winamax` });
+          continue;
+        }
+
         // Surface et tournoi
         const tournament  = game.tournament_name || '—';
         const isWTA       = (game.event_type_type || '').toLowerCase().includes('wta');
