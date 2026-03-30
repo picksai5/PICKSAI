@@ -1519,33 +1519,40 @@ app.get('/api/scan-tennis', async (req, res) => {
 app.get('/api/debug-tennis', async (req, res) => {
   try {
     const today = getTodayStr();
-    
-    // Trouver le match Lehecka vs Sinner dans les fixtures du jour
-    const fixtures = await tennisAPI('get_fixtures', { date_start: today, date_stop: today });
-    const sinnerMatch = fixtures.find(g => 
-      (g.event_first_player||'').toLowerCase().includes('sinner') || 
-      (g.event_second_player||'').toLowerCase().includes('sinner')
-    );
-    
-    const p1key = sinnerMatch?.first_player_key;
-    const p2key = sinnerMatch?.second_player_key;
-    
-    // Tester get_players avec ces keys
-    const [p1data, p2data] = await Promise.all([
-      p1key ? tennisAPI('get_players', { player_key: p1key }) : Promise.resolve([]),
-      p2key ? tennisAPI('get_players', { player_key: p2key }) : Promise.resolve([]),
-    ]);
+    const results = {};
 
-    res.json({
-      today,
-      sinner_match_found: !!sinnerMatch,
-      match_raw: sinnerMatch ? JSON.stringify(sinnerMatch).substring(0, 300) : null,
-      p1_key: p1key,
-      p2_key: p2key,
-      p1_player_data: p1data.length ? JSON.stringify(p1data[0]) : 'empty',
-      p2_player_data: p2data.length ? JSON.stringify(p2data[0]) : 'empty',
-      all_methods_tried: ['get_ranking→0', 'get_standings→0', 'get_players→?'],
-    });
+    // Test 1 : get_standings avec toutes les variantes possibles du paramètre
+    const standingsTests = [
+      { label: 'type_evenement_ATP',    params: { 'type_evenement': 'ATP' } },
+      { label: 'type_encoded_ATP',      params: { 'type_%C3%A9v%C3%A9nement': 'ATP' } },
+      { label: 'standing_type_atp',     params: { standing_type: 'atp' } },
+      { label: 'event_type_ATP',        params: { event_type: 'ATP' } },
+      { label: 'type_ATP',              params: { type: 'ATP' } },
+      { label: 'no_params',             params: {} },
+    ];
+    for (const t of standingsTests) {
+      try {
+        const data = await tennisAPI('get_standings', t.params);
+        results[t.label] = { count: data.length, sample: data.slice(0,2).map(p => JSON.stringify(p).substring(0,150)) };
+      } catch(e) { results[t.label] = { error: e.message }; }
+    }
+
+    // Test 2 : get_players avec le premier joueur ATP du jour
+    const fixtures = await tennisAPI('get_fixtures', { date_start: today, date_stop: today });
+    const atpMatch = fixtures.find(g => (g.event_type_type||'').toLowerCase().includes('atp singles'));
+    if (atpMatch) {
+      const key = atpMatch.first_player_key;
+      const pdata = await tennisAPI('get_players', { player_key: key });
+      results.get_players_test = {
+        player: atpMatch.event_first_player,
+        key,
+        count: pdata.length,
+        fields: pdata.length ? Object.keys(pdata[0]).join(', ') : 'empty',
+        stats_count: pdata.length ? (pdata[0].stats||[]).length : 0,
+      };
+    }
+
+    res.json({ today, results });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
