@@ -1266,40 +1266,41 @@ function extractPlayerForm(playerData, surface) {
 function scoreTennisMatch({ rankFavori, rankAdversaire, h2hFavori, h2hTotal, h2hSurfFavori, h2hSurfTotal, grandSlam, masters1000, atp500 }) {
   let score = 0;
 
-  // F1 — Écart de rang ATP/WTA (principal indicateur)
+  // F1 — Écart de rang ATP/WTA
+  // Objectif : cotes ~1.40-1.80 → favoriser les écarts modérés (20-100 places)
+  // Éviter les écarts énormes (>150) qui donnent des cotes de 1.01
   if (rankFavori && rankAdversaire && rankFavori < 900 && rankAdversaire < 900) {
     const diff = rankAdversaire - rankFavori;
-    if (diff >= 200) score += 35;
-    else if (diff >= 100) score += 28;
-    else if (diff >= 50)  score += 20;
-    else if (diff >= 20)  score += 12;
-    else if (diff >= 5)   score += 6;
-    // diff < 5 → match serré, pas de bonus rang
-  } else if (rankFavori < 50 && rankAdversaire >= 900) {
-    score += 30; // Top 50 vs non classé
+    if      (diff >= 30 && diff <= 80)  score += 35; // Écart idéal → cote ~1.50-1.80
+    else if (diff >= 15 && diff < 30)   score += 28; // Bon écart → cote ~1.40-1.60
+    else if (diff > 80 && diff <= 150)  score += 20; // Grand écart → cote ~1.20-1.40
+    else if (diff > 150)                score += 5;  // Trop déséquilibré → cote < 1.20, peu utile
+    else if (diff >= 5 && diff < 15)    score += 15; // Petit écart → cote ~1.55-1.70
+    // diff < 5 → match trop serré
+  } else if (rankFavori < 100 && rankAdversaire >= 900) {
+    score += 10; // Non classé → incertain
   } else {
-    score += 10; // Rangs inconnus → score neutre
+    score += 15; // Rangs inconnus → neutre
   }
 
   // F2 — H2H global
   if (h2hTotal >= 2) {
     const rate = h2hFavori / h2hTotal;
-    if (rate >= 0.80) score += 25;
-    else if (rate >= 0.65) score += 18;
-    else if (rate >= 0.55) score += 10;
-    else if (rate >= 0.50) score += 5;
-    else score -= 8;
+    if (rate >= 0.75) score += 25;
+    else if (rate >= 0.60) score += 18;
+    else if (rate >= 0.50) score += 10;
+    else score -= 5;
   } else if (h2hTotal === 1) {
     score += h2hFavori === 1 ? 10 : -3;
   } else {
-    score += 5; // 1ère rencontre → neutre
+    score += 8; // 1ère rencontre → léger bonus (pas de mauvais H2H)
   }
 
   // F3 — H2H sur la surface actuelle
   if (h2hSurfTotal >= 2) {
     const surfRate = h2hSurfFavori / h2hSurfTotal;
-    if (surfRate >= 0.80) score += 15;
-    else if (surfRate >= 0.65) score += 10;
+    if (surfRate >= 0.75) score += 15;
+    else if (surfRate >= 0.60) score += 10;
     else if (surfRate >= 0.50) score += 4;
     else score -= 4;
   }
@@ -1308,7 +1309,7 @@ function scoreTennisMatch({ rankFavori, rankAdversaire, h2hFavori, h2hTotal, h2h
   if (grandSlam)        score += 12;
   else if (masters1000) score += 10;
   else if (atp500)      score += 6;
-  else                  score += 3;
+  else                  score += 4;
 
   return Math.max(0, Math.min(score, 100));
 }
