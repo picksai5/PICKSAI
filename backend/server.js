@@ -1015,7 +1015,7 @@ app.post('/api/check-compos', async (req, res) => {
 app.get('/api/reset-cache', (req, res) => {
   cache.lastDate = null;
   ['standings','teamStats','players','natLeagues','fixtureStats','predictions'].forEach(k => { cache[k] = {}; });
-  cache.tennisRankMap = null;
+  cache.tennisRankMap = {}; cache.tennisPlayerData = {}; cache.tennisRankDate = null;
   res.json({ status: 'Cache réinitialisé' });
 });
 
@@ -1360,19 +1360,20 @@ app.get('/api/scan-tennis', async (req, res) => {
 
     // Charger les classements ATP + WTA en temps réel via get_standings
     // Paramètre correct : type_événement (pas standing_type)
-    if (Object.keys(rankMap).length === 0) {
+    if (!rankMap || Object.keys(rankMap).length === 0) {
       try {
-        const [atpStandings, wtaStandings] = await Promise.all([
-          tennisAPI('get_standings', { type_événement: 'ATP' }),
-          tennisAPI('get_standings', { type_événement: 'WTA' }),
-        ]);
+        // Paramètre avec accent encodé explicitement
+        const atpStandings = await tennisAPI('get_standings', { 'type_%C3%A9v%C3%A9nement': 'ATP' });
+        const wtaStandings = await tennisAPI('get_standings', { 'type_%C3%A9v%C3%A9nement': 'WTA' });
         let loaded = 0;
         [...atpStandings, ...wtaStandings].forEach(p => {
           const key = String(p.player_key || p.id || '');
-          const rank = parseInt(p.place || p.rank || p.standing_place || 9999);
+          const rank = parseInt(p.place || p.rank || p.standing_place || p.position || 9999);
           if (key && rank < 9999) { rankMap[key] = rank; loaded++; }
+          // Logger un exemple pour debug
+          if (loaded === 1) console.log('[Tennis] Exemple classement:', JSON.stringify(p).substring(0, 200));
         });
-        console.log('[Tennis] Classements temps réel chargés:', loaded, 'joueurs');
+        console.log('[Tennis] Classements chargés:', loaded, 'joueurs');
       } catch(e) {
         console.warn('[Tennis] get_standings échoué:', e.message);
       }
