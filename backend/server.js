@@ -1358,9 +1358,30 @@ app.get('/api/scan-tennis', async (req, res) => {
     const rankMap      = cache.tennisRankMap;
     const playerDataMap= cache.tennisPlayerData;
 
+    // Charger les classements ATP + WTA en temps réel via get_standings
+    // Paramètre correct : type_événement (pas standing_type)
+    if (Object.keys(rankMap).length === 0) {
+      try {
+        const [atpStandings, wtaStandings] = await Promise.all([
+          tennisAPI('get_standings', { type_événement: 'ATP' }),
+          tennisAPI('get_standings', { type_événement: 'WTA' }),
+        ]);
+        let loaded = 0;
+        [...atpStandings, ...wtaStandings].forEach(p => {
+          const key = String(p.player_key || p.id || '');
+          const rank = parseInt(p.place || p.rank || p.standing_place || 9999);
+          if (key && rank < 9999) { rankMap[key] = rank; loaded++; }
+        });
+        console.log('[Tennis] Classements temps réel chargés:', loaded, 'joueurs');
+      } catch(e) {
+        console.warn('[Tennis] get_standings échoué:', e.message);
+      }
+    }
+
+    // Compléter avec get_players pour les joueurs pas dans le classement
     const allPlayerKeys = [...new Set(singles.flatMap(g => [g.first_player_key, g.second_player_key].filter(Boolean)))];
     const missingKeys   = allPlayerKeys.filter(k => !rankMap[String(k)]);
-    console.log('[Tennis] Joueurs en cache:', allPlayerKeys.length - missingKeys.length, '/ à charger:', missingKeys.length);
+    console.log('[Tennis] En cache:', allPlayerKeys.length - missingKeys.length, '/ manquants:', missingKeys.length);
 
     for (let i = 0; i < missingKeys.length; i += 5) {
       const batch = missingKeys.slice(i, i + 5);
