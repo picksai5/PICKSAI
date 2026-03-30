@@ -2700,7 +2700,33 @@ const TT_PICKS_KEY    = 'picksai_tt_picks';
 const TT_CAPITAL_KEY  = 'picksai_tt_capital';
 const TT_MISE_KEY     = 'picksai_tt_mise';
 
-function tt_getPicks()  { try { return JSON.parse(localStorage.getItem(TT_PICKS_KEY) || '[]'); } catch(e) { return []; } }
+function tt_getPicks() {
+  try {
+    let picks = JSON.parse(localStorage.getItem(TT_PICKS_KEY) || '[]');
+    // Migration : picks avec ancien format (resultat: 'WIN'/'LOSS' au lieu de pending/won/gain)
+    let changed = false;
+    picks = picks.map((p, i) => {
+      // Corriger l'id si manquant ou invalide
+      if (!p.id || typeof p.id !== 'string') {
+        p.id = 'tt_' + (Date.now() + i);
+        changed = true;
+      }
+      // Migrer ancien format resultat → pending/won/gain
+      if (p.resultat !== undefined && p.pending === undefined) {
+        const mise = p.mise || 25;
+        const cote = p.cote || 1.5;
+        p.pending = p.resultat === null || p.resultat === undefined;
+        p.won     = p.resultat === 'WIN' ? true : p.resultat === 'LOSS' ? false : undefined;
+        p.gain    = p.resultat === 'WIN' ? Math.round(mise*(cote-1)) : p.resultat === 'LOSS' ? -Math.round(mise) : undefined;
+        delete p.resultat;
+        changed = true;
+      }
+      return p;
+    });
+    if (changed) localStorage.setItem(TT_PICKS_KEY, JSON.stringify(picks));
+    return picks;
+  } catch(e) { return []; }
+}
 function tt_savePicks(p){ localStorage.setItem(TT_PICKS_KEY, JSON.stringify(p)); }
 function tt_getCapital(){ return parseFloat(localStorage.getItem(TT_CAPITAL_KEY) || '500'); }
 function tt_getMise()   { return parseFloat(localStorage.getItem(TT_MISE_KEY) || String(Math.round(tt_getCapital()*0.05))); }
@@ -3111,7 +3137,23 @@ async function doScanTennis() {
 }
 
 // ── INIT ──
-document.addEventListener('DOMContentLoaded', () => { tt_renderTrack(); });
+document.addEventListener('DOMContentLoaded', () => {
+  // Migrer les picks de l'ancienne clé si elle existe
+  try {
+    const oldKey = 'picksai_tennis_track';
+    const oldPicks = JSON.parse(localStorage.getItem(oldKey) || '[]');
+    if (oldPicks.length > 0) {
+      const existing = JSON.parse(localStorage.getItem(TT_PICKS_KEY) || '[]');
+      if (existing.length === 0) {
+        // Migrer vers la nouvelle clé
+        localStorage.setItem(TT_PICKS_KEY, JSON.stringify(oldPicks));
+        localStorage.removeItem(oldKey);
+        console.log('[Tennis] Migration:', oldPicks.length, 'picks migrés');
+      }
+    }
+  } catch(e) {}
+  tt_renderTrack();
+});
 </script>
 </body>
 </html>
