@@ -1354,10 +1354,12 @@ function scoreTennisMatch({
     if      (diff >= 0.30) { score += 15; details.forme = `+15 (forme bien supérieure)`; }
     else if (diff >= 0.15) { score += 10; details.forme = '+10 (meilleure forme)'; }
     else if (diff >= 0.05) { score += 5;  details.forme = '+5 (légère supériorité forme)'; }
-    else if (diff >= -0.05){ score += 2;  details.forme = '+2 (forme équivalente)'; }
+    else if (diff >= -0.05){ score += 3;  details.forme = '+3 (forme équivalente)'; }
     else if (diff < -0.15) { score -= 5;  details.forme = '-5 (forme inférieure)'; }
   } else if (formeFavori && formeFavori.rate >= 0.65) {
-    score += 8; details.forme = '+8 (bonne forme favori)';
+    score += 8; details.forme = `+8 (${Math.round(formeFavori.rate*100)}% win rate)`;
+  } else {
+    score += 5; details.forme = '+5 (données forme limitées)'; // bonus neutre
   }
 
   // ── F5 — SPÉCIALISTE DE LA SURFACE (10 pts max) ──────
@@ -1369,6 +1371,8 @@ function scoreTennisMatch({
     else if (diff < -0.15) { score -= 4;  details.surface = '-4 (adversaire spécialiste)'; }
   } else if (surfFormeFavori && surfFormeFavori.rate >= 0.70) {
     score += 7; details.surface = '+7 (spécialiste surface)';
+  } else {
+    score += 3; details.surface = '+3 (données surface limitées)'; // bonus neutre
   }
 
   // ── F6 — PALMARÈS TOURNOI (8 pts max) ────────────────
@@ -1387,9 +1391,9 @@ function scoreTennisMatch({
 }
 
 function getTennisAlerte(score) {
-  if (score >= 62) return 'VERT';
-  if (score >= 42) return 'ORANGE';
-  if (score >= 25) return 'ROUGE';
+  if (score >= 55) return 'VERT';
+  if (score >= 35) return 'ORANGE';
+  if (score >= 20) return 'ROUGE';
   return null;
 }
 
@@ -1400,8 +1404,15 @@ app.get('/api/scan-tennis', async (req, res) => {
     console.log('[Tennis] Scan du', today);
 
     // 1. Récupérer tous les matchs du jour
-    const allGames = await tennisAPI('get_fixtures', { date_start: today, date_stop: today });
-    console.log('[Tennis] Matchs bruts:', allGames.length);
+    // Après 21h heure de Paris → inclure aussi le lendemain
+    const parisHour = new Date().toLocaleString('fr-FR', { timeZone: 'Europe/Paris', hour: 'numeric', hour12: false });
+    const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1);
+    const tomorrowStr = tomorrow.toISOString().split('T')[0];
+    const dateStop = parseInt(parisHour) >= 21 ? tomorrowStr : today;
+    if (dateStop === tomorrowStr) console.log('[Tennis] Mode soirée : scan J + J+1');
+
+    const allGames = await tennisAPI('get_fixtures', { date_start: today, date_stop: dateStop });
+    console.log('[Tennis] Matchs bruts:', allGames.length, dateStop === tomorrowStr ? '(J + J+1)' : '(J)');
 
     // 2. Garder uniquement les Singles ATP + WTA des tournois dispo sur Winamax/Betclic
     // Exclure : Challenger, ITF, M15, M25, M25+H, Davis Cup qualifs locaux
