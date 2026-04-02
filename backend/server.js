@@ -1404,15 +1404,18 @@ app.get('/api/scan-tennis', async (req, res) => {
     console.log('[Tennis] Scan du', today);
 
     // 1. Récupérer tous les matchs du jour
-    // Après 21h heure de Paris → inclure aussi le lendemain
-    const parisHour = new Date().toLocaleString('fr-FR', { timeZone: 'Europe/Paris', hour: 'numeric', hour12: false });
-    const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1);
+    // Heure de Paris
+    const nowParis = new Date(new Date().toLocaleString('en-US', { timeZone: 'Europe/Paris' }));
+    const parisHour = nowParis.getHours();
+    const tomorrow = new Date(nowParis); tomorrow.setDate(tomorrow.getDate() + 1);
     const tomorrowStr = tomorrow.toISOString().split('T')[0];
-    const dateStop = parseInt(parisHour) >= 21 ? tomorrowStr : today;
-    if (dateStop === tomorrowStr) console.log('[Tennis] Mode soirée : scan J + J+1');
+
+    // Avant 21h : jour J uniquement — Après 21h : jour J + J+1
+    const dateStop = parisHour >= 21 ? tomorrowStr : today;
+    console.log('[Tennis] Scan', parisHour+'h Paris :', today, '→', dateStop);
 
     const allGames = await tennisAPI('get_fixtures', { date_start: today, date_stop: dateStop });
-    console.log('[Tennis] Matchs bruts:', allGames.length, dateStop === tomorrowStr ? '(J + J+1)' : '(J)');
+    console.log('[Tennis] Matchs bruts:', allGames.length);
 
     // 2. Garder uniquement les Singles ATP + WTA des tournois dispo sur Winamax/Betclic
     // Exclure : Challenger, ITF, M15, M25, M25+H, Davis Cup qualifs locaux
