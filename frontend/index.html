@@ -3023,8 +3023,10 @@ async function doScanTennis() {
   }
 
   try {
-    log('🎾 Récupération des matchs ATP/WTA du jour...');
-    const res = await fetch('/api/scan-tennis');
+    const parisHour = new Date().toLocaleString('fr-FR', {timeZone:'Europe/Paris', hour:'numeric', hour12:false});
+    const modeMsg = parseInt(parisHour) >= 21 ? '🌙 Mode soirée : J + J+1' : '☀️ Mode jour : J uniquement';
+    log('🎾 ' + modeMsg + ' (' + parisHour + 'h Paris)');
+    const res = await fetch('/api/scan-tennis?t=' + Date.now());
     if (!res.ok) throw new Error('Erreur API: '+res.status);
     const data = await res.json();
     log('✅ '+data.total_analyses+' matchs analysés · '+data.picks.length+' picks', '#10b981');
