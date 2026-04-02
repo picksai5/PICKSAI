@@ -1664,6 +1664,22 @@ app.get('/api/debug-tennis', async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+app.get('/api/debug-time', (req, res) => {
+  const nowParis = new Date(new Date().toLocaleString('en-US', { timeZone: 'Europe/Paris' }));
+  const parisHour = nowParis.getHours();
+  const today = getTodayStr();
+  const tomorrow = new Date(nowParis); tomorrow.setDate(tomorrow.getDate() + 1);
+  const tomorrowStr = tomorrow.toISOString().split('T')[0];
+  res.json({
+    utc_now: new Date().toISOString(),
+    paris_now: nowParis.toISOString(),
+    paris_hour: parisHour,
+    mode: parisHour >= 21 ? 'SOIREE (J+J+1)' : 'JOUR (J)',
+    date_start: today,
+    date_stop: parisHour >= 21 ? tomorrowStr : today,
+  });
+});
+
 app.get('/api/health', (req, res) => res.json({ status: 'ok', name: 'PicksAI', version: '4.1', season: SEASON }));
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, '../frontend/index.html')));
 
