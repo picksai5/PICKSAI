@@ -366,18 +366,28 @@ function analyseMatchComplet(hStats, aStats, hStand, aStand, h2h, injuries, isEu
   else if (ptsDiff <= -8) { aScore += 7; factors.push('F14'); }
   else if (ptsDiff <= -4) { aScore += 3; }
 
-  // F4 — FORME RÉCENTE 5 MATCHS (max 18pts)
-  if      (hWins >= 5) { hScore += 18; factors.push('F12'); }
-  else if (hWins >= 4) { hScore += 13; factors.push('F12'); }
-  else if (hWins >= 3) { hScore += 8; factors.push('F12'); }
-  else if (hLoss >= 4) { hScore -= 12; }
-  else if (hLoss >= 3) { hScore -= 7; }
+  // F4 — FORME RÉCENTE 5 MATCHS (max 20pts)
+  // Domicile
+  if      (hWins >= 5) { hScore += 20; factors.push('F12'); }
+  else if (hWins >= 4) { hScore += 14; factors.push('F12'); }
+  else if (hWins >= 3) { hScore += 8;  factors.push('F12'); }
+  else if (hWins >= 2) { hScore += 2; }
+  else if (hWins <= 1 && hLoss >= 3) { hScore -= 18; } // 1V ou 0V sur 5 + 3 défaites = équipe en crise
+  else if (hWins <= 1 && hLoss >= 2) { hScore -= 12; }
+  else if (hLoss >= 4) { hScore -= 20; }
+  else if (hLoss >= 3) { hScore -= 12; }
+  else if (hLoss >= 2) { hScore -= 5; }
 
-  if      (aWins >= 5) { aScore += 15; factors.push('F12'); }
-  else if (aWins >= 4) { aScore += 11; factors.push('F12'); }
-  else if (aWins >= 3) { aScore += 7; }
-  else if (aLoss >= 4) { aScore -= 12; }
-  else if (aLoss >= 3) { aScore -= 7; }
+  // Extérieur
+  if      (aWins >= 5) { aScore += 17; factors.push('F12'); }
+  else if (aWins >= 4) { aScore += 12; factors.push('F12'); }
+  else if (aWins >= 3) { aScore += 7;  factors.push('F12'); }
+  else if (aWins >= 2) { aScore += 2; }
+  else if (aWins <= 1 && aLoss >= 3) { aScore -= 18; }
+  else if (aWins <= 1 && aLoss >= 2) { aScore -= 12; }
+  else if (aLoss >= 4) { aScore -= 20; }
+  else if (aLoss >= 3) { aScore -= 12; }
+  else if (aLoss >= 2) { aScore -= 5; }
 
   // F5 — DÉFENSE ADVERSE EN DÉPLACEMENT (max 15pts)
   if      (aGoalsAgainstAway >= 2.5) { hScore += 15; factors.push('F5'); }
@@ -408,9 +418,12 @@ function analyseMatchComplet(hStats, aStats, hStand, aStand, h2h, injuries, isEu
   // H2H équilibré = signal de nul, réduit les deux scores
   if (h2hDraws >= 3) { hScore -= 5; aScore -= 5; }
 
-  // F8 — ADVERSAIRE SANS VICTOIRE RÉCENTE (série négative)
-  if (aLoss >= 4 || (aLoss >= 3 && hWins >= 3)) { hScore += 10; factors.push('F8'); }
-  if (hLoss >= 4 || (hLoss >= 3 && aWins >= 3)) { aScore += 10; factors.push('F8'); }
+  // F8 — SÉRIE NÉGATIVE (renforcé)
+  if (aLoss >= 4 || (aWins <= 1 && aLoss >= 3)) { hScore += 12; factors.push('F8'); }
+  if (hLoss >= 4 || (hWins <= 1 && hLoss >= 3)) { aScore += 12; factors.push('F8'); }
+  // Équipe en très mauvaise forme = quasi-disqualifiante pour un VERT
+  if (hWins === 0 && hLoss >= 3) { hScore -= 15; } // 0 victoire = grosse crise
+  if (aWins === 0 && aLoss >= 3) { aScore -= 15; }
 
   // MALUS ÉQUIPES QUI FONT SOUVENT NUL
   // Un nul = mauvais pour un prono victoire
