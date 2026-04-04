@@ -134,7 +134,10 @@ const TIRS_LEAGUES = [
 const cache = { standings: {}, teamStats: {}, players: {}, natLeagues: {}, fixtureStats: {}, predictions: {}, lastDate: null, tennisRankMap: {}, tennisPlayerData: {}, tennisRankDate: null };
 const CACHE_TTL = 6 * 60 * 60 * 1000;
 function isCacheValid(e) { return e && Date.now() - e.timestamp < CACHE_TTL; }
-function getTodayStr() { return new Date().toISOString().split('T')[0]; }
+function getTodayStr() {
+  // Date en heure de Paris (pas UTC) pour éviter le décalage nocturne
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Paris' }); // format YYYY-MM-DD
+}
 
 async function footballAPI(endpoint, params = {}) {
   await sleep(200);
