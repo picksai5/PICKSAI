@@ -828,7 +828,7 @@ function showTab(tab) {
   if (tab === 'matrix') renderMatrix();
   if (tab === 'stats') renderStats();
   if (tab === 'track') renderTrack();
-  if (tab === 'combis') renderCombis();
+  if (tab === 'combis') { loadCombiState(); renderCombis(); }
   if (tab === 'bankroll') renderBankroll();
   if (tab === 'tirs') renderTirsTrack();
   if (tab === 'track-tennis') renderTtrackAll();
@@ -2030,18 +2030,23 @@ function saveParams() {
 }
 
 // ── COMBINÉS ──────────────────────────────────────────────
-const COMBI_STATE_KEY = 'picksai_combis_v1';
+const COMBI_STATE_KEY = 'picksai_combis_v2';
 let combiState = { combis: [], capital_base: 500, bankroll: 500 };
 
-async function loadCombiState() {
-  try { const r = await window.storage.get(COMBI_STATE_KEY); if (r?.value) { combiState = { ...combiState, ...JSON.parse(r.value) }; return; } } catch {}
-  try { const s = localStorage.getItem(COMBI_STATE_KEY); if (s) combiState = { ...combiState, ...JSON.parse(s) }; } catch {}
+function loadCombiState() {
+  try {
+    const s = localStorage.getItem(COMBI_STATE_KEY);
+    if (s) combiState = { ...combiState, ...JSON.parse(s) };
+    // Migration ancienne clé
+    else {
+      const old = localStorage.getItem('picksai_combis_v1');
+      if (old) { combiState = { ...combiState, ...JSON.parse(old) }; saveCombiState(); }
+    }
+  } catch(e) {}
 }
 
-async function saveCombiState() {
-  const s = JSON.stringify(combiState);
-  try { await window.storage.set(COMBI_STATE_KEY, s); } catch {}
-  try { localStorage.setItem(COMBI_STATE_KEY, s); } catch {}
+function saveCombiState() {
+  try { localStorage.setItem(COMBI_STATE_KEY, JSON.stringify(combiState)); } catch(e) {}
 }
 
 function addCombi() {
@@ -3061,7 +3066,7 @@ async function doScanTennis() {
 
 // ── INIT ─────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
-  // Migration depuis ancienne clé
+  // Migration tennis depuis ancienne clé
   try {
     const oldPicks = JSON.parse(localStorage.getItem('picksai_tennis_track')||'[]');
     if (oldPicks.length && !JSON.parse(localStorage.getItem(TT_PICKS_KEY)||'[]').length) {
@@ -3070,6 +3075,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   } catch(e) {}
   tt_renderTrack();
+
+  // Charger les combinés
+  loadCombiState();
 });
 </script>
 </body>
