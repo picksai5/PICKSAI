@@ -1258,6 +1258,9 @@ async function tennisAPI(method, params = {}) {
 // ═══════════════════════════════════════════════════════
 
 // Extraire le rang singles le plus récent depuis stats[]
+// ── MATRICE TENNIS v4 — 8 FACTEURS ──────────────────────
+
+// Rang ATP/WTA : saison la plus récente
 function extractPlayerRank(playerData) {
   if (!playerData || !playerData.stats) return 999;
   const singles = playerData.stats
@@ -1266,7 +1269,7 @@ function extractPlayerRank(playerData) {
   return singles.length ? parseInt(singles[0].rank) : 999;
 }
 
-// F4 — Forme récente : win rate sur la saison en cours (2026) toutes surfaces
+// F4 — Forme récente : win rate saison en cours
 function extractRecentForm(playerData) {
   if (!playerData || !playerData.stats) return null;
   const current = playerData.stats
@@ -1276,125 +1279,149 @@ function extractRecentForm(playerData) {
   const won  = parseInt(current.matches_won  || 0);
   const lost = parseInt(current.matches_lost || 0);
   const total = won + lost;
-  if (total < 3) return null; // pas assez de matchs
+  if (total < 3) return null;
   return { won, lost, total, rate: won / total };
 }
 
-// F5 — Spécialiste de la surface : win rate sur cette surface (3 dernières saisons)
-function extractSurfaceForm(playerData, surface) {
+// F5 — Ranking surface spécifique (3 dernières saisons sur cette surface)
+function extractSurfaceRanking(playerData, surface) {
   if (!playerData || !playerData.stats) return null;
   const surf = surface.toLowerCase();
-  const key_won  = surf + '_won';
-  const key_lost = surf + '_lost';
+  const wonKey  = surf + '_won';
+  const lostKey = surf + '_lost';
   const recent = playerData.stats
-    .filter(s => s.type === 'singles' && s.season && parseInt(s.season) >= 2023)
+    .filter(s => s.type === 'singles' && parseInt(s.season || 0) >= 2023)
     .sort((a, b) => parseInt(b.season) - parseInt(a.season))
     .slice(0, 3);
   let won = 0, lost = 0;
   recent.forEach(s => {
-    won  += parseInt(s[key_won]  || 0);
-    lost += parseInt(s[key_lost] || 0);
+    won  += parseInt(s[wonKey]  || 0);
+    lost += parseInt(s[lostKey] || 0);
   });
   const total = won + lost;
-  if (total < 5) return null;
+  if (total < 4) return null;
+  // Win rate + nombre de matchs joués sur cette surface (expérience)
   return { won, lost, total, rate: won / total };
 }
 
-// F6 — Palmarès sur le tournoi : a-t-il déjà gagné ou fait finale/demi ici ?
+// F6 — Palmarès tournoi
 function extractTournamentPedigree(playerData, tournamentName) {
   if (!playerData || !playerData.tournaments) return 0;
-  const tName = tournamentName.toLowerCase();
-  const titles = playerData.tournaments.filter(t =>
-    t.type === 'singles' && t.name && t.name.toLowerCase().includes(tName.split(' ')[0])
-  );
-  return titles.length; // nombre de fois qu'il a gagné ce tournoi
+  const tName = tournamentName.toLowerCase().split(' ')[0];
+  return playerData.tournaments.filter(t =>
+    t.type === 'singles' && t.name && t.name.toLowerCase().includes(tName)
+  ).length;
 }
 
-// ── SCORE MATRICIEL ──────────────────────────────────────
+// F8 — Fatigue : a joué dans les 48h ? (via stats saison — proxy)
+function extractFatigue(playerData) {
+  if (!playerData || !playerData.stats) return false;
+  // Proxy : beaucoup de matchs joués cette saison en peu de temps
+  // Si on a les tournois, vérifier si 2 tournois actifs
+  const currentYear = new Date().getFullYear().toString();
+  const current = playerData.stats.find(s => s.type === 'singles' && s.season === currentYear);
+  if (!current) return false;
+  const total = parseInt(current.matches_won || 0) + parseInt(current.matches_lost || 0);
+  // Plus de 30 matchs en début d'année = charge élevée
+  return total > 30;
+}
+
+// ── SCORE MATRICIEL v4 ────────────────────────────────────
 function scoreTennisMatch({
   rankFavori, rankAdversaire,
   h2hFavori, h2hTotal, h2hSurfFavori, h2hSurfTotal,
   formeFavori, formeAdversaire,
-  surfFormeFavori, surfFormeAdversaire,
+  surfRankFavori, surfRankAdversaire,
   pedigreeFavori, pedigreeAdversaire,
+  fatigueFavori, fatigueAdversaire,
   grandSlam, masters1000, atp500,
 }) {
   let score = 0;
   const details = {};
 
-  // ── F1 — RANG ATP/WTA (30 pts max) ───────────────────
-  // Cible : écart 15-80 places → cotes ~1.40-1.80
+  // ── F1 — RANG ATP/WTA TEMPS RÉEL (30 pts max) ────────
   if (rankFavori < 900 && rankAdversaire < 900) {
     const diff = rankAdversaire - rankFavori;
-    if      (diff >= 30 && diff <= 80)  { score += 30; details.rang = `+30 (écart idéal ${diff})`; }
-    else if (diff >= 15 && diff < 30)   { score += 24; details.rang = `+24 (bon écart ${diff})`; }
-    else if (diff > 80 && diff <= 150)  { score += 16; details.rang = `+16 (grand écart ${diff})`; }
-    else if (diff > 150)                { score += 4;  details.rang = `+4 (déséquilibre ${diff})`; }
-    else if (diff >= 5 && diff < 15)    { score += 18; details.rang = `+18 (petit écart ${diff})`; }
-    else                                { score += 8;  details.rang = '+8 (match serré)'; }
+    if      (diff >= 30 && diff <= 80)  { score += 30; details.rang = `+30 (écart idéal #${rankFavori} vs #${rankAdversaire})`; }
+    else if (diff >= 15 && diff < 30)   { score += 24; details.rang = `+24 (bon écart #${rankFavori} vs #${rankAdversaire})`; }
+    else if (diff > 80 && diff <= 150)  { score += 16; details.rang = `+16 (grand écart)`; }
+    else if (diff > 150)                { score += 4;  details.rang = `+4 (déséquilibre extrême)`; }
+    else if (diff >= 5 && diff < 15)    { score += 18; details.rang = `+18 (petit écart)`; }
+    else                                { score += 6;  details.rang = '+6 (match serré)'; }
+    // Bonus absolu : favori top 10 = très haute qualité
+    if (rankFavori <= 10) { score += 5; details.rang += ' +5 (top 10)'; }
+    else if (rankFavori <= 20) { score += 3; }
   } else {
-    score += 8; details.rang = '+8 (rang inconnu)';
+    score += 6; details.rang = '+6 (rang inconnu)';
   }
 
-  // ── F2 — H2H GLOBAL (20 pts max) ─────────────────────
+  // ── F2 — H2H GLOBAL (18 pts max) ─────────────────────
   if (h2hTotal >= 3) {
     const rate = h2hFavori / h2hTotal;
-    if      (rate >= 0.80) { score += 20; details.h2h = `+20 (domine H2H ${h2hFavori}/${h2hTotal})`; }
-    else if (rate >= 0.65) { score += 15; details.h2h = `+15 (bon H2H ${h2hFavori}/${h2hTotal})`; }
-    else if (rate >= 0.55) { score += 8;  details.h2h = `+8 (légère domination H2H)`; }
-    else if (rate >= 0.50) { score += 4;  details.h2h = '+4 (H2H équilibré)'; }
-    else                   { score -= 5;  details.h2h = `-5 (H2H défavorable ${h2hFavori}/${h2hTotal})`; }
+    if      (rate >= 0.80) { score += 18; details.h2h = `+18 (domine H2H ${h2hFavori}/${h2hTotal})`; }
+    else if (rate >= 0.65) { score += 13; details.h2h = `+13 (bon H2H ${h2hFavori}/${h2hTotal})`; }
+    else if (rate >= 0.55) { score += 7;  details.h2h = '+7 (légère domination)'; }
+    else if (rate >= 0.50) { score += 3;  details.h2h = '+3 (H2H équilibré)'; }
+    else                   { score -= 6;  details.h2h = `-6 (H2H défavorable)`; }
   } else if (h2hTotal === 2) {
-    const rate = h2hFavori / 2;
-    score += rate >= 0.5 ? 10 : -3;
-    details.h2h = `${rate >= 0.5 ? '+10' : '-3'} (H2H ${h2hFavori}/2)`;
+    score += h2hFavori >= 1 ? 8 : -3;
   } else if (h2hTotal === 1) {
-    score += h2hFavori === 1 ? 8 : -2;
-    details.h2h = `${h2hFavori === 1 ? '+8' : '-2'} (H2H 1 match)`;
+    score += h2hFavori === 1 ? 6 : -2;
   } else {
-    score += 6; details.h2h = '+6 (1ère rencontre)';
+    score += 5; details.h2h = '+5 (1ère rencontre)';
   }
 
-  // ── F3 — H2H SUR LA SURFACE (15 pts max) ─────────────
+  // ── F3 — H2H SUR LA SURFACE (12 pts max) ─────────────
   if (h2hSurfTotal >= 2) {
     const rate = h2hSurfFavori / h2hSurfTotal;
-    if      (rate >= 0.75) { score += 15; details.h2hSurf = `+15 (domine sur surface)`; }
-    else if (rate >= 0.60) { score += 10; details.h2hSurf = '+10 (bon sur surface)'; }
-    else if (rate >= 0.50) { score += 5;  details.h2hSurf = '+5 (légère domination surface)'; }
+    if      (rate >= 0.75) { score += 12; details.h2hSurf = `+12 (domine sur surface)`; }
+    else if (rate >= 0.60) { score += 8;  details.h2hSurf = '+8 (bon sur surface)'; }
+    else if (rate >= 0.50) { score += 4;  details.h2hSurf = '+4 (légère domination surface)'; }
     else                   { score -= 4;  details.h2hSurf = '-4 (H2H surface défavorable)'; }
   }
 
   // ── F4 — FORME RÉCENTE 2026 (15 pts max) ─────────────
   if (formeFavori && formeAdversaire) {
     const diff = formeFavori.rate - formeAdversaire.rate;
-    if      (diff >= 0.30) { score += 15; details.forme = `+15 (forme bien supérieure)`; }
-    else if (diff >= 0.15) { score += 10; details.forme = '+10 (meilleure forme)'; }
-    else if (diff >= 0.05) { score += 5;  details.forme = '+5 (légère supériorité forme)'; }
-    else if (diff >= -0.05){ score += 3;  details.forme = '+3 (forme équivalente)'; }
-    else if (diff < -0.15) { score -= 5;  details.forme = '-5 (forme inférieure)'; }
-  } else if (formeFavori && formeFavori.rate >= 0.65) {
-    score += 8; details.forme = `+8 (${Math.round(formeFavori.rate*100)}% win rate)`;
+    if      (diff >= 0.30) { score += 15; details.forme = `+15 (${Math.round(formeFavori.rate*100)}% vs ${Math.round(formeAdversaire.rate*100)}%)`; }
+    else if (diff >= 0.15) { score += 10; details.forme = `+10 (meilleure forme)`; }
+    else if (diff >= 0.05) { score += 5;  details.forme = '+5 (légèrement meilleur)'; }
+    else if (diff >= -0.05){ score += 2;  details.forme = '+2 (forme équivalente)'; }
+    else if (diff < -0.15) { score -= 7;  details.forme = `-7 (forme inférieure)`; }
+    else                   { score -= 3;  details.forme = '-3 (forme légèrement inférieure)'; }
+  } else if (formeFavori && formeFavori.rate >= 0.70) {
+    score += 9; details.forme = `+9 (${Math.round(formeFavori.rate*100)}% win rate)`;
+  } else if (formeFavori && formeFavori.rate < 0.45) {
+    score -= 5; details.forme = `-5 (mauvaise forme ${Math.round(formeFavori.rate*100)}%)`;
   } else {
-    score += 5; details.forme = '+5 (données forme limitées)'; // bonus neutre
+    score += 4; details.forme = '+4 (données limitées)';
   }
 
-  // ── F5 — SPÉCIALISTE DE LA SURFACE (10 pts max) ──────
-  if (surfFormeFavori && surfFormeAdversaire) {
-    const diff = surfFormeFavori.rate - surfFormeAdversaire.rate;
-    if      (diff >= 0.25) { score += 10; details.surface = `+10 (spécialiste surface)`; }
-    else if (diff >= 0.15) { score += 7;  details.surface = '+7 (meilleur sur surface)'; }
-    else if (diff >= 0.05) { score += 3;  details.surface = '+3 (légère avantage surface)'; }
-    else if (diff < -0.15) { score -= 4;  details.surface = '-4 (adversaire spécialiste)'; }
-  } else if (surfFormeFavori && surfFormeFavori.rate >= 0.70) {
-    score += 7; details.surface = '+7 (spécialiste surface)';
+  // ── F5 — SPÉCIALISTE DE LA SURFACE (12 pts max) ──────
+  if (surfRankFavori && surfRankAdversaire) {
+    const diff = surfRankFavori.rate - surfRankAdversaire.rate;
+    const expFav = surfRankFavori.total;
+    const expAdv = surfRankAdversaire.total;
+    if      (diff >= 0.25 && expFav >= 10) { score += 12; details.surface = `+12 (spécialiste ${Math.round(surfRankFavori.rate*100)}% sur surface)`; }
+    else if (diff >= 0.20)                 { score += 9;  details.surface = '+9 (meilleur sur surface)'; }
+    else if (diff >= 0.10)                 { score += 5;  details.surface = '+5 (avantage surface)'; }
+    else if (diff >= 0)                    { score += 2;  details.surface = '+2 (légère avantage)'; }
+    else if (diff < -0.20)                 { score -= 5;  details.surface = '-5 (adversaire spécialiste surface)'; }
+    else                                   { score -= 2;  details.surface = '-2 (légère désavantage surface)'; }
+  } else if (surfRankFavori && surfRankFavori.rate >= 0.72) {
+    score += 8; details.surface = `+8 (${Math.round(surfRankFavori.rate*100)}% sur cette surface)`;
+  } else if (surfRankFavori && surfRankFavori.rate < 0.40) {
+    score -= 4; details.surface = `-4 (faible sur cette surface)`;
   } else {
-    score += 3; details.surface = '+3 (données surface limitées)'; // bonus neutre
+    score += 3; details.surface = '+3 (données surface limitées)';
   }
 
-  // ── F6 — PALMARÈS TOURNOI (8 pts max) ────────────────
+  // ── F6 — PALMARÈS TOURNOI (6 pts max) ────────────────
   if (pedigreeFavori > pedigreeAdversaire) {
-    const bonus = Math.min(pedigreeFavori * 4, 8);
+    const bonus = Math.min(pedigreeFavori * 3, 6);
     score += bonus; details.palmares = `+${bonus} (${pedigreeFavori} titre(s) ici)`;
+  } else if (pedigreeAdversaire > pedigreeFavori) {
+    score -= 3; details.palmares = `-3 (adversaire ${pedigreeAdversaire} titre(s) ici)`;
   }
 
   // ── F7 — NIVEAU DU TOURNOI (10 pts max) ──────────────
@@ -1402,6 +1429,13 @@ function scoreTennisMatch({
   else if (masters1000) { score += 8;  details.tournoi = '+8 (Masters 1000)'; }
   else if (atp500)      { score += 5;  details.tournoi = '+5 (ATP/WTA 500)'; }
   else                  { score += 3;  details.tournoi = '+3 (ATP/WTA 250)'; }
+
+  // ── F8 — FATIGUE (malus si favori fatigué) ───────────
+  if (fatigueFavori && !fatigueAdversaire) {
+    score -= 8; details.fatigue = '-8 (favori potentiellement fatigué)';
+  } else if (!fatigueFavori && fatigueAdversaire) {
+    score += 5; details.fatigue = '+5 (adversaire fatigué)';
+  }
 
   return { score: Math.max(0, Math.min(score, 100)), details };
 }
@@ -1565,21 +1599,26 @@ app.get('/api/scan-tennis', async (req, res) => {
         const formeFavori    = extractRecentForm(playerDataMap[String(favoriId)]);
         const formeAdversaire= extractRecentForm(playerDataMap[String(adversaireId)]);
 
-        // F5 — Spécialiste surface
-        const surfFormeFavori    = extractSurfaceForm(playerDataMap[String(favoriId)], surface);
-        const surfFormeAdversaire= extractSurfaceForm(playerDataMap[String(adversaireId)], surface);
+        // F5 — Ranking sur la surface spécifique
+        const surfRankFavori    = extractSurfaceRanking(playerDataMap[String(favoriId)], surface);
+        const surfRankAdversaire= extractSurfaceRanking(playerDataMap[String(adversaireId)], surface);
 
         // F6 — Palmarès tournoi
         const pedigreeFavori    = extractTournamentPedigree(playerDataMap[String(favoriId)], tournament);
         const pedigreeAdversaire= extractTournamentPedigree(playerDataMap[String(adversaireId)], tournament);
 
-        // Score matriciel v3
+        // F8 — Fatigue
+        const fatigueFavori    = extractFatigue(playerDataMap[String(favoriId)]);
+        const fatigueAdversaire= extractFatigue(playerDataMap[String(adversaireId)]);
+
+        // Score matriciel v4
         const { score, details } = scoreTennisMatch({
           rankFavori: favoriRank, rankAdversaire: adversaireRank,
           h2hFavori, h2hTotal, h2hSurfFavori, h2hSurfTotal,
           formeFavori, formeAdversaire,
-          surfFormeFavori, surfFormeAdversaire,
+          surfRankFavori, surfRankAdversaire,
           pedigreeFavori, pedigreeAdversaire,
+          fatigueFavori, fatigueAdversaire,
           grandSlam, masters1000, atp500,
         });
         const alerte = getTennisAlerte(score);
@@ -1607,12 +1646,14 @@ app.get('/api/scan-tennis', async (req, res) => {
             (favoriRank < 900 && adversaireRank < 900) ? `#${favoriRank} vs #${adversaireRank}` : null,
             h2hTotal > 0 ? `H2H ${h2hFavori}/${h2hTotal}` : 'H2H: 1ère rencontre',
             h2hSurfTotal > 0 ? `H2H ${surface}: ${h2hSurfFavori}/${h2hSurfTotal}` : null,
-            formeFavori ? `Forme: ${formeFavori.won}W/${formeFavori.lost}L` : null,
-            surfFormeFavori ? `${surface}: ${Math.round(surfFormeFavori.rate*100)}% win` : null,
+            formeFavori ? `Forme: ${formeFavori.won}W/${formeFavori.lost}L (${Math.round(formeFavori.rate*100)}%)` : null,
+            surfRankFavori ? `${surface}: ${Math.round(surfRankFavori.rate*100)}% (${surfRankFavori.total} matchs)` : null,
             pedigreeFavori > 0 ? `🏆 ${pedigreeFavori}x vainqueur ici` : null,
+            fatigueFavori ? '⚠️ Favori potentiellement fatigué' : null,
+            fatigueAdversaire ? '💪 Adversaire fatigué' : null,
             grandSlam ? '🏆 Grand Chelem' : masters1000 ? '🎯 Masters 1000' : atp500 ? 'ATP/WTA 500' : null,
           ].filter(Boolean),
-          raison: `${favoriName}${favoriRank < 900 ? ' (#'+favoriRank+')' : ''} favori vs ${adversaireName}${adversaireRank < 900 ? ' (#'+adversaireRank+')' : ''} — Matrice v3: ${score}/100`,
+          raison: `${favoriName}${favoriRank < 900 ? ' (#'+favoriRank+')' : ''} favori vs ${adversaireName}${adversaireRank < 900 ? ' (#'+adversaireRank+')' : ''} — Matrice v4: ${score}/100`,
           matrix_details: details,
         });
 
