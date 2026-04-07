@@ -1567,6 +1567,11 @@ app.get('/api/scan-tennis', async (req, res) => {
           rejected.push({ match: matchStr, raison: `Joueurs hors top 100 (#${favoriRank} vs #${adversaireRank}) — non dispo Winamax` });
           continue;
         }
+        // Filtrer : top 5 mondial → cote < 1.15, injouable
+        if (favoriRank <= 5 && adversaireRank > 30) {
+          rejected.push({ match: matchStr, raison: `Top 5 (#${favoriRank}) vs #${adversaireRank} — cote trop basse (<1.15)` });
+          continue;
+        }
 
         // Surface et tournoi
         const tournament  = game.tournament_name || '—';
