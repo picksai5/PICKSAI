@@ -1476,6 +1476,8 @@ app.get('/api/scan-tennis', async (req, res) => {
       if (!(type.includes('atp') || type.includes('wta')) || !type.includes('singles')) return false;
       // Exclure les petits tournois non couverts
       if (/challenger|itf|m15|m25|m10|futures|next gen finals qualifying/i.test(name)) return false;
+      // Exclure compétitions par équipes (rangs WTA/ATP non représentatifs)
+      if (/billie jean king|davis cup|united cup|hopman|laver cup/i.test(name)) return false;
       return true;
     };
     const singles = allGames.filter(isWinamaxTournoi);
@@ -1567,9 +1569,15 @@ app.get('/api/scan-tennis', async (req, res) => {
           rejected.push({ match: matchStr, raison: `Joueurs hors top 100 (#${favoriRank} vs #${adversaireRank}) — non dispo Winamax` });
           continue;
         }
-        // Filtrer : top 5 mondial → cote < 1.15, injouable
-        if (favoriRank <= 5 && adversaireRank > 30) {
-          rejected.push({ match: matchStr, raison: `Top 5 (#${favoriRank}) vs #${adversaireRank} — cote trop basse (<1.15)` });
+        // Filtrer : écart de rang trop grand = cote injouable (<1.25)
+        // Seuil calibré : écart > 70 places = cote généralement < 1.30
+        const rankGapFilter = adversaireRank - favoriRank;
+        if (rankGapFilter > 70 && favoriRank <= 20) {
+          rejected.push({ match: matchStr, raison: `Écart trop grand (#${favoriRank} vs #${adversaireRank}) — cote trop basse` });
+          continue;
+        }
+        if (rankGapFilter > 90) {
+          rejected.push({ match: matchStr, raison: `Écart trop grand (#${favoriRank} vs #${adversaireRank}) — cote trop basse` });
           continue;
         }
 
