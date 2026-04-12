@@ -1694,8 +1694,14 @@ app.get('/api/scan-tennis', async (req, res) => {
     // 2. Garder uniquement les Singles ATP + WTA des tournois dispo sur Winamax/Betclic
     // Exclure : Challenger, ITF, M15, M25, M25+H, Davis Cup qualifs locaux
     const isWinamaxTournoi = (g) => {
-      const type = (g.event_type_type || '').toLowerCase();
-      const name = (g.tournament_name || '').toLowerCase();
+      const type   = (g.event_type_type || '').toLowerCase();
+      const name   = (g.tournament_name || '').toLowerCase();
+      const status = (g.event_status || g.status || '').toLowerCase();
+
+      // Exclure les matchs annulés, reportés, retirés
+      if (/cancel|annul|postpon|retired|walkover|abandon|void|withdraw/i.test(status)) return false;
+      if (status === 'canc' || status === 'pst' || status === 'abt' || status === 'wo') return false;
+
       // Doit être ATP ou WTA Singles
       if (!(type.includes('atp') || type.includes('wta')) || !type.includes('singles')) return false;
       // Exclure les petits tournois non couverts
