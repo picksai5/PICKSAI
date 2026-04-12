@@ -178,15 +178,11 @@ async function getPlayersCached(teamId, leagueId) {
 }
 
 // Récupère les stats avancées des 5 derniers matchs d'une équipe
-// Retourne moyennes : possession, tirs cadrés, tirs totaux, attaques dangereuses
+// Retourne moyennes : possession, tirs cadrés, tirs totaux, tirs concédés, forme récente
 async function getAdvancedStatsCached(teamId, leagueId) {
-  const k = `adv_${teamId}`; // toutes compétitions, pas par league
+  const k = `adv_${teamId}`;
   if (isCacheValid(cache.fixtureStats[k])) return cache.fixtureStats[k].data;
 
-  // /teams/statistics nécessite league + team + season
-  // On essaie d'abord avec la league passée, puis les autres leagues connues si ça échoue
-  // /teams/statistics ne retourne pas les tirs sur ce plan API
-  // On utilise /fixtures avec last:10 puis /fixtures/statistics sur chaque match
   const lastFixtures = await footballAPI('/fixtures', {
     team: teamId, last: 10, status: 'FT',
   });
@@ -197,39 +193,58 @@ async function getAdvancedStatsCached(teamId, leagueId) {
     return null;
   }
 
-  // Récupérer stats match par match séquentiellement pour éviter rate limit
   let totalShotsOn = 0, totalShotsTotal = 0, totalPossession = 0;
+  let totalShotsOnConceded = 0, totalShotsTotalConceded = 0, totalBlocked = 0;
   let count = 0;
   const shotsOnList = [];
+  const shotsTotalList = []; // pour forme récente
+  const shotsConcededList = [];
 
   for (const f of lastFixtures.slice(0, 8)) {
     const stats = await footballAPI('/fixtures/statistics', { fixture: f.fixture?.id });
+    // Stats de l'équipe ciblée
     const teamStat = stats.find(s => s.team?.id === teamId);
+    // Stats de l'adversaire (pour les tirs concédés)
+    const oppStat  = stats.find(s => s.team?.id !== teamId);
     if (!teamStat) continue;
 
-    const getStat = (type) => {
-      const s = (teamStat.statistics || []).find(x => x.type === type);
+    const getStat = (statObj, type) => {
+      if (!statObj) return null;
+      const s = (statObj.statistics || []).find(x => x.type === type);
       if (!s?.value && s?.value !== 0) return null;
       if (typeof s.value === 'string' && s.value.includes('%')) return parseFloat(s.value) || 0;
       return parseFloat(s.value) || 0;
     };
 
-    const shotsOn    = getStat('Shots on Goal');
-    const shotsTotal = getStat('Total Shots');
-    const poss       = getStat('Ball Possession');
+    const shotsOn    = getStat(teamStat, 'Shots on Goal');
+    const shotsTotal = getStat(teamStat, 'Total Shots');
+    const poss       = getStat(teamStat, 'Ball Possession');
+    const blocked    = getStat(teamStat, 'Blocked Shots');
 
-    // Ne compter que si on a au moins les tirs totaux
+    // Tirs concédés = tirs de l'adversaire
+    const oppShotsTotal = getStat(oppStat, 'Total Shots');
+    const oppShotsOn    = getStat(oppStat, 'Shots on Goal');
+
     if (shotsTotal === null) continue;
 
     totalShotsOn    += shotsOn    ?? 0;
     totalShotsTotal += shotsTotal ?? 0;
     totalPossession += poss       ?? 50;
+    totalBlocked    += blocked    ?? 0;
+
+    if (oppShotsTotal !== null) {
+      totalShotsTotalConceded += oppShotsTotal;
+      totalShotsOnConceded    += oppShotsOn ?? 0;
+      shotsConcededList.push(oppShotsTotal);
+    }
+
     shotsOnList.push(shotsOn ?? 0);
+    shotsTotalList.push(shotsTotal);
     count++;
   }
 
   if (count === 0) {
-    console.log(`[ADV] Team ${teamId} — stats tirs indisponibles sur ${lastFixtures.length} matchs`);
+    console.log(`[ADV] Team ${teamId} — stats indisponibles`);
     cache.fixtureStats[k] = { data: null, timestamp: Date.now() };
     return null;
   }
@@ -237,18 +252,41 @@ async function getAdvancedStatsCached(teamId, leagueId) {
   const avgShotsOn    = +(totalShotsOn    / count).toFixed(1);
   const avgShotsTotal = +(totalShotsTotal / count).toFixed(1);
   const avgPossession = Math.round(totalPossession / count);
+  const avgBlocked    = +(totalBlocked / count).toFixed(1);
 
+  // Tirs concédés moyens
+  const avgShotsConceded   = shotsConcededList.length ? +(totalShotsTotalConceded / shotsConcededList.length).toFixed(1) : null;
+  const avgShotsOnConceded = shotsConcededList.length ? +(totalShotsOnConceded   / shotsConcededList.length).toFixed(1) : null;
+
+  // Forme récente tirs : tendance sur les 3 derniers vs la moyenne
+  const last3 = shotsTotalList.slice(0, 3);
+  const avgLast3 = last3.length ? +(last3.reduce((a,v)=>a+v,0)/last3.length).toFixed(1) : avgShotsTotal;
+  const tendanceTirs = avgLast3 > avgShotsTotal + 2 ? 'hausse' : avgLast3 < avgShotsTotal - 2 ? 'baisse' : 'stable';
+
+  // Régularité (écart-type)
   const variance = shotsOnList.reduce((a, v) => a + Math.pow(v - avgShotsOn, 2), 0) / count;
   const stdDev   = +Math.sqrt(variance).toFixed(2);
 
-  console.log(`[ADV] Team ${teamId} — OK: ${avgShotsOn} cadrés/match, ${avgShotsTotal} totaux/match sur ${count} matchs`);
+  // Solidité défensive : concède peu = équipe défensive
+  // solidite: 'haute' (<10 tirs concédés/match), 'moyenne' (10-14), 'basse' (>14)
+  const soliditeDefensive = avgShotsConceded !== null
+    ? avgShotsConceded < 10 ? 'haute' : avgShotsConceded < 14 ? 'moyenne' : 'basse'
+    : 'moyenne';
+
+  console.log(`[ADV] Team ${teamId} — ${avgShotsOn} cadrés, ${avgShotsTotal} totaux, concède ${avgShotsConceded} tirs/match, tendance: ${tendanceTirs}`);
 
   const data = {
-    possession:       avgPossession,
-    shotsOnTarget:    avgShotsOn,
-    shotsTotal:       avgShotsTotal,
-    dangerousAttacks: 0,
-    shotsOnList:      [],
+    possession:          avgPossession,
+    shotsOnTarget:       avgShotsOn,
+    shotsTotal:          avgShotsTotal,
+    shotsOnConceded:     avgShotsOnConceded,
+    shotsConceded:       avgShotsConceded,
+    blockedShots:        avgBlocked,
+    soliditeDefensive,
+    tendanceTirs,
+    avgLast3Shots:       avgLast3,
+    dangerousAttacks:    0,
+    shotsOnList:         [],
     stdDev,
   };
 
@@ -1224,6 +1262,192 @@ app.get('/api/scan-tirs', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+
+// ══════════════════════════════════════════════════════════
+// ── SCAN TIRS TOTAUX ──────────────────────────────────────
+// ══════════════════════════════════════════════════════════
+app.get('/api/scan-tirs-totaux', async (req, res) => {
+  try {
+    const today = getTodayStr();
+    await preloadCache();
+
+    const allFixtures = [];
+    for (const league of TIRS_LEAGUES) {
+      const data = await getFixturesWithFallback(league.id, today);
+      const valid = data.filter(f => !['PST','CANC','ABD','SUSP','AWD','WO'].includes(f.fixture?.status?.short));
+      if (valid.length > 0) allFixtures.push(...valid.map(f => ({ ...f, leagueName: league.name, leagueId: league.id })));
+    }
+
+    if (allFixtures.length === 0) {
+      return res.json({ picks: [], total_analyses: 0, date: new Date().toLocaleDateString('fr-FR') });
+    }
+
+    const picks = [];
+
+    for (const fixture of allFixtures) {
+      try {
+        const hTeam = fixture.teams?.home;
+        const aTeam = fixture.teams?.away;
+        if (!hTeam || !aTeam) continue;
+
+        const hTime = fixture.fixture?.date
+          ? new Date(fixture.fixture.date).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
+          : '?';
+
+        const leagueId = fixture.leagueId;
+        const isEuro = EURO_LEAGUES.includes(leagueId);
+
+        const [hAdv, aAdv] = await Promise.all([
+          getAdvancedStatsCached(hTeam.id, leagueId),
+          getAdvancedStatsCached(aTeam.id, leagueId),
+        ]);
+
+        if (!hAdv || !aAdv) continue;
+
+        const hShotsTotal = hAdv.shotsTotal || 0;
+        const aShotsTotal = aAdv.shotsTotal || 0;
+        if (hShotsTotal < 5 || aShotsTotal < 5) continue;
+
+        // ── FACTEUR DÉFENSIF ─────────────────────────────────
+        const hConcedes = hAdv.shotsConceded || null;
+        const aConcedes = aAdv.shotsConceded || null;
+
+        let hTirsAjustes = hShotsTotal;
+        let aTirsAjustes = aShotsTotal;
+        if (aConcedes !== null) {
+          if      (aConcedes < 9)  hTirsAjustes = +(hShotsTotal * 0.82).toFixed(1);
+          else if (aConcedes < 11) hTirsAjustes = +(hShotsTotal * 0.90).toFixed(1);
+          else if (aConcedes > 16) hTirsAjustes = +(hShotsTotal * 1.10).toFixed(1);
+          else if (aConcedes > 14) hTirsAjustes = +(hShotsTotal * 1.05).toFixed(1);
+        }
+        if (hConcedes !== null) {
+          if      (hConcedes < 9)  aTirsAjustes = +(aShotsTotal * 0.82).toFixed(1);
+          else if (hConcedes < 11) aTirsAjustes = +(aShotsTotal * 0.90).toFixed(1);
+          else if (hConcedes > 16) aTirsAjustes = +(aShotsTotal * 1.10).toFixed(1);
+          else if (hConcedes > 14) aTirsAjustes = +(aShotsTotal * 1.05).toFixed(1);
+        }
+
+        const totalMoyenShots = +(hTirsAjustes + aTirsAjustes).toFixed(1);
+
+        // ── FORME RÉCENTE TIRS ───────────────────────────────
+        const hTendance = hAdv.tendanceTirs || 'stable';
+        const aTendance = aAdv.tendanceTirs || 'stable';
+        let bonusTendance = 0;
+        if      (hTendance === 'hausse' && aTendance === 'hausse') bonusTendance = +1.5;
+        else if (hTendance === 'hausse' || aTendance === 'hausse') bonusTendance = +0.8;
+        else if (hTendance === 'baisse' && aTendance === 'baisse') bonusTendance = -1.5;
+        else if (hTendance === 'baisse' || aTendance === 'baisse') bonusTendance = -0.8;
+        const totalAvecTendance = +(totalMoyenShots + bonusTendance).toFixed(1);
+
+        // Régularité
+        const hStdDev = hAdv.stdDev || 2.0;
+        const aStdDev = aAdv.stdDev || 2.0;
+        const combinedStdDev = +((hStdDev + aStdDev) / 2).toFixed(2);
+        const isRegular   = combinedStdDev < 1.5;
+        const isIrregular = combinedStdDev > 2.5;
+
+        // Solidité défensive
+        const hSolidite = hAdv.soliditeDefensive || 'moyenne';
+        const aSolidite = aAdv.soliditeDefensive || 'moyenne';
+        const bothDefensive = hSolidite === 'haute' && aSolidite === 'haute';
+
+        // Bonus contexte retour européen
+        let bonusContexte = '';
+        let totalAvecBonus = totalAvecTendance;
+        if (isEuro) {
+          const firstLegFixtures = await footballAPI('/fixtures', {
+            league: leagueId, season: SEASON, team: hTeam.id, status: 'FT', last: 10,
+          });
+          const matchDate = new Date(fixture.fixture?.date || Date.now());
+          const firstLeg = firstLegFixtures.find(f => {
+            const isVs = (f.teams?.home?.id === aTeam.id || f.teams?.away?.id === aTeam.id);
+            return isVs && new Date(f.fixture?.date) < matchDate && f.fixture?.status?.short === 'FT';
+          });
+          if (firstLeg) {
+            const hWasHome = firstLeg.teams?.home?.id === hTeam.id;
+            const hG = hWasHome ? (firstLeg.goals?.home||0) : (firstLeg.goals?.away||0);
+            const aG = hWasHome ? (firstLeg.goals?.away||0) : (firstLeg.goals?.home||0);
+            const deficit = aG - hG;
+            if (deficit >= 3)      { totalAvecBonus = +(totalAvecBonus + 5).toFixed(1); bonusContexte = ' (+5 tirs retour)'; }
+            else if (deficit === 2) { totalAvecBonus = +(totalAvecBonus + 3).toFixed(1); bonusContexte = ' (+3 tirs retour)'; }
+            else if (deficit === 1) { totalAvecBonus = +(totalAvecBonus + 1.5).toFixed(1); bonusContexte = ' (+1.5 tirs retour)'; }
+          }
+        }
+
+        // Calcul fiabilité tirs totaux
+        // Logique : plus la moyenne est loin du seuil bookmaker, plus c'est fiable
+        // On analyse over et under selon le niveau
+        let tendance = null;
+        let fiabilite = 0;
+
+        if (totalAvecBonus >= 28) {
+          tendance = 'OVER';
+          fiabilite = Math.min(92, Math.round(68 + (totalAvecBonus - 28) * 2 + (isRegular ? 5 : 0)));
+        } else if (totalAvecBonus >= 24) {
+          tendance = 'OVER';
+          fiabilite = Math.min(87, Math.round(64 + (totalAvecBonus - 24) * 2 + (isRegular ? 4 : 0)));
+        } else if (totalAvecBonus >= 20) {
+          tendance = 'OVER';
+          fiabilite = Math.min(82, Math.round(60 + (totalAvecBonus - 20) * 1.5 + (isRegular ? 4 : 0)));
+        } else if (totalAvecBonus <= 16) {
+          tendance = 'UNDER';
+          fiabilite = Math.min(88, Math.round(65 + (16 - totalAvecBonus) * 2 + (isRegular ? 5 : 0)));
+        } else if (totalAvecBonus <= 19) {
+          tendance = 'UNDER';
+          fiabilite = Math.min(82, Math.round(60 + (19 - totalAvecBonus) * 2 + (isRegular ? 3 : 0)));
+        } else {
+          // Zone neutre 20-24 — skip
+          continue;
+        }
+
+        if (isIrregular) fiabilite = Math.max(0, fiabilite - 5);
+        if (bothDefensive && tendance === 'UNDER') fiabilite = Math.min(95, fiabilite + 6);
+        if ((hSolidite === 'basse' || aSolidite === 'basse') && tendance === 'UNDER') fiabilite = Math.max(0, fiabilite - 4);
+        if (fiabilite < 60) continue;
+
+        let alerte = null;
+        if      (fiabilite >= 80) alerte = 'VERT';
+        else if (fiabilite >= 70) alerte = 'ORANGE';
+        else if (fiabilite >= 60) alerte = 'ROUGE';
+
+        const regulariteLabel = isRegular ? '✅ Bonne' : isIrregular ? '⚠️ Irrégulier' : '➖ Moyenne';
+
+        picks.push({
+          match:              `${hTeam.name} vs ${aTeam.name}`,
+          competition:        fixture.leagueName,
+          heure:              hTime,
+          domicile:           hTeam.name,
+          exterieur:          aTeam.name,
+          fiabilite,
+          alerte,
+          tendance,
+          estimation_totaux:  totalAvecBonus,
+          h_tirs_totaux:      hShotsTotal,
+          a_tirs_totaux:      aShotsTotal,
+          regularite:         regulariteLabel,
+          raison: `${hTeam.name} ${hShotsTotal} tirs (concède ${hConcedes||'?'}) · ${aTeam.name} ${aShotsTotal} tirs (concède ${aConcedes||'?'}) · Ajusté: ${totalMoyenShots}→${totalAvecBonus}${bonusContexte} · ${hSolidite}/${aSolidite} · ${regulariteLabel}`,
+        });
+
+      } catch(e) { console.error('Erreur tirs totaux:', e.message); }
+    }
+
+    picks.sort((a, b) => b.fiabilite - a.fiabilite);
+    const verts  = picks.filter(p => p.alerte === 'VERT').slice(0, 2);
+    const orange = picks.filter(p => p.alerte === 'ORANGE').slice(0, 1);
+    const rouge  = picks.filter(p => p.alerte === 'ROUGE').slice(0, 1);
+    const top = [...verts, ...orange, ...rouge];
+
+    res.json({
+      date:            new Date().toLocaleDateString('fr-FR'),
+      total_analyses:  allFixtures.length,
+      picks:           top,
+    });
+
+  } catch(e) {
+    console.error('[TIRS TOTAUX]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
 
 // ══════════════════════════════════════════════════════════
 // ── SCAN TENNIS ───────────────────────────────────────────
