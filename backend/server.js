@@ -98,7 +98,7 @@ const LEAGUES = [
   { id: 2,   name: 'Champions League' },
   { id: 3,   name: 'Europa League' },
   { id: 848, name: 'Conference League' },
-  { id: 88,  name: 'Eredivisie' },
+  // { id: 88, name: 'Eredivisie' }, // Retiré — marché tirs non dispo Winamax/Unibet
   { id: 94,  name: 'Liga Portugal' },
   // Qualifications Coupe du Monde 2026
   { id: 32,  name: 'Qualifs CdM UEFA' },
@@ -120,7 +120,7 @@ const TIRS_LEAGUES = [
   { id: 2,   name: 'Champions League' },
   { id: 3,   name: 'Europa League' },
   { id: 848, name: 'Conference League' },
-  { id: 88,  name: 'Eredivisie' },
+  // { id: 88, name: 'Eredivisie' }, // Retiré — marché tirs non dispo Winamax/Unibet
   { id: 94,  name: 'Liga Portugal' },
   { id: 32,  name: 'Qualifs CdM UEFA' },
   { id: 35,  name: 'Qualifs CdM CONMEBOL' },
