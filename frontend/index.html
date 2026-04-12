@@ -193,7 +193,8 @@
 <!-- TABS -->
 <div class="tabs">
   <button class="tab active" onclick="showTab('scan')">⚡ SCAN</button>
-  <button class="tab" onclick="showTab('tirs')">🎯 TIRS</button>
+  <button class="tab" onclick="showTab('tirs')">🎯 TIRS CADRÉS</button>
+  <button class="tab" onclick="showTab('tirs-totaux')">⚽ TIRS TOTAUX</button>
   <button class="tab" onclick="showTab('bankroll')">💰 BANKROLL</button>
   <button class="tab" onclick="showTab('track')">📋 TRACK RECORD</button>
   <button class="tab" onclick="showTab('combis')">🔗 COMBINÉS</button>
@@ -329,6 +330,89 @@
       </div>
       <div id="tirs-track-list">
         <div class="empty"><div class="empty-icon">🎯</div><div class="empty-title">AUCUN PICK TIRS</div><div class="empty-text">Lance un scan tirs pour analyser les matchs.</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TIRS TOTAUX PAGE -->
+  <div class="page" id="page-tirs-totaux">
+    <div class="scan-center">
+      <button class="scan-btn" id="tirs-totaux-btn" onclick="doScanTirsTotaux()" style="background:linear-gradient(135deg,#f59e0b,#d97706);border-color:#f59e0b">⚽ SCAN TIRS TOTAUX</button>
+      <div class="scan-sub">ANALYSE OVER/UNDER TIRS TOTAUX · STATS SAISON</div>
+    </div>
+    <div class="log-box" id="tirs-totaux-log" style="display:none"></div>
+    <div id="tirs-totaux-results"></div>
+
+    <!-- BANKROLL TIRS TOTAUX -->
+    <div style="margin-top:16px">
+      <div class="bankroll-hero" style="background:linear-gradient(135deg,#f59e0b11,var(--bg2));border:1px solid #f59e0b33;border-radius:14px;padding:16px;margin-bottom:12px">
+        <div class="bankroll-label">BANKROLL TIRS TOTAUX</div>
+        <div style="font-family:'Bebas Neue';font-size:42px;line-height:1" id="tt-bankroll-amount">500€</div>
+        <div style="font-size:12px;font-weight:700" id="tt-bankroll-sub">0€ profit · 0 picks joués</div>
+        <div class="sparkline"><canvas id="tt-sparkline" height="60"></canvas></div>
+      </div>
+      <div class="stat-grid-2" style="margin-bottom:12px">
+        <div class="stat-box"><div class="stat-label">WIN RATE</div><div class="stat-value" id="tt-wr">—</div></div>
+        <div class="stat-box"><div class="stat-label">ROI</div><div class="stat-value" id="tt-roi">—</div></div>
+        <div class="stat-box"><div class="stat-label">ÉVOLUTION</div><div class="stat-value" id="tt-evol" style="color:#f59e0b">—</div></div>
+        <div class="stat-box"><div class="stat-label">COTE MOYENNE</div><div class="stat-value" id="tt-cote-moy" style="color:#f59e0b">—</div></div>
+        <div class="stat-box"><div class="stat-label">PICKS JOUÉS</div><div class="stat-value" id="tt-total" style="color:#f59e0b">0</div></div>
+      </div>
+
+      <!-- Bankroll par catégorie -->
+      <div style="margin-bottom:12px">
+        <div style="font-family:'Bebas Neue';font-size:14px;letter-spacing:2px;color:var(--muted);margin-bottom:8px">BANKROLL PAR FIABILITÉ</div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <div style="background:var(--bg2);border:1px solid #10b98133;border-radius:10px;padding:12px">
+            <div style="display:flex;justify-content:space-between;align-items:center">
+              <div style="font-family:'Bebas Neue';font-size:13px;color:#10b981">🟢 VERT</div>
+              <div style="font-family:'Bebas Neue';font-size:20px;color:#10b981" id="tt-cat-vert-bankroll">—€</div>
+            </div>
+            <div class="stat-grid-2" style="margin-top:8px;gap:4px">
+              <div class="stat-box" style="padding:6px"><div class="stat-label" style="font-size:9px">PICKS</div><div class="stat-value" style="font-size:14px" id="tt-cat-vert-total">0</div></div>
+              <div class="stat-box" style="padding:6px"><div class="stat-label" style="font-size:9px">WIN RATE</div><div class="stat-value" style="font-size:14px" id="tt-cat-vert-wr">—</div></div>
+              <div class="stat-box" style="padding:6px"><div class="stat-label" style="font-size:9px">ROI</div><div class="stat-value" style="font-size:14px" id="tt-cat-vert-roi">—</div></div>
+              <div class="stat-box" style="padding:6px"><div class="stat-label" style="font-size:9px">COTE MOY.</div><div class="stat-value" style="font-size:14px" id="tt-cat-vert-cote">—</div></div>
+            </div>
+          </div>
+          <div style="background:var(--bg2);border:1px solid #f59e0b33;border-radius:10px;padding:12px">
+            <div style="display:flex;justify-content:space-between;align-items:center">
+              <div style="font-family:'Bebas Neue';font-size:13px;color:#f59e0b">🟡 ORANGE</div>
+              <div style="font-family:'Bebas Neue';font-size:20px;color:#f59e0b" id="tt-cat-orange-bankroll">—€</div>
+            </div>
+            <div class="stat-grid-2" style="margin-top:8px;gap:4px">
+              <div class="stat-box" style="padding:6px"><div class="stat-label" style="font-size:9px">PICKS</div><div class="stat-value" style="font-size:14px" id="tt-cat-orange-total">0</div></div>
+              <div class="stat-box" style="padding:6px"><div class="stat-label" style="font-size:9px">WIN RATE</div><div class="stat-value" style="font-size:14px" id="tt-cat-orange-wr">—</div></div>
+              <div class="stat-box" style="padding:6px"><div class="stat-label" style="font-size:9px">ROI</div><div class="stat-value" style="font-size:14px" id="tt-cat-orange-roi">—</div></div>
+              <div class="stat-box" style="padding:6px"><div class="stat-label" style="font-size:9px">COTE MOY.</div><div class="stat-value" style="font-size:14px" id="tt-cat-orange-cote">—</div></div>
+            </div>
+          </div>
+          <div style="background:var(--bg2);border:1px solid #ef444433;border-radius:10px;padding:12px">
+            <div style="display:flex;justify-content:space-between;align-items:center">
+              <div style="font-family:'Bebas Neue';font-size:13px;color:#ef4444">🔴 ROUGE</div>
+              <div style="font-family:'Bebas Neue';font-size:20px;color:#ef4444" id="tt-cat-rouge-bankroll">—€</div>
+            </div>
+            <div class="stat-grid-2" style="margin-top:8px;gap:4px">
+              <div class="stat-box" style="padding:6px"><div class="stat-label" style="font-size:9px">PICKS</div><div class="stat-value" style="font-size:14px" id="tt-cat-rouge-total">0</div></div>
+              <div class="stat-box" style="padding:6px"><div class="stat-label" style="font-size:9px">WIN RATE</div><div class="stat-value" style="font-size:14px" id="tt-cat-rouge-wr">—</div></div>
+              <div class="stat-box" style="padding:6px"><div class="stat-label" style="font-size:9px">ROI</div><div class="stat-value" style="font-size:14px" id="tt-cat-rouge-roi">—</div></div>
+              <div class="stat-box" style="padding:6px"><div class="stat-label" style="font-size:9px">COTE MOY.</div><div class="stat-value" style="font-size:14px" id="tt-cat-rouge-cote">—</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Capital base -->
+      <div style="display:flex;gap:8px;margin-bottom:10px;align-items:center">
+        <div style="font-size:11px;color:var(--muted);flex-shrink:0">Capital base :</div>
+        <input type="number" id="tt-capital-input" placeholder="500" style="flex:1;padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:12px">
+        <button onclick="saveTTCapital()" style="padding:6px 12px;border-radius:6px;border:1px solid #f59e0b55;background:#f59e0b22;color:#f59e0b;font-size:11px;font-family:'Bebas Neue';cursor:pointer">OK</button>
+      </div>
+
+      <!-- Historique -->
+      <div>
+        <div style="font-family:'Bebas Neue';font-size:16px;letter-spacing:3px;color:var(--muted);margin-bottom:10px">HISTORIQUE TIRS TOTAUX</div>
+        <div id="tt-track-list"></div>
       </div>
     </div>
   </div>
@@ -831,6 +915,7 @@ function showTab(tab) {
   if (tab === 'combis') { loadCombiState(); renderCombis(); }
   if (tab === 'bankroll') renderBankroll();
   if (tab === 'tirs') renderTirsTrack();
+  if (tab === 'tirs-totaux') renderTTTrack();
   if (tab === 'track-tennis') renderTtrackAll();
 }
 
@@ -3065,6 +3150,254 @@ async function doScanTennis() {
 }
 
 // ── INIT ─────────────────────────────────────────────
+// ══════════════════════════════════════════════════════
+// ── MODULE TIRS TOTAUX ─────────────────────────────────
+// ══════════════════════════════════════════════════════
+
+const TT_STATE_KEY   = 'picksai_tirs_totaux_v1';
+let ttState = { picks: [], capital_base: 500 };
+
+function ttLoadState() {
+  try { const s = localStorage.getItem(TT_STATE_KEY); if (s) ttState = { ...ttState, ...JSON.parse(s) }; } catch(e) {}
+}
+function ttSaveState() {
+  try { localStorage.setItem(TT_STATE_KEY, JSON.stringify(ttState)); } catch(e) {}
+}
+function ttGetCapital() { return parseFloat(localStorage.getItem('picksai_tt_capital_base') || ttState.capital_base || 500); }
+function saveTTCapital() {
+  const v = parseFloat(document.getElementById('tt-capital-input').value);
+  if (!v || v <= 0) { alert('Capital invalide'); return; }
+  ttState.capital_base = v;
+  localStorage.setItem('picksai_tt_capital_base', String(v));
+  ttSaveState(); renderTTTrack();
+}
+
+function ttResolvePick(id, won) {
+  const p = ttState.picks.find(p => p.id === id);
+  if (!p) return;
+  const mise = p.mise || Math.round(ttGetCapital() * 0.05);
+  p.won     = won;
+  p.pending = false;
+  p.gain    = won ? Math.round(mise * (p.cote - 1)) : -Math.round(mise);
+  ttSaveState(); renderTTTrack();
+}
+function ttDeletePick(id) {
+  ttState.picks = ttState.picks.filter(p => p.id !== id);
+  ttSaveState(); renderTTTrack();
+}
+function ttEditPick(id) {
+  const p = ttState.picks.find(p => p.id === id);
+  if (!p) return;
+  p.pending = true; p.won = undefined; p.gain = undefined;
+  ttSaveState(); renderTTTrack();
+}
+
+function renderTTTrack() {
+  ttLoadState();
+  const capital  = ttGetCapital();
+  const allPicks = ttState.picks;
+  const resolved = allPicks.filter(p => !p.pending);
+  const won      = resolved.filter(p => p.won);
+  const profit   = resolved.reduce((a,p) => a+(p.gain||0), 0);
+  const bankroll = capital + profit;
+  const totalMise= resolved.reduce((a,p) => a+(p.mise||Math.round(capital*0.05)), 0);
+  const wr       = resolved.length ? Math.round(won.length/resolved.length*100) : 0;
+  const roi      = totalMise > 0 ? +((profit/totalMise)*100).toFixed(1) : 0;
+  const evol     = +((bankroll-capital)/capital*100).toFixed(1);
+  const coteMoy  = resolved.length ? +(resolved.reduce((a,p)=>a+(p.cote||1.7),0)/resolved.length).toFixed(2) : null;
+
+  const set = (id, val, color) => { const el = document.getElementById(id); if(!el) return; el.textContent = val; if(color) el.style.color = color; };
+  const amEl = document.getElementById('tt-bankroll-amount');
+  if (amEl) { amEl.textContent = bankroll.toFixed(0)+'€'; amEl.style.color = profit>=0?'#10b981':'#ef4444'; }
+  set('tt-bankroll-sub', (profit>=0?'+':'')+profit+'€ profit · '+resolved.length+' picks joués');
+  set('tt-wr', wr+'%', wr>=60?'var(--green)':wr>=50?'var(--gold)':'var(--red)');
+  set('tt-roi', (roi>=0?'+':'')+roi+'%', roi>=0?'var(--green)':'var(--red)');
+  set('tt-evol', (evol>=0?'+':'')+evol+'%', evol>=0?'var(--green)':'var(--red)');
+  set('tt-cote-moy', coteMoy?'×'+coteMoy:'—');
+  set('tt-total', resolved.length);
+
+  // Capital input
+  const capInp = document.getElementById('tt-capital-input');
+  if (capInp && !capInp.value) capInp.value = capital;
+
+  // Bankroll par catégorie
+  ['vert','orange','rouge'].forEach(cat => {
+    const label = cat.toUpperCase();
+    const cp = resolved.filter(p => p.alerte === label);
+    const cw = cp.filter(p => p.won);
+    const cprofit = cp.reduce((a,p)=>a+(p.gain||0), 0);
+    const cb = capital + cprofit;
+    const cwr = cp.length ? Math.round(cw.length/cp.length*100) : 0;
+    const ctm = cp.reduce((a,p)=>a+(p.mise||Math.round(capital*0.05)), 0);
+    const croi = ctm>0?+((cprofit/ctm)*100).toFixed(1):0;
+    const ccote = cp.length?+(cp.reduce((a,p)=>a+(p.cote||1.7),0)/cp.length).toFixed(2):null;
+    set('tt-cat-'+cat+'-bankroll', cb.toFixed(0)+'€');
+    set('tt-cat-'+cat+'-total', cp.length);
+    set('tt-cat-'+cat+'-wr', cwr+'%');
+    set('tt-cat-'+cat+'-roi', (croi>=0?'+':'')+croi+'%');
+    set('tt-cat-'+cat+'-cote', ccote?'×'+ccote:'—');
+  });
+
+  // Sparkline
+  const canvas = document.getElementById('tt-sparkline');
+  if (canvas && resolved.length >= 2) {
+    canvas.width = canvas.offsetWidth||300; canvas.height=60;
+    const ctx = canvas.getContext('2d');
+    let b = capital; const vals = [b];
+    [...resolved].reverse().forEach(p => { b += (p.gain||0); vals.push(b); });
+    const min = Math.min(...vals)-5, max = Math.max(...vals)+5, range = max-min||1;
+    const W = canvas.width, H = canvas.height;
+    ctx.clearRect(0,0,W,H);
+    ctx.strokeStyle='#f59e0b'; ctx.lineWidth=2; ctx.lineJoin='round';
+    ctx.beginPath();
+    vals.forEach((v,i) => { const x=(i/(vals.length-1))*W; const y=H-((v-min)/range)*(H-8)-4; i===0?ctx.moveTo(x,y):ctx.lineTo(x,y); });
+    ctx.stroke();
+  }
+
+  // Liste
+  const listEl = document.getElementById('tt-track-list');
+  if (!listEl) return;
+  if (!allPicks.length) {
+    listEl.innerHTML = '<div class="empty"><div class="empty-icon">⚽</div><div class="empty-title">AUCUN PICK</div><div class="empty-text">Lance un scan et ajoute tes picks.</div></div>';
+    return;
+  }
+  const ac = (a) => a==='VERT'?'#10b981':a==='ORANGE'?'#f59e0b':'#ef4444';
+  listEl.innerHTML = allPicks.map(p => {
+    const isPending = p.pending===true;
+    const a = ac(p.alerte);
+    const gainDisplay = isPending
+      ? `<div style="font-family:'Bebas Neue';font-size:14px;color:#f59e0b">⏳ EN ATTENTE</div>`
+      : `<div style="font-family:'Bebas Neue';font-size:18px;color:${(p.gain||0)>=0?'#10b981':'#ef4444'}">${(p.gain||0)>=0?'+':''}${p.gain||0}€</div>`;
+    return `<div class="track-item" style="border-color:${isPending?'#f59e0b44':p.won?'#10b98133':'#ef444422'}">
+      <div class="track-header">
+        <div style="flex:1">
+          <div class="track-player">
+            <span>${isPending?'⏳':p.won?'✅':'❌'}</span>
+            <span class="track-name">${p.tendance||'OVER'} ${p.estimation_totaux||'?'} tirs</span>
+            <span style="font-size:10px;padding:2px 6px;border-radius:3px;background:${a}22;color:${a};border:1px solid ${a}44">${p.alerte}</span>
+          </div>
+          <div class="track-match">${p.match||'—'} · ${p.competition||'—'}</div>
+          <div style="font-size:10px;color:var(--muted);margin-top:2px">⚽ ${p.h_tirs_totaux||'?'}+${p.a_tirs_totaux||'?'} tirs/match · ${p.regularite||'—'}</div>
+          ${isPending?`<div style="display:flex;gap:6px;margin-top:8px">
+            <button onclick="ttResolvePick('${p.id}',true)" style="flex:1;padding:7px;background:#10b98122;border:1px solid #10b98155;color:#10b981;border-radius:6px;cursor:pointer;font-family:'Bebas Neue';font-size:13px">✅ GAGNÉ</button>
+            <button onclick="ttResolvePick('${p.id}',false)" style="flex:1;padding:7px;background:#ef444422;border:1px solid #ef444455;color:#ef4444;border-radius:6px;cursor:pointer;font-family:'Bebas Neue';font-size:13px">❌ PERDU</button>
+          </div>`:''}
+        </div>
+        <div style="text-align:right;flex-shrink:0;margin-left:14px">
+          ${gainDisplay}
+          <div class="track-mise">Mise: ${p.mise||'—'}€ · <span style="color:#f59e0b;font-weight:500">×${p.cote||'—'}</span></div>
+          <div class="track-date">${p.date?new Date(p.date).toLocaleDateString('fr-FR'):''}</div>
+          <div style="display:flex;gap:6px;margin-top:6px;justify-content:flex-end">
+            <button onclick="ttEditPick('${p.id}')" style="padding:3px 8px;background:transparent;border:1px solid #3b82f644;color:#3b82f6;border-radius:4px;cursor:pointer;font-size:10px">✏️</button>
+            <button onclick="ttDeletePick('${p.id}')" style="padding:3px 8px;background:transparent;border:1px solid #ef444444;color:#ef4444;border-radius:4px;cursor:pointer;font-size:10px">🗑</button>
+          </div>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// Modal tirs totaux
+let _ttPickCurrent = null;
+function openTTModal(pick) {
+  _ttPickCurrent = typeof pick === 'string' ? JSON.parse(pick) : pick;
+  const mise = Math.round(ttGetCapital() * 0.05);
+  document.getElementById('tt-modal-match').textContent = (_ttPickCurrent.match||'—') + ' · ' + (_ttPickCurrent.competition||'—');
+  document.getElementById('tt-modal-prono').textContent = (_ttPickCurrent.tendance||'OVER') + ' ' + (_ttPickCurrent.estimation_totaux||'?') + ' tirs totaux';
+  document.getElementById('tt-modal-mise').value = mise;
+  document.getElementById('tt-modal-cote').value = '';
+  document.getElementById('modal-tt').classList.add('open');
+}
+function closeTTModal() { document.getElementById('modal-tt').classList.remove('open'); _ttPickCurrent = null; }
+function confirmTTPick() {
+  if (!_ttPickCurrent) return;
+  const mise = parseFloat(document.getElementById('tt-modal-mise').value);
+  const cote = parseFloat(document.getElementById('tt-modal-cote').value);
+  if (!mise||mise<=0) { alert('Mise invalide'); return; }
+  if (!cote||cote<=1) { alert('Cote invalide'); return; }
+  ttLoadState();
+  ttState.picks.unshift({
+    id: 'tt_tot_'+Date.now(),
+    match: _ttPickCurrent.match||'',
+    competition: _ttPickCurrent.competition||'',
+    tendance: _ttPickCurrent.tendance||'OVER',
+    estimation_totaux: _ttPickCurrent.estimation_totaux||0,
+    h_tirs_totaux: _ttPickCurrent.h_tirs_totaux||0,
+    a_tirs_totaux: _ttPickCurrent.a_tirs_totaux||0,
+    regularite: _ttPickCurrent.regularite||'',
+    alerte: _ttPickCurrent.alerte||'ORANGE',
+    fiabilite: _ttPickCurrent.fiabilite||0,
+    cote, mise,
+    date: new Date().toISOString(),
+    pending: true,
+  });
+  ttSaveState(); closeTTModal(); renderTTTrack();
+}
+
+async function doScanTirsTotaux() {
+  const btn    = document.getElementById('tirs-totaux-btn');
+  const logEl  = document.getElementById('tirs-totaux-log');
+  const resEl  = document.getElementById('tirs-totaux-results');
+  btn.disabled=true; btn.innerHTML='<span class="spin">⏳</span> SCAN EN COURS...';
+  logEl.style.display='block'; logEl.innerHTML=''; resEl.innerHTML='';
+
+  function log(msg, color='#60a5fa') {
+    const t = new Date().toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+    logEl.innerHTML += `<div class="log-line"><span class="log-time">${t}</span><span style="color:${color}">${msg}</span></div>`;
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  try {
+    log('⚽ Scan tirs totaux en cours...');
+    const res = await fetch('/api/scan-tirs-totaux?t='+Date.now());
+    if (!res.ok) throw new Error('Erreur API: '+res.status);
+    const data = await res.json();
+    log('✅ '+data.total_analyses+' matchs analysés · '+data.picks.length+' picks', '#10b981');
+
+    if (!data.picks||!data.picks.length) {
+      resEl.innerHTML = '<div class="empty"><div class="empty-icon">⚽</div><div class="empty-title">AUCUN PICK TIRS TOTAUX</div></div>';
+      btn.disabled=false; btn.innerHTML='⚽ SCAN TIRS TOTAUX'; return;
+    }
+
+    resEl.innerHTML = data.picks.map(pick => {
+      const ac = pick.alerte==='VERT'?'#10b981':pick.alerte==='ORANGE'?'#f59e0b':'#ef4444';
+      const pj = JSON.stringify(pick).replace(/"/g,'&quot;');
+      return `<div class="pick-card" style="border:1px solid ${ac}33;margin-bottom:12px">
+        <div class="pick-header">
+          <div>
+            <div class="pick-comp">${pick.competition} · ${pick.heure}</div>
+            <div class="pick-teams">${pick.domicile} <span style="color:#1e3a5f">vs</span> ${pick.exterieur}</div>
+          </div>
+          <div style="text-align:right">
+            <div style="color:${ac};font-family:'Bebas Neue';font-size:13px">${pick.alerte}</div>
+            <div style="color:${ac};font-family:'Bebas Neue';font-size:28px">${pick.fiabilite}%</div>
+          </div>
+        </div>
+        <div style="display:flex;gap:12px;margin:10px 0">
+          <div class="stat-box" style="flex:1;padding:10px;text-align:center">
+            <div class="stat-label">TIRS TOTAUX MOY.</div>
+            <div style="font-family:'Bebas Neue';font-size:28px;color:${ac}">${pick.estimation_totaux}</div>
+            <div style="font-size:10px;color:var(--muted)">${pick.h_tirs_totaux} + ${pick.a_tirs_totaux} base</div>
+          </div>
+          <div class="stat-box" style="flex:1;padding:10px;text-align:center">
+            <div class="stat-label">TENDANCE</div>
+            <div style="font-family:'Bebas Neue';font-size:22px;color:${ac}">${pick.tendance}</div>
+            <div style="font-size:10px;color:var(--muted)">${pick.regularite}</div>
+          </div>
+        </div>
+        <div style="font-size:11px;color:var(--muted);margin-bottom:10px;padding:8px;background:var(--bg2);border-radius:6px">
+          💡 Tirs totaux → cherche ligne proche de <strong style="color:${ac}">${pick.estimation_totaux}</strong>
+        </div>
+        <div style="padding:8px 0;border-top:1px solid ${ac}22">
+          <div style="font-size:10px;color:var(--muted);margin-bottom:6px">${pick.raison}</div>
+          <button onclick="openTTModal(${pj})" style="width:100%;padding:10px;border-radius:8px;border:1px solid ${ac}55;background:${ac}22;color:${ac};font-family:'Bebas Neue';font-size:14px;letter-spacing:3px;cursor:pointer">⚽ + TRACK RECORD</button>
+        </div>
+      </div>`;
+    }).join('');
+  } catch(e) { log('❌ '+e.message,'#ef4444'); }
+  btn.disabled=false; btn.innerHTML='⚽ SCAN TIRS TOTAUX';
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   // Migration tennis depuis ancienne clé
   try {
@@ -3080,5 +3413,26 @@ document.addEventListener('DOMContentLoaded', () => {
   loadCombiState();
 });
 </script>
+  <!-- MODAL TIRS TOTAUX -->
+  <div class="modal-overlay" id="modal-tt" onclick="if(event.target===this)closeTTModal()">
+    <div class="modal-box">
+      <div class="modal-title">⚽ AJOUTER AU TRACK TIRS TOTAUX</div>
+      <div id="tt-modal-match" style="font-size:12px;color:var(--muted);margin-bottom:4px"></div>
+      <div id="tt-modal-prono" style="font-family:'Bebas Neue';font-size:16px;color:#f59e0b;margin-bottom:12px"></div>
+      <div class="modal-field">
+        <label class="modal-label">MISE (€)</label>
+        <input type="number" id="tt-modal-mise" class="modal-input" placeholder="50">
+      </div>
+      <div class="modal-field">
+        <label class="modal-label">COTE RÉELLE</label>
+        <input type="number" id="tt-modal-cote" class="modal-input" placeholder="1.75" step="0.01">
+      </div>
+      <div style="display:flex;gap:8px;margin-top:12px">
+        <button onclick="closeTTModal()" style="flex:1;padding:10px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer;font-family:'Bebas Neue'">ANNULER</button>
+        <button onclick="confirmTTPick()" style="flex:2;padding:10px;border-radius:8px;border:1px solid #f59e0b55;background:#f59e0b22;color:#f59e0b;cursor:pointer;font-family:'Bebas Neue';font-size:14px">✅ CONFIRMER</button>
+      </div>
+    </div>
+  </div>
+
 </body>
 </html>
