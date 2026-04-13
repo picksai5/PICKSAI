@@ -1138,19 +1138,51 @@ app.get('/api/scan-tirs', async (req, res) => {
         }
 
         // Tirs cadrés moyens combinés
-        const hShotsOn = hAdv.shotsOnTarget || 0;
-        const aShotsOn = aAdv.shotsOnTarget || 0;
-        const hShotsTotal = hAdv.shotsTotal || 0;
-        const aShotsTotal = aAdv.shotsTotal || 0;
-        let totalMoyen = +(hShotsOn + aShotsOn).toFixed(1);
+        const hShotsOn    = hAdv.shotsOnTarget || 0;
+        const aShotsOn    = aAdv.shotsOnTarget || 0;
+        const hShotsTotal = hAdv.shotsTotal    || 0;
+        const aShotsTotal = aAdv.shotsTotal    || 0;
+
+        // ── AJUSTEMENT DÉFENSIF TIRS CADRÉS ──────────────────
+        // Tirs cadrés concédés par chaque équipe
+        const hShotsOnConceded = hAdv.shotsOnConceded || null;
+        const aShotsOnConceded = aAdv.shotsOnConceded || null;
+
+        let hShotsOnAjustes = hShotsOn;
+        let aShotsOnAjustes = aShotsOn;
+
+        if (aShotsOnConceded !== null) {
+          // Défense ext limite les tirs cadrés de dom
+          if      (aShotsOnConceded < 2.5) hShotsOnAjustes = +(hShotsOn * 0.80).toFixed(1); // gardien solide
+          else if (aShotsOnConceded < 3.5) hShotsOnAjustes = +(hShotsOn * 0.90).toFixed(1);
+          else if (aShotsOnConceded > 5.5) hShotsOnAjustes = +(hShotsOn * 1.10).toFixed(1); // gardien fragile
+          else if (aShotsOnConceded > 4.5) hShotsOnAjustes = +(hShotsOn * 1.05).toFixed(1);
+        }
+        if (hShotsOnConceded !== null) {
+          // Défense dom limite les tirs cadrés de ext
+          if      (hShotsOnConceded < 2.5) aShotsOnAjustes = +(aShotsOn * 0.80).toFixed(1);
+          else if (hShotsOnConceded < 3.5) aShotsOnAjustes = +(aShotsOn * 0.90).toFixed(1);
+          else if (hShotsOnConceded > 5.5) aShotsOnAjustes = +(aShotsOn * 1.10).toFixed(1);
+          else if (hShotsOnConceded > 4.5) aShotsOnAjustes = +(aShotsOn * 1.05).toFixed(1);
+        }
+
+        // Forme récente tirs cadrés
+        const hTendance = hAdv.tendanceTirs || 'stable';
+        const aTendance = aAdv.tendanceTirs || 'stable';
+        let bonusTendanceC = 0;
+        if      (hTendance === 'hausse' && aTendance === 'hausse') bonusTendanceC = +0.8;
+        else if (hTendance === 'hausse' || aTendance === 'hausse') bonusTendanceC = +0.4;
+        else if (hTendance === 'baisse' && aTendance === 'baisse') bonusTendanceC = -0.8;
+        else if (hTendance === 'baisse' || aTendance === 'baisse') bonusTendanceC = -0.4;
+
+        let totalMoyen = +(hShotsOnAjustes + aShotsOnAjustes + bonusTendanceC).toFixed(1);
         let totalMoyenShots = +(hShotsTotal + aShotsTotal).toFixed(1);
 
-        // Régularité combinée des deux équipes (écart-type moyen)
+        // Régularité combinée
         const hStdDev = hAdv.stdDev || 2.0;
         const aStdDev = aAdv.stdDev || 2.0;
         const combinedStdDev = +((hStdDev + aStdDev) / 2).toFixed(2);
-        // Régulier = stdDev < 1.5 | Moyen = 1.5-2.5 | Irrégulier = > 2.5
-        const isRegular = combinedStdDev < 1.5;
+        const isRegular   = combinedStdDev < 1.5;
         const isIrregular = combinedStdDev > 2.5;
 
         // Bonus contexte retour — équipe qui doit remonter tire plus
