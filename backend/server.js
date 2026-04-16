@@ -1834,10 +1834,19 @@ app.get('/api/scan-tennis', async (req, res) => {
         // Filtrer : écart de rang trop grand = cote injouable (<1.25)
         // Seuil calibré : écart > 70 places = cote généralement < 1.30
         const rankGapFilter = adversaireRank - favoriRank;
-        if (rankGapFilter > 70 && favoriRank <= 20) {
-          rejected.push({ match: matchStr, raison: `Écart trop grand (#${favoriRank} vs #${adversaireRank}) — cote trop basse` });
+
+        // Top 10 mondial : cote quasi toujours < 1.20 sauf contre un autre top joueur
+        // Exiger que l'adversaire soit dans le top 50 pour que la cote soit jouable
+        if (favoriRank <= 10 && adversaireRank > 50) {
+          rejected.push({ match: matchStr, raison: `Top 10 (#${favoriRank}) vs #${adversaireRank} — cote trop basse (<1.20)` });
           continue;
         }
+        // Top 20 : exiger adversaire top 60 minimum
+        if (favoriRank <= 20 && adversaireRank > 60) {
+          rejected.push({ match: matchStr, raison: `Top 20 (#${favoriRank}) vs #${adversaireRank} — cote trop basse` });
+          continue;
+        }
+        // Écart absolu trop grand : toujours cote basse
         if (rankGapFilter > 90) {
           rejected.push({ match: matchStr, raison: `Écart trop grand (#${favoriRank} vs #${adversaireRank}) — cote trop basse` });
           continue;
