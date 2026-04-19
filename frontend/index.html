@@ -3130,6 +3130,9 @@ async function doScanTennis() {
 
     document.getElementById('tennis-last-scan-badge').textContent = '🕐 Dernier scan : '+data.date;
 
+    // Sauvegarder pour restauration
+    try { localStorage.setItem('picksai_tennis_last_scan', JSON.stringify(data)); } catch(e) {}
+
     resultsEl.innerHTML = data.picks.map(pick => {
       const ac = pick.alerte==='VERT'?'#10b981':pick.alerte==='ORANGE'?'#f59e0b':'#ef4444';
       const ae = pick.alerte==='VERT'?'🟢':pick.alerte==='ORANGE'?'🟡':'🔴';
@@ -3354,6 +3357,9 @@ async function doScanTirsTotaux() {
     const data = await res.json();
     log('✅ '+data.total_analyses+' matchs analysés · '+data.picks.length+' picks', '#10b981');
 
+    // Sauvegarder pour restauration
+    try { localStorage.setItem('picksai_tirs_totaux_last_scan', JSON.stringify(data)); } catch(e) {}
+
     if (!data.picks||!data.picks.length) {
       resEl.innerHTML = '<div class="empty"><div class="empty-icon">⚽</div><div class="empty-title">AUCUN PICK TIRS TOTAUX</div></div>';
       btn.disabled=false; btn.innerHTML='⚽ SCAN TIRS TOTAUX'; return;
@@ -3398,6 +3404,90 @@ async function doScanTirsTotaux() {
   btn.disabled=false; btn.innerHTML='⚽ SCAN TIRS TOTAUX';
 }
 
+// ══════════════════════════════════════════════════════
+// ── RESTAURATION DES DERNIERS SCANS ────────────────────
+// ══════════════════════════════════════════════════════
+
+function restoreTennisScan() {
+  try {
+    const raw = localStorage.getItem('picksai_tennis_last_scan');
+    if (!raw) return;
+    const data = JSON.parse(raw);
+    if (!data.picks || !data.picks.length) return;
+
+    const resultsEl = document.getElementById('tennis-results');
+    const emptyEl   = document.getElementById('tennis-empty');
+    const badgeEl   = document.getElementById('tennis-last-scan-badge');
+    if (!resultsEl) return;
+
+    if (emptyEl) emptyEl.style.display = 'none';
+    if (badgeEl) badgeEl.textContent = '🕐 Dernier scan : ' + data.date;
+
+    resultsEl.innerHTML = data.picks.map(pick => {
+      const ac = pick.alerte==='VERT'?'#10b981':pick.alerte==='ORANGE'?'#f59e0b':'#ef4444';
+      const ae = pick.alerte==='VERT'?'🟢':pick.alerte==='ORANGE'?'🟡':'🔴';
+      const se = {'Clay':'🔴','Hard':'🔵','Grass':'🟢','Carpet':'🟤'}[pick.surface]||'🎾';
+      const pj = JSON.stringify(pick).replace(/"/g,'&quot;');
+      return buildTennisPickCard(pick, ac, ae, se, pj);
+    }).join('');
+
+    if (data.rejected && data.rejected.length) {
+      resultsEl.innerHTML += `<div style="margin-top:14px">
+        <div style="font-family:Bebas Neue;font-size:13px;color:var(--muted);letter-spacing:2px;margin-bottom:6px">MATCHS EXCLUS (${data.rejected.length})</div>
+        ${data.rejected.map(r=>`<div style="font-size:11px;color:#1a2a40;padding:3px 0">${r.match} — <span style="color:#2a3a50">${r.raison}</span></div>`).join('')}
+      </div>`;
+    }
+  } catch(e) { console.error('restoreTennisScan:', e); }
+}
+
+function restoreTirsTotauxScan() {
+  try {
+    const raw = localStorage.getItem('picksai_tirs_totaux_last_scan');
+    if (!raw) return;
+    const data = JSON.parse(raw);
+    if (!data.picks || !data.picks.length) return;
+
+    const resEl = document.getElementById('tirs-totaux-results');
+    if (!resEl) return;
+
+    resEl.innerHTML = data.picks.map(pick => {
+      const ac = pick.alerte==='VERT'?'#10b981':pick.alerte==='ORANGE'?'#f59e0b':'#ef4444';
+      const pj = JSON.stringify(pick).replace(/"/g,'&quot;');
+      return `<div class="pick-card" style="border:1px solid ${ac}33;margin-bottom:12px">
+        <div class="pick-header">
+          <div>
+            <div class="pick-comp">${pick.competition} · ${pick.heure}</div>
+            <div class="pick-teams">${pick.domicile} <span style="color:#1e3a5f">vs</span> ${pick.exterieur}</div>
+          </div>
+          <div style="text-align:right">
+            <div style="color:${ac};font-family:'Bebas Neue';font-size:13px">${pick.alerte}</div>
+            <div style="color:${ac};font-family:'Bebas Neue';font-size:28px">${pick.fiabilite}%</div>
+          </div>
+        </div>
+        <div style="display:flex;gap:12px;margin:10px 0">
+          <div class="stat-box" style="flex:1;padding:10px;text-align:center">
+            <div class="stat-label">TIRS TOTAUX MOY.</div>
+            <div style="font-family:'Bebas Neue';font-size:28px;color:${ac}">${pick.estimation_totaux}</div>
+            <div style="font-size:10px;color:var(--muted)">${pick.h_tirs_totaux} + ${pick.a_tirs_totaux} base</div>
+          </div>
+          <div class="stat-box" style="flex:1;padding:10px;text-align:center">
+            <div class="stat-label">TENDANCE</div>
+            <div style="font-family:'Bebas Neue';font-size:22px;color:${ac}">${pick.tendance}</div>
+            <div style="font-size:10px;color:var(--muted)">${pick.regularite}</div>
+          </div>
+        </div>
+        <div style="font-size:11px;color:var(--muted);margin-bottom:10px;padding:8px;background:var(--bg2);border-radius:6px">
+          💡 Tirs totaux → cherche ligne proche de <strong style="color:${ac}">${pick.estimation_totaux}</strong>
+        </div>
+        <div style="padding:8px 0;border-top:1px solid ${ac}22">
+          <div style="font-size:10px;color:var(--muted);margin-bottom:6px">${pick.raison}</div>
+          <button onclick="openTTModal(${pj})" style="width:100%;padding:10px;border-radius:8px;border:1px solid ${ac}55;background:${ac}22;color:${ac};font-family:'Bebas Neue';font-size:14px;letter-spacing:3px;cursor:pointer">⚽ + TRACK RECORD</button>
+        </div>
+      </div>`;
+    }).join('');
+  } catch(e) { console.error('restoreTirsTotaux:', e); }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   // Migration tennis depuis ancienne clé
   try {
@@ -3411,6 +3501,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Charger les combinés
   loadCombiState();
+
+  // Restaurer les derniers scans (foot, tirs cadrés, tennis, tirs totaux)
+  restoreTirsScan();
+  restoreTennisScan();
+  restoreTirsTotauxScan();
+  // Le foot est déjà restauré via son propre mécanisme
 });
 </script>
   <!-- MODAL TIRS TOTAUX -->
