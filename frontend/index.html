@@ -1080,6 +1080,7 @@ function resolveTirsPick(id, won) {
   saveTirsState();
   renderTirsTrack();
   renderTirsBankroll();
+  if (typeof updateUI === 'function') updateUI(); // rafraîchir header
 }
 
 function deleteTirsPick(id) {
@@ -2591,8 +2592,39 @@ function updateUI() {
   const wr = picks.length > 0 ? Math.round((won / picks.length) * 100) : 0;
   const wrColor = wr >= 60 ? 'var(--green)' : wr >= 50 ? 'var(--gold)' : 'var(--red)';
 
-  document.getElementById('header-bankroll').textContent = state.bankroll.toLocaleString('fr-FR') + '€';
-  document.getElementById('header-bankroll').style.color = state.bankroll >= state.capital_base ? 'var(--green)' : 'var(--red)';
+  // Bankroll header = VERT tirs cadrés + VERT tirs totaux + ORANGE tennis
+  let bankrollHeader = 0;
+  let capitalHeader  = 0;
+  try {
+    // Tirs cadrés VERT
+    const tirsPicks = tirsState.picks || [];
+    const tirsVertResolved = tirsPicks.filter(p => p.alerte === 'VERT' && !p.pending);
+    const tirsVertProfit   = tirsVertResolved.reduce((a,p) => a + (p.gain||0), 0);
+    const tirsCapital      = (tirsState.capital_base || 500);
+    bankrollHeader += tirsCapital + tirsVertProfit;
+    capitalHeader  += tirsCapital;
+  } catch(e) {}
+  try {
+    // Tirs totaux VERT
+    const tt = JSON.parse(localStorage.getItem('picksai_tirs_totaux_v1') || '{"picks":[],"capital_base":500}');
+    const ttVertResolved = (tt.picks || []).filter(p => p.alerte === 'VERT' && !p.pending);
+    const ttVertProfit   = ttVertResolved.reduce((a,p) => a + (p.gain||0), 0);
+    const ttCapital      = parseFloat(localStorage.getItem('picksai_tt_capital_base') || tt.capital_base || 500);
+    bankrollHeader += ttCapital + ttVertProfit;
+    capitalHeader  += ttCapital;
+  } catch(e) {}
+  try {
+    // Tennis ORANGE
+    const tennisPicks = JSON.parse(localStorage.getItem(TT_PICKS_KEY) || '[]');
+    const tennisCapital = parseFloat(localStorage.getItem('picksai_tt_capital') || '1000');
+    const tennisOrangeResolved = tennisPicks.filter(p => p.alerte === 'ORANGE' && !p.pending);
+    const tennisOrangeProfit   = tennisOrangeResolved.reduce((a,p) => a + (p.gain||0), 0);
+    bankrollHeader += tennisCapital + tennisOrangeProfit;
+    capitalHeader  += tennisCapital;
+  } catch(e) {}
+
+  document.getElementById('header-bankroll').textContent = Math.round(bankrollHeader).toLocaleString('fr-FR') + '€';
+  document.getElementById('header-bankroll').style.color = bankrollHeader >= capitalHeader ? 'var(--green)' : 'var(--red)';
   document.getElementById('header-winrate').textContent = wr + '%';
   document.getElementById('header-winrate').style.color = wrColor;
 
