@@ -2595,22 +2595,40 @@ function updateUI() {
   // Bankroll header = 1000€ de départ + profits cumulés de (VERT tirs cadrés + VERT tirs totaux + ORANGE tennis)
   const CAPITAL_HEADER_BASE = 1000;
   let profitsHeader = 0;
+  const _debug = { tirs: 0, tirsTot: 0, tennis: 0, keys: [] };
+
+  // Lister toutes les clés localStorage contenant "picksai" ou "tirs" ou "combi" ou "tennis"
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (/picksai|tirs|combi|tennis|tt_/i.test(k)) _debug.keys.push(k);
+    }
+  } catch(e) {}
 
   try {
-    const tirsPicks = tirsState.picks || [];
+    // Lire directement depuis localStorage au cas où tirsState pas encore chargé
+    const tirsRaw = localStorage.getItem('picksai_tirs_state_v1') || '{"picks":[]}';
+    const tirsData = JSON.parse(tirsRaw);
+    const tirsPicks = tirsData.picks || [];
     const tirsVertResolved = tirsPicks.filter(p => p.alerte === 'VERT' && !p.pending);
-    profitsHeader += tirsVertResolved.reduce((a,p) => a + (p.gain||0), 0);
+    _debug.tirs = tirsVertResolved.reduce((a,p) => a + (p.gain||0), 0);
+    profitsHeader += _debug.tirs;
   } catch(e) {}
   try {
     const tt = JSON.parse(localStorage.getItem('picksai_tirs_totaux_v1') || '{"picks":[]}');
     const ttVertResolved = (tt.picks || []).filter(p => p.alerte === 'VERT' && !p.pending);
-    profitsHeader += ttVertResolved.reduce((a,p) => a + (p.gain||0), 0);
+    _debug.tirsTot = ttVertResolved.reduce((a,p) => a + (p.gain||0), 0);
+    profitsHeader += _debug.tirsTot;
   } catch(e) {}
   try {
-    const tennisPicks = JSON.parse(localStorage.getItem(TT_PICKS_KEY) || '[]');
+    const tennisPicks = JSON.parse(localStorage.getItem('picksai_tt_picks') || '[]');
     const tennisOrangeResolved = tennisPicks.filter(p => p.alerte === 'ORANGE' && !p.pending);
-    profitsHeader += tennisOrangeResolved.reduce((a,p) => a + (p.gain||0), 0);
+    _debug.tennis = tennisOrangeResolved.reduce((a,p) => a + (p.gain||0), 0);
+    profitsHeader += _debug.tennis;
   } catch(e) {}
+
+  console.log('[HEADER DEBUG]', _debug, '→ total profits:', profitsHeader);
+  window._headerDebug = _debug; // accessible via console
 
   const bankrollHeader = CAPITAL_HEADER_BASE + profitsHeader;
   document.getElementById('header-bankroll').textContent = Math.round(bankrollHeader).toLocaleString('fr-FR') + '€';
