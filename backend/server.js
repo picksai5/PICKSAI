@@ -259,37 +259,11 @@ async function preloadCache() {
   const today = getTodayStr();
   if (cache.lastDate === today) return;
   console.log(`Preload cache — SEASON=${SEASON} date=${today}...`);
-  // Séquentiel pour éviter le rate limit (16 ligues × 2 possibles = jusqu'à 32 appels)
+  // Preload UNIQUEMENT les standings (nécessaires pour le scoring)
+  // teamStats, players, prédictions chargés à la demande pendant le scan
   for (const l of LEAGUES) { await getStandingsCached(l.id); }
-  const fixtures = [];
-  for (const league of LEAGUES) {
-    const season = getLeagueSeason(league.id);
-    const data = await footballAPI('/fixtures', { date: today, league: league.id, season });
-    console.log(`Fixtures league ${league.id} (${league.name}) s${season}: ${data.length} matchs`);
-    fixtures.push(...data.map(f => ({ ...f, leagueId: league.id })));
-  }
-  const seen = new Set();
-  const pairs = [];
-  for (const f of fixtures) {
-    for (const t of [f.teams?.home, f.teams?.away]) {
-      if (!t) continue;
-      const k = `${t.id}_${f.leagueId}`;
-      if (!seen.has(k)) { seen.add(k); pairs.push({ teamId: t.id, leagueId: f.leagueId }); }
-    }
-  }
-  // Séquentiel — la file apiQueue garantit déjà 350ms entre chaque appel
-  for (const p of pairs) {
-    await getTeamStatsCached(p.teamId, p.leagueId);
-    await getPlayersCached(p.teamId, p.leagueId);
-  }
-
-  // Précharger les prédictions pour tous les matchs du jour
-  const fixtureIds = [...new Set(fixtures.map(f => f.fixture?.id).filter(Boolean))];
-  for (const id of fixtureIds) {
-    await getPredictionCached(id);
-  }
   cache.lastDate = today;
-  console.log(`Cache OK — ${pairs.length} equipes`);
+  console.log(`Cache standings OK`);
 }
 
 // ── MATRICE V4 — ANALYSE VICTOIRE ÉQUIPE ────────────────
