@@ -104,30 +104,37 @@ const CACHE_TTL = 6 * 60 * 60 * 1000;
 function isCacheValid(e) { return e && Date.now() - e.timestamp < CACHE_TTL; }
 function getTodayStr() { return new Date().toISOString().split('T')[0]; }
 
-// File d'attente pour limiter à 1 requête toutes les 300ms (max ~3/s, safe sous la limite 10/s)
-let apiQueue = Promise.resolve();
+// Throttle simple : 150ms entre chaque appel
+let lastApiCall = 0;
 async function footballAPI(endpoint, params = {}) {
-  const result = apiQueue.then(async () => {
-    await sleep(350);
-    try {
-      const res = await axios.get(`${FOOTBALL_API_BASE}${endpoint}`, {
-        headers: { 'x-apisports-key': FOOTBALL_API_KEY },
-        params,
-      });
-      return res.data?.response || [];
-    } catch (e) {
-      const status = e.response?.status;
-      if (status === 429) {
-        console.warn(`Rate limit 429 sur ${endpoint} — attente 2s`);
-        await sleep(2000);
-      } else {
-        console.error('API error:', endpoint, e.message);
-      }
-      return [];
+  const now = Date.now();
+  const wait = Math.max(0, 150 - (now - lastApiCall));
+  if (wait > 0) await sleep(wait);
+  lastApiCall = Date.now();
+  try {
+    const res = await axios.get(`${FOOTBALL_API_BASE}${endpoint}`, {
+      headers: { 'x-apisports-key': FOOTBALL_API_KEY },
+      params,
+      timeout: 10000,
+    });
+    return res.data?.response || [];
+  } catch (e) {
+    const status = e.response?.status;
+    if (status === 429) {
+      console.warn(`429 ${endpoint} — retry dans 1s`);
+      await sleep(1000);
+      try {
+        const res2 = await axios.get(`${FOOTBALL_API_BASE}${endpoint}`, {
+          headers: { 'x-apisports-key': FOOTBALL_API_KEY },
+          params,
+          timeout: 10000,
+        });
+        return res2.data?.response || [];
+      } catch { return []; }
     }
-  });
-  apiQueue = result.catch(() => {});
-  return result;
+    console.error('API error:', endpoint, e.message);
+    return [];
+  }
 }
 
 async function getStandingsCached(leagueId) {
