@@ -104,15 +104,30 @@ const CACHE_TTL = 6 * 60 * 60 * 1000;
 function isCacheValid(e) { return e && Date.now() - e.timestamp < CACHE_TTL; }
 function getTodayStr() { return new Date().toISOString().split('T')[0]; }
 
+// File d'attente pour limiter à 1 requête toutes les 300ms (max ~3/s, safe sous la limite 10/s)
+let apiQueue = Promise.resolve();
 async function footballAPI(endpoint, params = {}) {
-  await sleep(200);
-  try {
-    const res = await axios.get(`${FOOTBALL_API_BASE}${endpoint}`, {
-      headers: { 'x-apisports-key': FOOTBALL_API_KEY },
-      params,
-    });
-    return res.data?.response || [];
-  } catch (e) { console.error('API error:', endpoint, e.message); return []; }
+  const result = apiQueue.then(async () => {
+    await sleep(350);
+    try {
+      const res = await axios.get(`${FOOTBALL_API_BASE}${endpoint}`, {
+        headers: { 'x-apisports-key': FOOTBALL_API_KEY },
+        params,
+      });
+      return res.data?.response || [];
+    } catch (e) {
+      const status = e.response?.status;
+      if (status === 429) {
+        console.warn(`Rate limit 429 sur ${endpoint} — attente 2s`);
+        await sleep(2000);
+      } else {
+        console.error('API error:', endpoint, e.message);
+      }
+      return [];
+    }
+  });
+  apiQueue = result.catch(() => {});
+  return result;
 }
 
 async function getStandingsCached(leagueId) {
@@ -244,7 +259,8 @@ async function preloadCache() {
   const today = getTodayStr();
   if (cache.lastDate === today) return;
   console.log(`Preload cache — SEASON=${SEASON} date=${today}...`);
-  await Promise.all(LEAGUES.map(l => getStandingsCached(l.id)));
+  // Séquentiel pour éviter le rate limit (16 ligues × 2 possibles = jusqu'à 32 appels)
+  for (const l of LEAGUES) { await getStandingsCached(l.id); }
   const fixtures = [];
   for (const league of LEAGUES) {
     const season = getLeagueSeason(league.id);
@@ -261,18 +277,16 @@ async function preloadCache() {
       if (!seen.has(k)) { seen.add(k); pairs.push({ teamId: t.id, leagueId: f.leagueId }); }
     }
   }
-  for (let i = 0; i < pairs.length; i += 5) {
-    await Promise.all(pairs.slice(i, i+5).map(p => Promise.all([
-      getTeamStatsCached(p.teamId, p.leagueId),
-      getPlayersCached(p.teamId, p.leagueId),
-      // getAdvancedStatsCached retiré du preload — trop d'appels API séquentiels
-    ])));
+  // Séquentiel — la file apiQueue garantit déjà 350ms entre chaque appel
+  for (const p of pairs) {
+    await getTeamStatsCached(p.teamId, p.leagueId);
+    await getPlayersCached(p.teamId, p.leagueId);
   }
 
   // Précharger les prédictions pour tous les matchs du jour
   const fixtureIds = [...new Set(fixtures.map(f => f.fixture?.id).filter(Boolean))];
-  for (let i = 0; i < fixtureIds.length; i += 5) {
-    await Promise.all(fixtureIds.slice(i, i+5).map(id => getPredictionCached(id)));
+  for (const id of fixtureIds) {
+    await getPredictionCached(id);
   }
   cache.lastDate = today;
   console.log(`Cache OK — ${pairs.length} equipes`);
