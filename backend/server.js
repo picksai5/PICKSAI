@@ -658,7 +658,7 @@ JSON UNIQUEMENT:
 
   try {
     const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
+      model: 'claude-sonnet-4-5',
       max_tokens: 400,
       messages: [{ role: 'user', content: prompt }],
     });
@@ -706,20 +706,19 @@ async function collectMatchData(fixture, leagueId, leagueName, standings) {
     : '?';
   const isEuropean = EURO_LEAGUES.includes(leagueId);
 
-  const [hStats, aStats, hPlayers, aPlayers, injuries, h2h, lineups, hAdvStats, aAdvStats, prediction, hRecentFixtures, aRecentFixtures] = await Promise.all([
-    getTeamStatsCached(hTeam.id, leagueId),
-    getTeamStatsCached(aTeam.id, leagueId),
-    getPlayersCached(hTeam.id, leagueId),
-    getPlayersCached(aTeam.id, leagueId),
-    footballAPI('/injuries', { fixture: fixtureId }),
-    footballAPI('/fixtures/headtohead', { h2h: `${hTeam.id}-${aTeam.id}`, last: 5 }),
-    footballAPI('/fixtures/lineups', { fixture: fixtureId }),
-    getAdvancedStatsCached(hTeam.id, leagueId),
-    getAdvancedStatsCached(aTeam.id, leagueId),
-    getPredictionCached(fixtureId),
-    footballAPI('/fixtures', { team: hTeam.id, last: 3, status: 'FT' }), // 3 derniers matchs domicile
-    footballAPI('/fixtures', { team: aTeam.id, last: 3, status: 'FT' }), // 3 derniers matchs extérieur
-  ]);
+  // Séquentiel pour éviter les 429 (throttle 150ms dans footballAPI)
+  const hStats          = await getTeamStatsCached(hTeam.id, leagueId);
+  const aStats          = await getTeamStatsCached(aTeam.id, leagueId);
+  const hPlayers        = await getPlayersCached(hTeam.id, leagueId);
+  const aPlayers        = await getPlayersCached(aTeam.id, leagueId);
+  const injuries        = await footballAPI('/injuries', { fixture: fixtureId });
+  const h2h             = await footballAPI('/fixtures/headtohead', { h2h: `${hTeam.id}-${aTeam.id}`, last: 5 });
+  const lineups         = await footballAPI('/fixtures/lineups', { fixture: fixtureId });
+  const hAdvStats       = await getAdvancedStatsCached(hTeam.id, leagueId);
+  const aAdvStats       = await getAdvancedStatsCached(aTeam.id, leagueId);
+  const prediction      = await getPredictionCached(fixtureId);
+  const hRecentFixtures = await footballAPI('/fixtures', { team: hTeam.id, last: 3, status: 'FT' });
+  const aRecentFixtures = await footballAPI('/fixtures', { team: aTeam.id, last: 3, status: 'FT' });
 
   // Détecter fatigue : match joué dans les 4 derniers jours ?
   const matchDate = new Date(fixture.fixture?.date || Date.now());
