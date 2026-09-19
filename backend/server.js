@@ -51,42 +51,10 @@ function isInjuredPlayer(playerName, injuredNames) {
 
 // Saison spécifique par league — les qualifs CdM utilisent l'année du tournoi
 const LEAGUE_SEASON_OVERRIDE = {
-  32: 2024,  // Qualifs CdM UEFA — saison 2024 dans l'API
-  35: 2026, 36: 2026, 30: 2026, 31: 2026, 33: 2026,
+  32: 2026, 35: 2026, 36: 2026, 30: 2026, 31: 2026, 33: 2026,
 };
 function getLeagueSeason(leagueId) {
   return LEAGUE_SEASON_OVERRIDE[leagueId] || SEASON;
-}
-
-// Essaye plusieurs saisons et retourne les fixtures de la première non-vide
-// IDs alternatifs pour les confédérations (l'API a parfois des IDs différents)
-const LEAGUE_ALT_IDS = {
-  35: [35, 11],   // CONMEBOL — id 11 = qualifs Am. Sud dans certaines versions
-  36: [36, 29],   // CAF
-  30: [30, 26],   // AFC
-  31: [31, 30],   // CONCACAF
-};
-
-async function getFixturesWithFallback(leagueId, date) {
-  // Saisons à tester : override, puis 2024, 2025, 2026, saison courante
-  const baseSeasons = LEAGUE_SEASON_OVERRIDE[leagueId]
-    ? [LEAGUE_SEASON_OVERRIDE[leagueId], 2024, 2025, 2026]
-    : [SEASON, SEASON - 1];
-  const seasons = [...new Set(baseSeasons)];
-  
-  // IDs à tester pour cette league
-  const ids = LEAGUE_ALT_IDS[leagueId] ? LEAGUE_ALT_IDS[leagueId] : [leagueId];
-
-  for (const lid of ids) {
-    for (const season of seasons) {
-      const data = await footballAPI('/fixtures', { date, league: lid, season });
-      if (data.length > 0) {
-        console.log(`[Fixtures] League ${lid} (demandé: ${leagueId}) saison ${season}: ${data.length} matchs`);
-        return data;
-      }
-    }
-  }
-  return [];
 }
 
 const LEAGUES = [
@@ -98,7 +66,7 @@ const LEAGUES = [
   { id: 2,   name: 'Champions League' },
   { id: 3,   name: 'Europa League' },
   { id: 848, name: 'Conference League' },
-  // { id: 88, name: 'Eredivisie' }, // Retiré — marché tirs non dispo Winamax/Unibet
+  { id: 88,  name: 'Eredivisie' },
   { id: 94,  name: 'Liga Portugal' },
   // Qualifications Coupe du Monde 2026
   { id: 32,  name: 'Qualifs CdM UEFA' },
@@ -120,7 +88,7 @@ const TIRS_LEAGUES = [
   { id: 2,   name: 'Champions League' },
   { id: 3,   name: 'Europa League' },
   { id: 848, name: 'Conference League' },
-  // { id: 88, name: 'Eredivisie' }, // Retiré — marché tirs non dispo Winamax/Unibet
+  { id: 88,  name: 'Eredivisie' },
   { id: 94,  name: 'Liga Portugal' },
   { id: 32,  name: 'Qualifs CdM UEFA' },
   { id: 35,  name: 'Qualifs CdM CONMEBOL' },
@@ -131,13 +99,10 @@ const TIRS_LEAGUES = [
 ];
 
 // ── CACHE ─────────────────────────────────────────────────
-const cache = { standings: {}, teamStats: {}, players: {}, natLeagues: {}, fixtureStats: {}, predictions: {}, lastDate: null, tennisRankMap: {}, tennisPlayerData: {}, tennisRankDate: null };
+const cache = { standings: {}, teamStats: {}, players: {}, natLeagues: {}, fixtureStats: {}, predictions: {}, lastDate: null };
 const CACHE_TTL = 6 * 60 * 60 * 1000;
 function isCacheValid(e) { return e && Date.now() - e.timestamp < CACHE_TTL; }
-function getTodayStr() {
-  // Date en heure de Paris (pas UTC) pour éviter le décalage nocturne
-  return new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Paris' }); // format YYYY-MM-DD
-}
+function getTodayStr() { return new Date().toISOString().split('T')[0]; }
 
 async function footballAPI(endpoint, params = {}) {
   await sleep(200);
@@ -151,10 +116,18 @@ async function footballAPI(endpoint, params = {}) {
 }
 
 async function getStandingsCached(leagueId) {
-  const k = `${leagueId}_${SEASON}`;
+  const season = getLeagueSeason(leagueId);
+  const k = `${leagueId}_${season}`;
   if (isCacheValid(cache.standings[k])) return cache.standings[k].data;
-  const s = await footballAPI('/standings', { league: leagueId, season: getLeagueSeason(leagueId) });
-  const data = s[0]?.league?.standings?.[0] || [];
+  let s = await footballAPI('/standings', { league: leagueId, season });
+  let data = s[0]?.league?.standings?.[0] || [];
+  // Fallback saison précédente si standings vides (début de saison)
+  if (data.length === 0) {
+    console.log(`Standings vides pour league ${leagueId} saison ${season}, fallback saison ${season - 1}`);
+    const s2 = await footballAPI('/standings', { league: leagueId, season: season - 1 });
+    data = s2[0]?.league?.standings?.[0] || [];
+  }
+  console.log(`Standings league ${leagueId}: ${data.length} équipes`);
   cache.standings[k] = { data, timestamp: Date.now() };
   return data;
 }
@@ -178,11 +151,15 @@ async function getPlayersCached(teamId, leagueId) {
 }
 
 // Récupère les stats avancées des 5 derniers matchs d'une équipe
-// Retourne moyennes : possession, tirs cadrés, tirs totaux, tirs concédés, forme récente
+// Retourne moyennes : possession, tirs cadrés, tirs totaux, attaques dangereuses
 async function getAdvancedStatsCached(teamId, leagueId) {
-  const k = `adv_${teamId}`;
+  const k = `adv_${teamId}`; // toutes compétitions, pas par league
   if (isCacheValid(cache.fixtureStats[k])) return cache.fixtureStats[k].data;
 
+  // /teams/statistics nécessite league + team + season
+  // On essaie d'abord avec la league passée, puis les autres leagues connues si ça échoue
+  // /teams/statistics ne retourne pas les tirs sur ce plan API
+  // On utilise /fixtures avec last:10 puis /fixtures/statistics sur chaque match
   const lastFixtures = await footballAPI('/fixtures', {
     team: teamId, last: 10, status: 'FT',
   });
@@ -193,58 +170,39 @@ async function getAdvancedStatsCached(teamId, leagueId) {
     return null;
   }
 
+  // Récupérer stats match par match séquentiellement pour éviter rate limit
   let totalShotsOn = 0, totalShotsTotal = 0, totalPossession = 0;
-  let totalShotsOnConceded = 0, totalShotsTotalConceded = 0, totalBlocked = 0;
   let count = 0;
   const shotsOnList = [];
-  const shotsTotalList = []; // pour forme récente
-  const shotsConcededList = [];
 
   for (const f of lastFixtures.slice(0, 8)) {
     const stats = await footballAPI('/fixtures/statistics', { fixture: f.fixture?.id });
-    // Stats de l'équipe ciblée
     const teamStat = stats.find(s => s.team?.id === teamId);
-    // Stats de l'adversaire (pour les tirs concédés)
-    const oppStat  = stats.find(s => s.team?.id !== teamId);
     if (!teamStat) continue;
 
-    const getStat = (statObj, type) => {
-      if (!statObj) return null;
-      const s = (statObj.statistics || []).find(x => x.type === type);
+    const getStat = (type) => {
+      const s = (teamStat.statistics || []).find(x => x.type === type);
       if (!s?.value && s?.value !== 0) return null;
       if (typeof s.value === 'string' && s.value.includes('%')) return parseFloat(s.value) || 0;
       return parseFloat(s.value) || 0;
     };
 
-    const shotsOn    = getStat(teamStat, 'Shots on Goal');
-    const shotsTotal = getStat(teamStat, 'Total Shots');
-    const poss       = getStat(teamStat, 'Ball Possession');
-    const blocked    = getStat(teamStat, 'Blocked Shots');
+    const shotsOn    = getStat('Shots on Goal');
+    const shotsTotal = getStat('Total Shots');
+    const poss       = getStat('Ball Possession');
 
-    // Tirs concédés = tirs de l'adversaire
-    const oppShotsTotal = getStat(oppStat, 'Total Shots');
-    const oppShotsOn    = getStat(oppStat, 'Shots on Goal');
-
+    // Ne compter que si on a au moins les tirs totaux
     if (shotsTotal === null) continue;
 
     totalShotsOn    += shotsOn    ?? 0;
     totalShotsTotal += shotsTotal ?? 0;
     totalPossession += poss       ?? 50;
-    totalBlocked    += blocked    ?? 0;
-
-    if (oppShotsTotal !== null) {
-      totalShotsTotalConceded += oppShotsTotal;
-      totalShotsOnConceded    += oppShotsOn ?? 0;
-      shotsConcededList.push(oppShotsTotal);
-    }
-
     shotsOnList.push(shotsOn ?? 0);
-    shotsTotalList.push(shotsTotal);
     count++;
   }
 
   if (count === 0) {
-    console.log(`[ADV] Team ${teamId} — stats indisponibles`);
+    console.log(`[ADV] Team ${teamId} — stats tirs indisponibles sur ${lastFixtures.length} matchs`);
     cache.fixtureStats[k] = { data: null, timestamp: Date.now() };
     return null;
   }
@@ -252,41 +210,18 @@ async function getAdvancedStatsCached(teamId, leagueId) {
   const avgShotsOn    = +(totalShotsOn    / count).toFixed(1);
   const avgShotsTotal = +(totalShotsTotal / count).toFixed(1);
   const avgPossession = Math.round(totalPossession / count);
-  const avgBlocked    = +(totalBlocked / count).toFixed(1);
 
-  // Tirs concédés moyens
-  const avgShotsConceded   = shotsConcededList.length ? +(totalShotsTotalConceded / shotsConcededList.length).toFixed(1) : null;
-  const avgShotsOnConceded = shotsConcededList.length ? +(totalShotsOnConceded   / shotsConcededList.length).toFixed(1) : null;
-
-  // Forme récente tirs : tendance sur les 3 derniers vs la moyenne
-  const last3 = shotsTotalList.slice(0, 3);
-  const avgLast3 = last3.length ? +(last3.reduce((a,v)=>a+v,0)/last3.length).toFixed(1) : avgShotsTotal;
-  const tendanceTirs = avgLast3 > avgShotsTotal + 2 ? 'hausse' : avgLast3 < avgShotsTotal - 2 ? 'baisse' : 'stable';
-
-  // Régularité (écart-type)
   const variance = shotsOnList.reduce((a, v) => a + Math.pow(v - avgShotsOn, 2), 0) / count;
   const stdDev   = +Math.sqrt(variance).toFixed(2);
 
-  // Solidité défensive : concède peu = équipe défensive
-  // solidite: 'haute' (<10 tirs concédés/match), 'moyenne' (10-14), 'basse' (>14)
-  const soliditeDefensive = avgShotsConceded !== null
-    ? avgShotsConceded < 10 ? 'haute' : avgShotsConceded < 14 ? 'moyenne' : 'basse'
-    : 'moyenne';
-
-  console.log(`[ADV] Team ${teamId} — ${avgShotsOn} cadrés, ${avgShotsTotal} totaux, concède ${avgShotsConceded} tirs/match, tendance: ${tendanceTirs}`);
+  console.log(`[ADV] Team ${teamId} — OK: ${avgShotsOn} cadrés/match, ${avgShotsTotal} totaux/match sur ${count} matchs`);
 
   const data = {
-    possession:          avgPossession,
-    shotsOnTarget:       avgShotsOn,
-    shotsTotal:          avgShotsTotal,
-    shotsOnConceded:     avgShotsOnConceded,
-    shotsConceded:       avgShotsConceded,
-    blockedShots:        avgBlocked,
-    soliditeDefensive,
-    tendanceTirs,
-    avgLast3Shots:       avgLast3,
-    dangerousAttacks:    0,
-    shotsOnList:         [],
+    possession:       avgPossession,
+    shotsOnTarget:    avgShotsOn,
+    shotsTotal:       avgShotsTotal,
+    dangerousAttacks: 0,
+    shotsOnList:      [],
     stdDev,
   };
 
@@ -308,11 +243,13 @@ async function getPredictionCached(fixtureId) {
 async function preloadCache() {
   const today = getTodayStr();
   if (cache.lastDate === today) return;
-  console.log('Preload cache...');
+  console.log(`Preload cache — SEASON=${SEASON} date=${today}...`);
   await Promise.all(LEAGUES.map(l => getStandingsCached(l.id)));
   const fixtures = [];
   for (const league of LEAGUES) {
-    const data = await footballAPI('/fixtures', { date: today, league: league.id, season: getLeagueSeason(league.id) });
+    const season = getLeagueSeason(league.id);
+    const data = await footballAPI('/fixtures', { date: today, league: league.id, season });
+    console.log(`Fixtures league ${league.id} (${league.name}) s${season}: ${data.length} matchs`);
     fixtures.push(...data.map(f => ({ ...f, leagueId: league.id })));
   }
   const seen = new Set();
@@ -404,28 +341,18 @@ function analyseMatchComplet(hStats, aStats, hStand, aStand, h2h, injuries, isEu
   else if (ptsDiff <= -8) { aScore += 7; factors.push('F14'); }
   else if (ptsDiff <= -4) { aScore += 3; }
 
-  // F4 — FORME RÉCENTE 5 MATCHS (max 20pts)
-  // Domicile
-  if      (hWins >= 5) { hScore += 20; factors.push('F12'); }
-  else if (hWins >= 4) { hScore += 14; factors.push('F12'); }
-  else if (hWins >= 3) { hScore += 8;  factors.push('F12'); }
-  else if (hWins >= 2) { hScore += 2; }
-  else if (hWins <= 1 && hLoss >= 3) { hScore -= 18; } // 1V ou 0V sur 5 + 3 défaites = équipe en crise
-  else if (hWins <= 1 && hLoss >= 2) { hScore -= 12; }
-  else if (hLoss >= 4) { hScore -= 20; }
-  else if (hLoss >= 3) { hScore -= 12; }
-  else if (hLoss >= 2) { hScore -= 5; }
+  // F4 — FORME RÉCENTE 5 MATCHS (max 18pts)
+  if      (hWins >= 5) { hScore += 18; factors.push('F12'); }
+  else if (hWins >= 4) { hScore += 13; factors.push('F12'); }
+  else if (hWins >= 3) { hScore += 8; factors.push('F12'); }
+  else if (hLoss >= 4) { hScore -= 12; }
+  else if (hLoss >= 3) { hScore -= 7; }
 
-  // Extérieur
-  if      (aWins >= 5) { aScore += 17; factors.push('F12'); }
-  else if (aWins >= 4) { aScore += 12; factors.push('F12'); }
-  else if (aWins >= 3) { aScore += 7;  factors.push('F12'); }
-  else if (aWins >= 2) { aScore += 2; }
-  else if (aWins <= 1 && aLoss >= 3) { aScore -= 18; }
-  else if (aWins <= 1 && aLoss >= 2) { aScore -= 12; }
-  else if (aLoss >= 4) { aScore -= 20; }
-  else if (aLoss >= 3) { aScore -= 12; }
-  else if (aLoss >= 2) { aScore -= 5; }
+  if      (aWins >= 5) { aScore += 15; factors.push('F12'); }
+  else if (aWins >= 4) { aScore += 11; factors.push('F12'); }
+  else if (aWins >= 3) { aScore += 7; }
+  else if (aLoss >= 4) { aScore -= 12; }
+  else if (aLoss >= 3) { aScore -= 7; }
 
   // F5 — DÉFENSE ADVERSE EN DÉPLACEMENT (max 15pts)
   if      (aGoalsAgainstAway >= 2.5) { hScore += 15; factors.push('F5'); }
@@ -456,12 +383,9 @@ function analyseMatchComplet(hStats, aStats, hStand, aStand, h2h, injuries, isEu
   // H2H équilibré = signal de nul, réduit les deux scores
   if (h2hDraws >= 3) { hScore -= 5; aScore -= 5; }
 
-  // F8 — SÉRIE NÉGATIVE (renforcé)
-  if (aLoss >= 4 || (aWins <= 1 && aLoss >= 3)) { hScore += 12; factors.push('F8'); }
-  if (hLoss >= 4 || (hWins <= 1 && hLoss >= 3)) { aScore += 12; factors.push('F8'); }
-  // Équipe en très mauvaise forme = quasi-disqualifiante pour un VERT
-  if (hWins === 0 && hLoss >= 3) { hScore -= 15; } // 0 victoire = grosse crise
-  if (aWins === 0 && aLoss >= 3) { aScore -= 15; }
+  // F8 — ADVERSAIRE SANS VICTOIRE RÉCENTE (série négative)
+  if (aLoss >= 4 || (aLoss >= 3 && hWins >= 3)) { hScore += 10; factors.push('F8'); }
+  if (hLoss >= 4 || (hLoss >= 3 && aWins >= 3)) { aScore += 10; factors.push('F8'); }
 
   // MALUS ÉQUIPES QUI FONT SOUVENT NUL
   // Un nul = mauvais pour un prono victoire
@@ -930,7 +854,7 @@ app.get('/api/scan', async (req, res) => {
 
     const allFixtures = [];
     for (const league of LEAGUES) {
-      const data = await getFixturesWithFallback(league.id, today);
+      const data = await footballAPI('/fixtures', { date: today, league: league.id, season: getLeagueSeason(league.id) });
       // Exclure matchs reportés, annulés, abandonnés, suspendus
       const validFixtures = data.filter(f => {
         const status = f.fixture?.status?.short;
@@ -1069,7 +993,6 @@ app.post('/api/check-compos', async (req, res) => {
 app.get('/api/reset-cache', (req, res) => {
   cache.lastDate = null;
   ['standings','teamStats','players','natLeagues','fixtureStats','predictions'].forEach(k => { cache[k] = {}; });
-  cache.tennisRankMap = {}; cache.tennisPlayerData = {}; cache.tennisRankDate = null;
   res.json({ status: 'Cache réinitialisé' });
 });
 
@@ -1081,7 +1004,7 @@ app.get('/api/scan-tirs', async (req, res) => {
 
     const allFixtures = [];
     for (const league of TIRS_LEAGUES) {
-      const data = await getFixturesWithFallback(league.id, today);
+      const data = await footballAPI('/fixtures', { date: today, league: league.id, season: getLeagueSeason(league.id) });
       const valid = data.filter(f => !['PST','CANC','ABD','SUSP','AWD','WO'].includes(f.fixture?.status?.short));
       if (valid.length > 0) allFixtures.push(...valid.map(f => ({ ...f, leagueName: league.name, leagueId: league.id })));
     }
@@ -1138,51 +1061,19 @@ app.get('/api/scan-tirs', async (req, res) => {
         }
 
         // Tirs cadrés moyens combinés
-        const hShotsOn    = hAdv.shotsOnTarget || 0;
-        const aShotsOn    = aAdv.shotsOnTarget || 0;
-        const hShotsTotal = hAdv.shotsTotal    || 0;
-        const aShotsTotal = aAdv.shotsTotal    || 0;
-
-        // ── AJUSTEMENT DÉFENSIF TIRS CADRÉS ──────────────────
-        // Tirs cadrés concédés par chaque équipe
-        const hShotsOnConceded = hAdv.shotsOnConceded || null;
-        const aShotsOnConceded = aAdv.shotsOnConceded || null;
-
-        let hShotsOnAjustes = hShotsOn;
-        let aShotsOnAjustes = aShotsOn;
-
-        if (aShotsOnConceded !== null) {
-          // Défense ext limite les tirs cadrés de dom
-          if      (aShotsOnConceded < 2.5) hShotsOnAjustes = +(hShotsOn * 0.80).toFixed(1); // gardien solide
-          else if (aShotsOnConceded < 3.5) hShotsOnAjustes = +(hShotsOn * 0.90).toFixed(1);
-          else if (aShotsOnConceded > 5.5) hShotsOnAjustes = +(hShotsOn * 1.10).toFixed(1); // gardien fragile
-          else if (aShotsOnConceded > 4.5) hShotsOnAjustes = +(hShotsOn * 1.05).toFixed(1);
-        }
-        if (hShotsOnConceded !== null) {
-          // Défense dom limite les tirs cadrés de ext
-          if      (hShotsOnConceded < 2.5) aShotsOnAjustes = +(aShotsOn * 0.80).toFixed(1);
-          else if (hShotsOnConceded < 3.5) aShotsOnAjustes = +(aShotsOn * 0.90).toFixed(1);
-          else if (hShotsOnConceded > 5.5) aShotsOnAjustes = +(aShotsOn * 1.10).toFixed(1);
-          else if (hShotsOnConceded > 4.5) aShotsOnAjustes = +(aShotsOn * 1.05).toFixed(1);
-        }
-
-        // Forme récente tirs cadrés
-        const hTendance = hAdv.tendanceTirs || 'stable';
-        const aTendance = aAdv.tendanceTirs || 'stable';
-        let bonusTendanceC = 0;
-        if      (hTendance === 'hausse' && aTendance === 'hausse') bonusTendanceC = +0.8;
-        else if (hTendance === 'hausse' || aTendance === 'hausse') bonusTendanceC = +0.4;
-        else if (hTendance === 'baisse' && aTendance === 'baisse') bonusTendanceC = -0.8;
-        else if (hTendance === 'baisse' || aTendance === 'baisse') bonusTendanceC = -0.4;
-
-        let totalMoyen = +(hShotsOnAjustes + aShotsOnAjustes + bonusTendanceC).toFixed(1);
+        const hShotsOn = hAdv.shotsOnTarget || 0;
+        const aShotsOn = aAdv.shotsOnTarget || 0;
+        const hShotsTotal = hAdv.shotsTotal || 0;
+        const aShotsTotal = aAdv.shotsTotal || 0;
+        let totalMoyen = +(hShotsOn + aShotsOn).toFixed(1);
         let totalMoyenShots = +(hShotsTotal + aShotsTotal).toFixed(1);
 
-        // Régularité combinée
+        // Régularité combinée des deux équipes (écart-type moyen)
         const hStdDev = hAdv.stdDev || 2.0;
         const aStdDev = aAdv.stdDev || 2.0;
         const combinedStdDev = +((hStdDev + aStdDev) / 2).toFixed(2);
-        const isRegular   = combinedStdDev < 1.5;
+        // Régulier = stdDev < 1.5 | Moyen = 1.5-2.5 | Irrégulier = > 2.5
+        const isRegular = combinedStdDev < 1.5;
         const isIrregular = combinedStdDev > 2.5;
 
         // Bonus contexte retour — équipe qui doit remonter tire plus
@@ -1292,733 +1183,6 @@ app.get('/api/scan-tirs', async (req, res) => {
     });
 
   } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-
-// ══════════════════════════════════════════════════════════
-// ── SCAN TIRS TOTAUX ──────────────────────────────────────
-// ══════════════════════════════════════════════════════════
-app.get('/api/scan-tirs-totaux', async (req, res) => {
-  try {
-    const today = getTodayStr();
-    await preloadCache();
-
-    const allFixtures = [];
-    for (const league of TIRS_LEAGUES) {
-      const data = await getFixturesWithFallback(league.id, today);
-      const valid = data.filter(f => !['PST','CANC','ABD','SUSP','AWD','WO'].includes(f.fixture?.status?.short));
-      if (valid.length > 0) allFixtures.push(...valid.map(f => ({ ...f, leagueName: league.name, leagueId: league.id })));
-    }
-
-    if (allFixtures.length === 0) {
-      return res.json({ picks: [], total_analyses: 0, date: new Date().toLocaleDateString('fr-FR') });
-    }
-
-    const picks = [];
-
-    for (const fixture of allFixtures) {
-      try {
-        const hTeam = fixture.teams?.home;
-        const aTeam = fixture.teams?.away;
-        if (!hTeam || !aTeam) continue;
-
-        const hTime = fixture.fixture?.date
-          ? new Date(fixture.fixture.date).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
-          : '?';
-
-        const leagueId = fixture.leagueId;
-        const isEuro = EURO_LEAGUES.includes(leagueId);
-
-        const [hAdv, aAdv] = await Promise.all([
-          getAdvancedStatsCached(hTeam.id, leagueId),
-          getAdvancedStatsCached(aTeam.id, leagueId),
-        ]);
-
-        if (!hAdv || !aAdv) continue;
-
-        const hShotsTotal = hAdv.shotsTotal || 0;
-        const aShotsTotal = aAdv.shotsTotal || 0;
-        if (hShotsTotal < 5 || aShotsTotal < 5) continue;
-
-        // ── FACTEUR DÉFENSIF ─────────────────────────────────
-        const hConcedes = hAdv.shotsConceded || null;
-        const aConcedes = aAdv.shotsConceded || null;
-
-        let hTirsAjustes = hShotsTotal;
-        let aTirsAjustes = aShotsTotal;
-        if (aConcedes !== null) {
-          if      (aConcedes < 9)  hTirsAjustes = +(hShotsTotal * 0.82).toFixed(1);
-          else if (aConcedes < 11) hTirsAjustes = +(hShotsTotal * 0.90).toFixed(1);
-          else if (aConcedes > 16) hTirsAjustes = +(hShotsTotal * 1.10).toFixed(1);
-          else if (aConcedes > 14) hTirsAjustes = +(hShotsTotal * 1.05).toFixed(1);
-        }
-        if (hConcedes !== null) {
-          if      (hConcedes < 9)  aTirsAjustes = +(aShotsTotal * 0.82).toFixed(1);
-          else if (hConcedes < 11) aTirsAjustes = +(aShotsTotal * 0.90).toFixed(1);
-          else if (hConcedes > 16) aTirsAjustes = +(aShotsTotal * 1.10).toFixed(1);
-          else if (hConcedes > 14) aTirsAjustes = +(aShotsTotal * 1.05).toFixed(1);
-        }
-
-        const totalMoyenShots = +(hTirsAjustes + aTirsAjustes).toFixed(1);
-
-        // ── FORME RÉCENTE TIRS ───────────────────────────────
-        const hTendance = hAdv.tendanceTirs || 'stable';
-        const aTendance = aAdv.tendanceTirs || 'stable';
-        let bonusTendance = 0;
-        if      (hTendance === 'hausse' && aTendance === 'hausse') bonusTendance = +1.5;
-        else if (hTendance === 'hausse' || aTendance === 'hausse') bonusTendance = +0.8;
-        else if (hTendance === 'baisse' && aTendance === 'baisse') bonusTendance = -1.5;
-        else if (hTendance === 'baisse' || aTendance === 'baisse') bonusTendance = -0.8;
-        const totalAvecTendance = +(totalMoyenShots + bonusTendance).toFixed(1);
-
-        // Régularité
-        const hStdDev = hAdv.stdDev || 2.0;
-        const aStdDev = aAdv.stdDev || 2.0;
-        const combinedStdDev = +((hStdDev + aStdDev) / 2).toFixed(2);
-        const isRegular   = combinedStdDev < 1.5;
-        const isIrregular = combinedStdDev > 2.5;
-
-        // Solidité défensive
-        const hSolidite = hAdv.soliditeDefensive || 'moyenne';
-        const aSolidite = aAdv.soliditeDefensive || 'moyenne';
-        const bothDefensive = hSolidite === 'haute' && aSolidite === 'haute';
-
-        // Bonus contexte retour européen
-        let bonusContexte = '';
-        let totalAvecBonus = totalAvecTendance;
-        if (isEuro) {
-          const firstLegFixtures = await footballAPI('/fixtures', {
-            league: leagueId, season: SEASON, team: hTeam.id, status: 'FT', last: 10,
-          });
-          const matchDate = new Date(fixture.fixture?.date || Date.now());
-          const firstLeg = firstLegFixtures.find(f => {
-            const isVs = (f.teams?.home?.id === aTeam.id || f.teams?.away?.id === aTeam.id);
-            return isVs && new Date(f.fixture?.date) < matchDate && f.fixture?.status?.short === 'FT';
-          });
-          if (firstLeg) {
-            const hWasHome = firstLeg.teams?.home?.id === hTeam.id;
-            const hG = hWasHome ? (firstLeg.goals?.home||0) : (firstLeg.goals?.away||0);
-            const aG = hWasHome ? (firstLeg.goals?.away||0) : (firstLeg.goals?.home||0);
-            const deficit = aG - hG;
-            if (deficit >= 3)      { totalAvecBonus = +(totalAvecBonus + 5).toFixed(1); bonusContexte = ' (+5 tirs retour)'; }
-            else if (deficit === 2) { totalAvecBonus = +(totalAvecBonus + 3).toFixed(1); bonusContexte = ' (+3 tirs retour)'; }
-            else if (deficit === 1) { totalAvecBonus = +(totalAvecBonus + 1.5).toFixed(1); bonusContexte = ' (+1.5 tirs retour)'; }
-          }
-        }
-
-        // Calcul fiabilité tirs totaux
-        // Logique : plus la moyenne est loin du seuil bookmaker, plus c'est fiable
-        // On analyse over et under selon le niveau
-        let tendance = null;
-        let fiabilite = 0;
-
-        if (totalAvecBonus >= 28) {
-          tendance = 'OVER';
-          fiabilite = Math.min(92, Math.round(68 + (totalAvecBonus - 28) * 2 + (isRegular ? 5 : 0)));
-        } else if (totalAvecBonus >= 24) {
-          tendance = 'OVER';
-          fiabilite = Math.min(87, Math.round(64 + (totalAvecBonus - 24) * 2 + (isRegular ? 4 : 0)));
-        } else if (totalAvecBonus >= 20) {
-          tendance = 'OVER';
-          fiabilite = Math.min(82, Math.round(60 + (totalAvecBonus - 20) * 1.5 + (isRegular ? 4 : 0)));
-        } else if (totalAvecBonus <= 16) {
-          tendance = 'UNDER';
-          fiabilite = Math.min(88, Math.round(65 + (16 - totalAvecBonus) * 2 + (isRegular ? 5 : 0)));
-        } else if (totalAvecBonus <= 19) {
-          tendance = 'UNDER';
-          fiabilite = Math.min(82, Math.round(60 + (19 - totalAvecBonus) * 2 + (isRegular ? 3 : 0)));
-        } else {
-          // Zone neutre 20-24 — skip
-          continue;
-        }
-
-        if (isIrregular) fiabilite = Math.max(0, fiabilite - 5);
-        if (bothDefensive && tendance === 'UNDER') fiabilite = Math.min(95, fiabilite + 6);
-        if ((hSolidite === 'basse' || aSolidite === 'basse') && tendance === 'UNDER') fiabilite = Math.max(0, fiabilite - 4);
-        if (fiabilite < 60) continue;
-
-        let alerte = null;
-        if      (fiabilite >= 80) alerte = 'VERT';
-        else if (fiabilite >= 70) alerte = 'ORANGE';
-        else if (fiabilite >= 60) alerte = 'ROUGE';
-
-        const regulariteLabel = isRegular ? '✅ Bonne' : isIrregular ? '⚠️ Irrégulier' : '➖ Moyenne';
-
-        picks.push({
-          match:              `${hTeam.name} vs ${aTeam.name}`,
-          competition:        fixture.leagueName,
-          heure:              hTime,
-          domicile:           hTeam.name,
-          exterieur:          aTeam.name,
-          fiabilite,
-          alerte,
-          tendance,
-          estimation_totaux:  totalAvecBonus,
-          h_tirs_totaux:      hShotsTotal,
-          a_tirs_totaux:      aShotsTotal,
-          regularite:         regulariteLabel,
-          raison: `${hTeam.name} ${hShotsTotal} tirs (concède ${hConcedes||'?'}) · ${aTeam.name} ${aShotsTotal} tirs (concède ${aConcedes||'?'}) · Ajusté: ${totalMoyenShots}→${totalAvecBonus}${bonusContexte} · ${hSolidite}/${aSolidite} · ${regulariteLabel}`,
-        });
-
-      } catch(e) { console.error('Erreur tirs totaux:', e.message); }
-    }
-
-    picks.sort((a, b) => b.fiabilite - a.fiabilite);
-    const verts  = picks.filter(p => p.alerte === 'VERT').slice(0, 2);
-    const orange = picks.filter(p => p.alerte === 'ORANGE').slice(0, 1);
-    const rouge  = picks.filter(p => p.alerte === 'ROUGE').slice(0, 1);
-    const top = [...verts, ...orange, ...rouge];
-
-    res.json({
-      date:            new Date().toLocaleDateString('fr-FR'),
-      total_analyses:  allFixtures.length,
-      picks:           top,
-    });
-
-  } catch(e) {
-    console.error('[TIRS TOTAUX]', e.message);
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// ══════════════════════════════════════════════════════════
-// ── SCAN TENNIS ───────────────────────────────────────────
-// ══════════════════════════════════════════════════════════
-
-const TENNIS_API_KEY  = process.env.TENNIS_API_KEY || process.env.FOOTBALL_API_KEY;
-
-// API Tennis — api-tennis.com
-const TENNIS_API_BASE = 'https://api.api-tennis.com/tennis/';
-
-async function tennisAPI(method, params = {}) {
-  await sleep(300);
-  try {
-    const res = await axios.get(TENNIS_API_BASE, {
-      params: { method, APIkey: TENNIS_API_KEY, ...params },
-      timeout: 10000,
-    });
-    const data = res.data;
-    if (!data.success) {
-      console.error('[Tennis] API error:', data);
-      return [];
-    }
-    return data.result || [];
-  } catch(e) {
-    console.error('[Tennis] API error:', method, e.message);
-    return [];
-  }
-}
-
-// ═══════════════════════════════════════════════════════
-// ── MATRICE TENNIS v3 — 7 FACTEURS ──────────────────────
-// ═══════════════════════════════════════════════════════
-
-// Extraire le rang singles le plus récent depuis stats[]
-// ── MATRICE TENNIS v4 — 8 FACTEURS ──────────────────────
-
-// Rang ATP/WTA : saison la plus récente
-function extractPlayerRank(playerData) {
-  if (!playerData || !playerData.stats) return 999;
-  const singles = playerData.stats
-    .filter(s => s.type === 'singles' && s.rank && parseInt(s.rank) > 0)
-    .sort((a, b) => parseInt(b.season || 0) - parseInt(a.season || 0));
-  return singles.length ? parseInt(singles[0].rank) : 999;
-}
-
-// F4 — Forme récente : win rate saison en cours
-function extractRecentForm(playerData) {
-  if (!playerData || !playerData.stats) return null;
-  const current = playerData.stats
-    .filter(s => s.type === 'singles' && (s.season === '2026' || s.season === '2025'))
-    .sort((a, b) => parseInt(b.season) - parseInt(a.season))[0];
-  if (!current) return null;
-  const won  = parseInt(current.matches_won  || 0);
-  const lost = parseInt(current.matches_lost || 0);
-  const total = won + lost;
-  if (total < 3) return null;
-  return { won, lost, total, rate: won / total };
-}
-
-// F5 — Ranking surface spécifique (3 dernières saisons sur cette surface)
-function extractSurfaceRanking(playerData, surface) {
-  if (!playerData || !playerData.stats) return null;
-  const surf = surface.toLowerCase();
-  const wonKey  = surf + '_won';
-  const lostKey = surf + '_lost';
-  const recent = playerData.stats
-    .filter(s => s.type === 'singles' && parseInt(s.season || 0) >= 2023)
-    .sort((a, b) => parseInt(b.season) - parseInt(a.season))
-    .slice(0, 3);
-  let won = 0, lost = 0;
-  recent.forEach(s => {
-    won  += parseInt(s[wonKey]  || 0);
-    lost += parseInt(s[lostKey] || 0);
-  });
-  const total = won + lost;
-  if (total < 4) return null;
-  // Win rate + nombre de matchs joués sur cette surface (expérience)
-  return { won, lost, total, rate: won / total };
-}
-
-// F6 — Palmarès tournoi
-function extractTournamentPedigree(playerData, tournamentName) {
-  if (!playerData || !playerData.tournaments) return 0;
-  const tName = tournamentName.toLowerCase().split(' ')[0];
-  return playerData.tournaments.filter(t =>
-    t.type === 'singles' && t.name && t.name.toLowerCase().includes(tName)
-  ).length;
-}
-
-// F8 — Fatigue : a joué dans les 48h ? (via stats saison — proxy)
-function extractFatigue(playerData) {
-  if (!playerData || !playerData.stats) return false;
-  // Proxy : beaucoup de matchs joués cette saison en peu de temps
-  // Si on a les tournois, vérifier si 2 tournois actifs
-  const currentYear = new Date().getFullYear().toString();
-  const current = playerData.stats.find(s => s.type === 'singles' && s.season === currentYear);
-  if (!current) return false;
-  const total = parseInt(current.matches_won || 0) + parseInt(current.matches_lost || 0);
-  // Plus de 30 matchs en début d'année = charge élevée
-  return total > 30;
-}
-
-// ── SCORE MATRICIEL v4 ────────────────────────────────────
-function scoreTennisMatch({
-  rankFavori, rankAdversaire,
-  h2hFavori, h2hTotal, h2hSurfFavori, h2hSurfTotal,
-  formeFavori, formeAdversaire,
-  surfRankFavori, surfRankAdversaire,
-  pedigreeFavori, pedigreeAdversaire,
-  fatigueFavori, fatigueAdversaire,
-  grandSlam, masters1000, atp500,
-}) {
-  let score = 0;
-  const details = {};
-
-  // ── F1 — RANG ATP/WTA TEMPS RÉEL (30 pts max) ────────
-  if (rankFavori < 900 && rankAdversaire < 900) {
-    const diff = rankAdversaire - rankFavori;
-    if      (diff >= 30 && diff <= 80)  { score += 30; details.rang = `+30 (écart idéal #${rankFavori} vs #${rankAdversaire})`; }
-    else if (diff >= 15 && diff < 30)   { score += 24; details.rang = `+24 (bon écart #${rankFavori} vs #${rankAdversaire})`; }
-    else if (diff > 80 && diff <= 150)  { score += 16; details.rang = `+16 (grand écart)`; }
-    else if (diff > 150)                { score += 4;  details.rang = `+4 (déséquilibre extrême)`; }
-    else if (diff >= 5 && diff < 15)    { score += 18; details.rang = `+18 (petit écart)`; }
-    else                                { score += 6;  details.rang = '+6 (match serré)'; }
-    // Bonus absolu : favori top 10 = très haute qualité
-    if (rankFavori <= 10) { score += 5; details.rang += ' +5 (top 10)'; }
-    else if (rankFavori <= 20) { score += 3; }
-  } else {
-    score += 6; details.rang = '+6 (rang inconnu)';
-  }
-
-  // ── F2 — H2H GLOBAL (18 pts max) ─────────────────────
-  if (h2hTotal >= 3) {
-    const rate = h2hFavori / h2hTotal;
-    if      (rate >= 0.80) { score += 18; details.h2h = `+18 (domine H2H ${h2hFavori}/${h2hTotal})`; }
-    else if (rate >= 0.65) { score += 13; details.h2h = `+13 (bon H2H ${h2hFavori}/${h2hTotal})`; }
-    else if (rate >= 0.55) { score += 7;  details.h2h = '+7 (légère domination)'; }
-    else if (rate >= 0.50) { score += 3;  details.h2h = '+3 (H2H équilibré)'; }
-    else                   { score -= 6;  details.h2h = `-6 (H2H défavorable)`; }
-  } else if (h2hTotal === 2) {
-    score += h2hFavori >= 1 ? 8 : -3;
-  } else if (h2hTotal === 1) {
-    score += h2hFavori === 1 ? 6 : -2;
-  } else {
-    score += 5; details.h2h = '+5 (1ère rencontre)';
-  }
-
-  // ── F3 — H2H SUR LA SURFACE (12 pts max) ─────────────
-  if (h2hSurfTotal >= 2) {
-    const rate = h2hSurfFavori / h2hSurfTotal;
-    if      (rate >= 0.75) { score += 12; details.h2hSurf = `+12 (domine sur surface)`; }
-    else if (rate >= 0.60) { score += 8;  details.h2hSurf = '+8 (bon sur surface)'; }
-    else if (rate >= 0.50) { score += 4;  details.h2hSurf = '+4 (légère domination surface)'; }
-    else                   { score -= 4;  details.h2hSurf = '-4 (H2H surface défavorable)'; }
-  }
-
-  // ── F4 — FORME RÉCENTE 2026 (15 pts max) ─────────────
-  if (formeFavori && formeAdversaire) {
-    const diff = formeFavori.rate - formeAdversaire.rate;
-    if      (diff >= 0.30) { score += 15; details.forme = `+15 (${Math.round(formeFavori.rate*100)}% vs ${Math.round(formeAdversaire.rate*100)}%)`; }
-    else if (diff >= 0.15) { score += 10; details.forme = `+10 (meilleure forme)`; }
-    else if (diff >= 0.05) { score += 5;  details.forme = '+5 (légèrement meilleur)'; }
-    else if (diff >= -0.05){ score += 2;  details.forme = '+2 (forme équivalente)'; }
-    else if (diff < -0.15) { score -= 7;  details.forme = `-7 (forme inférieure)`; }
-    else                   { score -= 3;  details.forme = '-3 (forme légèrement inférieure)'; }
-  } else if (formeFavori && formeFavori.rate >= 0.70) {
-    score += 9; details.forme = `+9 (${Math.round(formeFavori.rate*100)}% win rate)`;
-  } else if (formeFavori && formeFavori.rate < 0.45) {
-    score -= 5; details.forme = `-5 (mauvaise forme ${Math.round(formeFavori.rate*100)}%)`;
-  } else {
-    score += 4; details.forme = '+4 (données limitées)';
-  }
-
-  // ── F5 — SPÉCIALISTE DE LA SURFACE (12 pts max) ──────
-  if (surfRankFavori && surfRankAdversaire) {
-    const diff = surfRankFavori.rate - surfRankAdversaire.rate;
-    const expFav = surfRankFavori.total;
-    const expAdv = surfRankAdversaire.total;
-    if      (diff >= 0.25 && expFav >= 10) { score += 12; details.surface = `+12 (spécialiste ${Math.round(surfRankFavori.rate*100)}% sur surface)`; }
-    else if (diff >= 0.20)                 { score += 9;  details.surface = '+9 (meilleur sur surface)'; }
-    else if (diff >= 0.10)                 { score += 5;  details.surface = '+5 (avantage surface)'; }
-    else if (diff >= 0)                    { score += 2;  details.surface = '+2 (légère avantage)'; }
-    else if (diff < -0.20)                 { score -= 5;  details.surface = '-5 (adversaire spécialiste surface)'; }
-    else                                   { score -= 2;  details.surface = '-2 (légère désavantage surface)'; }
-  } else if (surfRankFavori && surfRankFavori.rate >= 0.72) {
-    score += 8; details.surface = `+8 (${Math.round(surfRankFavori.rate*100)}% sur cette surface)`;
-  } else if (surfRankFavori && surfRankFavori.rate < 0.40) {
-    score -= 4; details.surface = `-4 (faible sur cette surface)`;
-  } else {
-    score += 3; details.surface = '+3 (données surface limitées)';
-  }
-
-  // ── F6 — PALMARÈS TOURNOI (6 pts max) ────────────────
-  if (pedigreeFavori > pedigreeAdversaire) {
-    const bonus = Math.min(pedigreeFavori * 3, 6);
-    score += bonus; details.palmares = `+${bonus} (${pedigreeFavori} titre(s) ici)`;
-  } else if (pedigreeAdversaire > pedigreeFavori) {
-    score -= 3; details.palmares = `-3 (adversaire ${pedigreeAdversaire} titre(s) ici)`;
-  }
-
-  // ── F7 — NIVEAU DU TOURNOI (10 pts max) ──────────────
-  if      (grandSlam)   { score += 10; details.tournoi = '+10 (Grand Chelem)'; }
-  else if (masters1000) { score += 8;  details.tournoi = '+8 (Masters 1000)'; }
-  else if (atp500)      { score += 5;  details.tournoi = '+5 (ATP/WTA 500)'; }
-  else                  { score += 3;  details.tournoi = '+3 (ATP/WTA 250)'; }
-
-  // ── F8 — FATIGUE (malus si favori fatigué) ───────────
-  if (fatigueFavori && !fatigueAdversaire) {
-    score -= 8; details.fatigue = '-8 (favori potentiellement fatigué)';
-  } else if (!fatigueFavori && fatigueAdversaire) {
-    score += 5; details.fatigue = '+5 (adversaire fatigué)';
-  }
-
-  return { score: Math.max(0, Math.min(score, 100)), details };
-}
-
-function getTennisAlerte(score) {
-  if (score >= 55) return 'VERT';
-  if (score >= 35) return 'ORANGE';
-  if (score >= 20) return 'ROUGE';
-  return null;
-}
-
-app.get('/api/scan-tennis', async (req, res) => {
-  res.set('Cache-Control', 'no-store');
-  try {
-    const today = getTodayStr();
-    console.log('[Tennis] Scan du', today);
-
-    // 1. Récupérer tous les matchs du jour
-    // Heure de Paris
-    const nowParis = new Date(new Date().toLocaleString('en-US', { timeZone: 'Europe/Paris' }));
-    const parisHour = nowParis.getHours();
-    const tomorrow = new Date(nowParis); tomorrow.setDate(tomorrow.getDate() + 1);
-    const tomorrowStr = tomorrow.toISOString().split('T')[0];
-
-    // Avant 21h : jour J uniquement — Après 21h : jour J + J+1
-    const dateStop = parisHour >= 21 ? tomorrowStr : today;
-    console.log('[Tennis] Scan', parisHour+'h Paris :', today, '→', dateStop);
-
-    const allGames = await tennisAPI('get_fixtures', { date_start: today, date_stop: dateStop });
-    console.log('[Tennis] Matchs bruts:', allGames.length);
-
-    // 2. Garder uniquement les Singles ATP + WTA des tournois dispo sur Winamax/Betclic
-    // Exclure : Challenger, ITF, M15, M25, M25+H, Davis Cup qualifs locaux
-    const isWinamaxTournoi = (g) => {
-      const type   = (g.event_type_type || '').toLowerCase();
-      const name   = (g.tournament_name || '').toLowerCase();
-      const status = (g.event_status || g.status || '').toLowerCase();
-
-      // Exclure les matchs annulés, reportés, retirés
-      if (/cancel|annul|postpon|retired|walkover|abandon|void|withdraw/i.test(status)) return false;
-      if (status === 'canc' || status === 'pst' || status === 'abt' || status === 'wo') return false;
-
-      // Doit être ATP ou WTA Singles
-      if (!(type.includes('atp') || type.includes('wta')) || !type.includes('singles')) return false;
-      // Exclure les petits tournois non couverts
-      if (/challenger|itf|m15|m25|m10|futures|next gen finals qualifying/i.test(name)) return false;
-      // Exclure compétitions par équipes (rangs WTA/ATP non représentatifs)
-      if (/billie jean king|davis cup|united cup|hopman|laver cup/i.test(name)) return false;
-      return true;
-    };
-    const singles = allGames.filter(isWinamaxTournoi);
-    console.log('[Tennis] ATP/WTA Singles Winamax-compatibles:', singles.length);
-
-    if (!singles.length) {
-      return res.json({ picks: [], rejected: [], total_analyses: 0, date: new Date().toLocaleDateString('fr-FR') });
-    }
-
-    // 3. Récupérer les rangs — cache journalier pour éviter appels répétés
-    if (!cache.tennisRankDate || cache.tennisRankDate !== today) {
-      cache.tennisRankDate   = today;
-      cache.tennisRankMap    = {};
-      cache.tennisPlayerData = {};
-    }
-    const rankMap      = cache.tennisRankMap;
-    const playerDataMap= cache.tennisPlayerData;
-
-    // Charger les classements ATP + WTA en temps réel via get_standings
-    // Paramètre correct : type_événement (pas standing_type)
-    if (!rankMap || Object.keys(rankMap).length === 0) {
-      try {
-        const [atpStandings, wtaStandings] = await Promise.all([
-          tennisAPI('get_standings', { event_type: 'ATP' }),
-          tennisAPI('get_standings', { event_type: 'WTA' }),
-        ]);
-        let loaded = 0;
-        [...atpStandings, ...wtaStandings].forEach(p => {
-          const key = String(p.player_key || '');
-          const rank = parseInt(p.place || 9999);
-          if (key && rank < 9999) { rankMap[key] = rank; loaded++; }
-        });
-        console.log('[Tennis] Classements temps réel:', loaded, 'joueurs (ATP+WTA)');
-      } catch(e) {
-        console.warn('[Tennis] get_standings échoué:', e.message);
-      }
-    }
-
-    // Compléter avec get_players pour les joueurs pas dans le classement
-    const allPlayerKeys = [...new Set(singles.flatMap(g => [g.first_player_key, g.second_player_key].filter(Boolean)))];
-    const missingKeys   = allPlayerKeys.filter(k => !rankMap[String(k)]);
-    console.log('[Tennis] En cache:', allPlayerKeys.length - missingKeys.length, '/ manquants:', missingKeys.length);
-
-    for (let i = 0; i < missingKeys.length; i += 5) {
-      const batch = missingKeys.slice(i, i + 5);
-      await Promise.all(batch.map(async key => {
-        try {
-          const data = await tennisAPI('get_players', { player_key: key });
-          if (data && data.length > 0) {
-            const rank = extractPlayerRank(data[0]);
-            if (rank < 999) rankMap[String(key)] = rank;
-            playerDataMap[String(key)] = data[0];
-          }
-        } catch(e) { /* rang optionnel */ }
-      }));
-    }
-    console.log('[Tennis] Rangs disponibles:', Object.keys(rankMap).length, 'joueurs');
-
-    const picks = [];
-    const rejected = [];
-
-    for (const game of singles) {
-      try {
-        const p1Name = game.event_first_player  || '?';
-        const p2Name = game.event_second_player || '?';
-        if (!p1Name || !p2Name || p1Name === '?') {
-          rejected.push({ match: '?', raison: 'Joueurs manquants' }); continue;
-        }
-        if (p1Name.includes('/') || p2Name.includes('/')) continue; // doubles ignorés
-
-        const matchStr = `${p1Name} vs ${p2Name}`;
-        const p1Key = String(game.first_player_key  || '');
-        const p2Key = String(game.second_player_key || '');
-
-        const rank1 = rankMap[p1Key] || 999;
-        const rank2 = rankMap[p2Key] || 999;
-
-        // Favori = meilleur rang (plus petit chiffre)
-        const favoriIsP1    = rank1 <= rank2;
-        const favoriName    = favoriIsP1 ? p1Name : p2Name;
-        const adversaireName= favoriIsP1 ? p2Name : p1Name;
-        const favoriRank    = favoriIsP1 ? rank1 : rank2;
-        const adversaireRank= favoriIsP1 ? rank2 : rank1;
-        const favoriId      = favoriIsP1 ? p1Key  : p2Key;
-        const adversaireId  = favoriIsP1 ? p2Key  : p1Key;
-
-        // Filtrer : favori doit être top 100 pour être sur Winamax
-        if (favoriRank > 100) {
-          rejected.push({ match: matchStr, raison: `Joueurs hors top 100 (#${favoriRank} vs #${adversaireRank}) — non dispo Winamax` });
-          continue;
-        }
-        // Filtrer : écart de rang trop grand = cote injouable (<1.25)
-        // Seuil calibré : écart > 70 places = cote généralement < 1.30
-        const rankGapFilter = adversaireRank - favoriRank;
-
-        // Top 10 mondial : cote quasi toujours < 1.20 sauf contre un autre top joueur
-        // Exiger que l'adversaire soit dans le top 50 pour que la cote soit jouable
-        if (favoriRank <= 10 && adversaireRank > 50) {
-          rejected.push({ match: matchStr, raison: `Top 10 (#${favoriRank}) vs #${adversaireRank} — cote trop basse (<1.20)` });
-          continue;
-        }
-        // Top 20 : exiger adversaire top 60 minimum
-        if (favoriRank <= 20 && adversaireRank > 60) {
-          rejected.push({ match: matchStr, raison: `Top 20 (#${favoriRank}) vs #${adversaireRank} — cote trop basse` });
-          continue;
-        }
-        // Écart absolu trop grand : toujours cote basse
-        if (rankGapFilter > 90) {
-          rejected.push({ match: matchStr, raison: `Écart trop grand (#${favoriRank} vs #${adversaireRank}) — cote trop basse` });
-          continue;
-        }
-
-        // Surface et tournoi
-        const tournament  = game.tournament_name || '—';
-        const isWTA       = (game.event_type_type || '').toLowerCase().includes('wta');
-        const circuit     = isWTA ? 'WTA' : 'ATP';
-        const surface     = /clay|roland|terre|barcelona|madrid|rome/i.test(tournament) ? 'Clay'
-                          : /grass|wimbledon|halle|queen/i.test(tournament) ? 'Grass' : 'Hard';
-        const heure       = game.event_time || '—';
-        const grandSlam   = /australian|roland|wimbledon|us open/i.test(tournament);
-        const masters1000 = /miami|indian wells|madrid|rome|montreal|toronto|cincinnati|shanghai|paris/i.test(tournament);
-        const atp500      = /barcelona|dubai|rotterdam|washington|vienna|beijing/i.test(tournament);
-
-        // H2H
-        let h2hFavori = 0, h2hTotal = 0, h2hSurfFavori = 0, h2hSurfTotal = 0;
-        if (favoriId && adversaireId) {
-          try {
-            const h2hData = await tennisAPI('get_H2H', { first_player_key: favoriId, second_player_key: adversaireId });
-            if (h2hData && h2hData.length) {
-              const firstLast = favoriName.split(' ').pop().toLowerCase();
-              h2hTotal = h2hData.length;
-              h2hFavori = h2hData.filter(g => (g.event_winner || '').toLowerCase().includes(firstLast)).length;
-              const surf = h2hData.filter(g => (g.event_surface || '').toLowerCase() === surface.toLowerCase());
-              h2hSurfTotal = surf.length;
-              h2hSurfFavori = surf.filter(g => (g.event_winner || '').toLowerCase().includes(firstLast)).length;
-            }
-          } catch(e) { /* H2H optionnel */ }
-        }
-
-        // F4 — Forme récente
-        const formeFavori    = extractRecentForm(playerDataMap[String(favoriId)]);
-        const formeAdversaire= extractRecentForm(playerDataMap[String(adversaireId)]);
-
-        // F5 — Ranking sur la surface spécifique
-        const surfRankFavori    = extractSurfaceRanking(playerDataMap[String(favoriId)], surface);
-        const surfRankAdversaire= extractSurfaceRanking(playerDataMap[String(adversaireId)], surface);
-
-        // F6 — Palmarès tournoi
-        const pedigreeFavori    = extractTournamentPedigree(playerDataMap[String(favoriId)], tournament);
-        const pedigreeAdversaire= extractTournamentPedigree(playerDataMap[String(adversaireId)], tournament);
-
-        // F8 — Fatigue
-        const fatigueFavori    = extractFatigue(playerDataMap[String(favoriId)]);
-        const fatigueAdversaire= extractFatigue(playerDataMap[String(adversaireId)]);
-
-        // Score matriciel v4
-        const { score, details } = scoreTennisMatch({
-          rankFavori: favoriRank, rankAdversaire: adversaireRank,
-          h2hFavori, h2hTotal, h2hSurfFavori, h2hSurfTotal,
-          formeFavori, formeAdversaire,
-          surfRankFavori, surfRankAdversaire,
-          pedigreeFavori, pedigreeAdversaire,
-          fatigueFavori, fatigueAdversaire,
-          grandSlam, masters1000, atp500,
-        });
-        const alerte = getTennisAlerte(score);
-        if (!alerte) { rejected.push({ match: matchStr, raison: `Score trop faible (${score}/100)` }); continue; }
-
-        picks.push({
-          match:           matchStr,
-          favori:          favoriName,
-          adversaire:      adversaireName,
-          favori_rang:     favoriRank < 900 ? favoriRank : null,
-          adversaire_rang: adversaireRank < 900 ? adversaireRank : null,
-          favori_forme:    formeFavori ? `${formeFavori.won}W/${formeFavori.lost}L (${Math.round(formeFavori.rate*100)}%)` : '—',
-          adversaire_forme: formeAdversaire ? `${formeAdversaire.won}W/${formeAdversaire.lost}L (${Math.round(formeAdversaire.rate*100)}%)` : '—',
-          favori_bilan:    '',
-          adversaire_bilan:'',
-          competition:     `${circuit} · ${tournament}`,
-          surface,
-          heure,
-          scoreMatriciel:  score,
-          alerte,
-          h2h_global:      h2hTotal > 0 ? `${h2hFavori}/${h2hTotal}` : '—',
-          h2h_surface:     h2hSurfTotal > 0 ? `${h2hSurfFavori}/${h2hSurfTotal}` : '—',
-          h2h_total_matchs: h2hTotal,
-          factors: [
-            (favoriRank < 900 && adversaireRank < 900) ? `#${favoriRank} vs #${adversaireRank}` : null,
-            h2hTotal > 0 ? `H2H ${h2hFavori}/${h2hTotal}` : 'H2H: 1ère rencontre',
-            h2hSurfTotal > 0 ? `H2H ${surface}: ${h2hSurfFavori}/${h2hSurfTotal}` : null,
-            formeFavori ? `Forme: ${formeFavori.won}W/${formeFavori.lost}L (${Math.round(formeFavori.rate*100)}%)` : null,
-            surfRankFavori ? `${surface}: ${Math.round(surfRankFavori.rate*100)}% (${surfRankFavori.total} matchs)` : null,
-            pedigreeFavori > 0 ? `🏆 ${pedigreeFavori}x vainqueur ici` : null,
-            fatigueFavori ? '⚠️ Favori potentiellement fatigué' : null,
-            fatigueAdversaire ? '💪 Adversaire fatigué' : null,
-            grandSlam ? '🏆 Grand Chelem' : masters1000 ? '🎯 Masters 1000' : atp500 ? 'ATP/WTA 500' : null,
-          ].filter(Boolean),
-          raison: `${favoriName}${favoriRank < 900 ? ' (#'+favoriRank+')' : ''} favori vs ${adversaireName}${adversaireRank < 900 ? ' (#'+adversaireRank+')' : ''} — Matrice v4: ${score}/100`,
-          matrix_details: details,
-        });
-
-      } catch(e) { console.error('[Tennis] Erreur match:', e.message); }
-    }
-
-    picks.sort((a, b) => b.scoreMatriciel - a.scoreMatriciel);
-    const verts   = picks.filter(p => p.alerte === 'VERT').slice(0, 2);
-    const oranges = picks.filter(p => p.alerte === 'ORANGE').slice(0, 2);
-    const rouges  = picks.filter(p => p.alerte === 'ROUGE').slice(0, 1);
-    const finalPicks = [...verts, ...oranges, ...rouges];
-
-    console.log(`[Tennis] ${finalPicks.length} picks (${singles.length} matchs analysés)`);
-    res.json({
-      date: new Date().toLocaleDateString('fr-FR'),
-      total_analyses: singles.length,
-      picks: finalPicks,
-      rejected,
-    });
-
-  } catch(e) {
-    console.error('[Tennis] Erreur scan:', e.message);
-    res.status(500).json({ error: e.message });
-  }
-});
-
-
-app.get('/api/debug-tennis', async (req, res) => {
-  try {
-    const today = getTodayStr();
-    const results = {};
-
-    // Test 1 : get_standings avec toutes les variantes possibles du paramètre
-    const standingsTests = [
-      { label: 'type_evenement_ATP',    params: { 'type_evenement': 'ATP' } },
-      { label: 'type_encoded_ATP',      params: { 'type_%C3%A9v%C3%A9nement': 'ATP' } },
-      { label: 'standing_type_atp',     params: { standing_type: 'atp' } },
-      { label: 'event_type_ATP',        params: { event_type: 'ATP' } },
-      { label: 'type_ATP',              params: { type: 'ATP' } },
-      { label: 'no_params',             params: {} },
-    ];
-    for (const t of standingsTests) {
-      try {
-        const data = await tennisAPI('get_standings', t.params);
-        results[t.label] = { count: data.length, sample: data.slice(0,2).map(p => JSON.stringify(p).substring(0,150)) };
-      } catch(e) { results[t.label] = { error: e.message }; }
-    }
-
-    // Test 2 : get_players avec le premier joueur ATP du jour
-    const fixtures = await tennisAPI('get_fixtures', { date_start: today, date_stop: today });
-    const atpMatch = fixtures.find(g => (g.event_type_type||'').toLowerCase().includes('atp singles'));
-    if (atpMatch) {
-      const key = atpMatch.first_player_key;
-      const pdata = await tennisAPI('get_players', { player_key: key });
-      results.get_players_test = {
-        player: atpMatch.event_first_player,
-        key,
-        count: pdata.length,
-        fields: pdata.length ? Object.keys(pdata[0]).join(', ') : 'empty',
-        stats_count: pdata.length ? (pdata[0].stats||[]).length : 0,
-      };
-    }
-
-    res.json({ today, results });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-app.get('/api/debug-time', (req, res) => {
-  const nowParis = new Date(new Date().toLocaleString('en-US', { timeZone: 'Europe/Paris' }));
-  const parisHour = nowParis.getHours();
-  const today = getTodayStr();
-  const tomorrow = new Date(nowParis); tomorrow.setDate(tomorrow.getDate() + 1);
-  const tomorrowStr = tomorrow.toISOString().split('T')[0];
-  res.json({
-    utc_now: new Date().toISOString(),
-    paris_now: nowParis.toISOString(),
-    paris_hour: parisHour,
-    mode: parisHour >= 21 ? 'SOIREE (J+J+1)' : 'JOUR (J)',
-    date_start: today,
-    date_stop: parisHour >= 21 ? tomorrowStr : today,
-  });
 });
 
 app.get('/api/health', (req, res) => res.json({ status: 'ok', name: 'PicksAI', version: '4.1', season: SEASON }));
